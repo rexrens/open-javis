@@ -48,3 +48,6 @@ conf.yaml
 *.log
 logs/
 /tmp/
+
+# Frontend
+node_modules/
