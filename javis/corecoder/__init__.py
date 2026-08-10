@@ -2,9 +2,9 @@
 
 __version__ = "0.4.0"
 
-from corecoder.agent import Agent
-from corecoder.llm import LLM
-from corecoder.config import Config
-from corecoder.tools import ALL_TOOLS
+from javis.corecoder.agent import Agent
+from javis.corecoder.llm import LLM
+from javis.corecoder.config import Config
+from javis.corecoder.tools import ALL_TOOLS
 
 __all__ = ["Agent", "LLM", "Config", "ALL_TOOLS", "__version__"]

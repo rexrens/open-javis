@@ -15,7 +15,7 @@ from .llm import LLM
 from .tools import ALL_TOOLS
 from .tools.base import Tool
 from .tools.agent import AgentTool
-from .prompt import system_prompt
+from .prompt import system_prompt as _default_system_prompt
 from .context import ContextManager
 
 
@@ -26,6 +26,7 @@ class Agent:
         tools: list[Tool] | None = None,
         max_context_tokens: int = 128_000,
         max_rounds: int = 50,
+        system_prompt: str | None = None,
     ):
         self.llm = llm
         self.tools = tools if tools is not None else ALL_TOOLS
@@ -33,7 +34,7 @@ class Agent:
         self.messages: list[dict] = []
         self.context = ContextManager(max_tokens=max_context_tokens)
         self.max_rounds = max_rounds
-        self._system = system_prompt(self.tools)
+        self._system = system_prompt if system_prompt is not None else _default_system_prompt(self.tools)
 
         # wire up sub-agent capability
         for t in self.tools:
@@ -46,8 +47,13 @@ class Agent:
     def _tool_schemas(self) -> list[dict]:
         return [t.schema() for t in self.tools]
 
-    def chat(self, user_input: str, on_token=None, on_tool=None) -> str:
-        """Process one user message. May involve multiple LLM/tool rounds."""
+    def chat(self, user_input: str, on_token=None, on_tool=None, on_tool_result=None) -> str:
+        """Process one user message. May involve multiple LLM/tool rounds.
+
+        ``on_tool(name, arguments)`` fires before each tool executes;
+        ``on_tool_result(name, output, is_error)`` fires after, with the
+        exact string that will be appended to the conversation history.
+        """
         self.messages.append({"role": "user", "content": user_input})
         self.context.maybe_compress(self.messages, self.llm)
 
@@ -73,6 +79,8 @@ class Agent:
                     if on_tool:
                         on_tool(tc.name, tc.arguments)
                     result = self._exec_tool(tc)
+                    if on_tool_result:
+                        on_tool_result(tc.name, result, result.startswith("Error"))
                     self.messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
@@ -82,6 +90,8 @@ class Agent:
                     # parallel execution for multiple tool calls
                     results = self._exec_tools_parallel(resp.tool_calls, on_tool)
                     for tc, result in zip(resp.tool_calls, results):
+                        if on_tool_result:
+                            on_tool_result(tc.name, result, result.startswith("Error"))
                         self.messages.append({
                             "role": "tool",
                             "tool_call_id": tc.id,

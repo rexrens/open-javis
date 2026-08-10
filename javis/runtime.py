@@ -1,11 +1,11 @@
 """Runtime assembly for javis — a slim alternative to ``openharness.ui.runtime.build_runtime``.
 
 Skips MCP connection, hook loading, docker sandbox, autodream and session
-memory — none of which a mock agent needs. The engine is a ``MockEngine``
-backed by an ``AgentBackend`` (``MockAgent`` by default).
+memory. The engine is a ``CoreCoderEngine`` over a real CoreCoder ``Agent``
+(LLM configured from env vars via ``Config.from_env``).
 
-To swap in a real agent, implement ``AgentBackend`` and pass it to
-``build_javis_runtime`` via ``agent_backend=`` — no other change is needed.
+To inject a custom agent (e.g. with a ``ScriptedLLM`` for tests), pass it to
+``build_javis_runtime`` via ``agent=`` — no other change is needed.
 """
 
 from __future__ import annotations
@@ -39,9 +39,11 @@ from openharness.ui.backend_host import BackendHostConfig
 from openharness.ui.react_launcher import _resolve_npm, _resolve_tsx, get_frontend_dir
 from openharness.ui.runtime import RuntimeBundle, close_runtime, handle_line, start_runtime
 
-from javis.engine.mock_agent import MockAgent
-from javis.engine.mock_engine import MockEngine
-from javis.engine.protocol import AgentBackend
+from javis.corecoder.agent import Agent
+from javis.corecoder.config import Config
+from javis.corecoder.llm import LLM
+from javis.corecoder.tools import ALL_TOOLS
+from javis.engine.corecoder_engine import CoreCoderEngine
 from javis.prompts import build_javis_system_prompt
 from javis.session_storage import JavisSessionBackend
 from javis.workspace import initialize_workspace
@@ -50,9 +52,10 @@ from javis.workspace import initialize_workspace
 class MockApiClient:
     """No-op ``SupportsStreamingMessages`` used to satisfy runtime typing.
 
-    ``MockEngine`` never calls ``stream_message`` — the mock agent produces
-    events directly. This class exists so ``RuntimeBundle.api_client`` and
-    ``HookExecutionContext.api_client`` have a value to hold.
+    The engine (``CoreCoderEngine``) never calls ``stream_message`` — the
+    CoreCoder loop talks to its own ``LLM``. This class exists so
+    ``RuntimeBundle.api_client`` and ``HookExecutionContext.api_client`` have a
+    value to hold.
     """
 
     async def stream_message(self, request):  # pragma: no cover - never called
@@ -65,7 +68,33 @@ class MockApiClient:
 
 
 def _resolve_model(model: str | None) -> str:
-    return model or "javis-mock"
+    if model:
+        return model
+    return Config.from_env().model
+
+
+def _build_agent(
+    model: str | None,
+    max_turns: int | None,
+    system_prompt: str,
+) -> Agent:
+    """Create the CoreCoder agent with env-based LLM configuration."""
+    cfg = Config.from_env()
+    llm = LLM(
+        model=_resolve_model(model),
+        # The OpenAI SDK raises at construction without a key; the placeholder
+        # keeps the engine bootable and defers the auth failure to first call.
+        api_key=cfg.api_key or "sk-missing",
+        base_url=cfg.base_url,
+        max_tokens=cfg.max_tokens,
+        temperature=cfg.temperature,
+    )
+    return Agent(
+        llm=llm,
+        tools=ALL_TOOLS,
+        max_rounds=max(1, int(max_turns)) if max_turns is not None else 50,
+        system_prompt=system_prompt,
+    )
 
 
 async def build_javis_runtime(
@@ -74,7 +103,7 @@ async def build_javis_runtime(
     model: str | None = None,
     max_turns: int | None = None,
     system_prompt: str | None = None,
-    agent_backend: AgentBackend | None = None,
+    agent: Agent | None = None,
     restore_messages: list[dict] | None = None,
     restore_tool_metadata: dict[str, object] | None = None,
     session_backend: JavisSessionBackend | None = None,
@@ -82,12 +111,13 @@ async def build_javis_runtime(
     extra_skill_dirs: Iterable[str | Path] = (),
     extra_plugin_roots: Iterable[str | Path] = (),
 ) -> RuntimeBundle:
-    """Assemble a ``RuntimeBundle`` with a ``MockEngine`` instead of ``QueryEngine``.
+    """Assemble a ``RuntimeBundle`` with a ``CoreCoderEngine``.
 
     Mirrors the shape of ``openharness.ui.runtime.build_runtime`` but drops
     model-client resolution, MCP connect, hook loading, sandbox, autodream and
-    session memory. The engine is a ``MockEngine`` over the supplied
-    ``agent_backend`` (default ``MockAgent()``).
+    session memory. The engine is a ``CoreCoderEngine`` over a real CoreCoder
+    ``Agent`` (``LLM`` built from env vars via ``Config.from_env``). Pass
+    ``agent=`` to inject a custom agent (e.g. with a ``ScriptedLLM`` for tests).
     """
     settings = load_settings()
     cwd_resolved = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd())
@@ -128,8 +158,8 @@ async def build_javis_runtime(
         )
     )
 
-    # MockEngine — the heart of the swap.
-    agent = agent_backend or MockAgent()
+    # CoreCoderEngine — the real agent loop.
+    agent = agent or _build_agent(model_name, max_turns, system_prompt_text)
     tool_metadata: dict[str, Any] = {
         "permission_mode": settings.permission.mode.value,
         "read_file_state": [],
@@ -153,8 +183,8 @@ async def build_javis_runtime(
     session_id = uuid4().hex[:12]
     tool_metadata["session_id"] = session_id
 
-    engine = MockEngine(
-        agent_backend=agent,
+    engine = CoreCoderEngine(
+        agent=agent,
         model=model_name,
         system_prompt=system_prompt_text,
         cwd=cwd_resolved,
@@ -219,7 +249,7 @@ async def run_javis_backend(
     restore_messages: list[dict] | None = None,
     restore_tool_metadata: dict[str, object] | None = None,
 ) -> int:
-    """Run the structured React backend host with javis's MockEngine."""
+    """Run the structured React backend host with javis's CoreCoderEngine."""
     from javis.backend_host import JavisBackendHost
 
     cwd_path = str(Path(cwd or Path.cwd()).resolve())

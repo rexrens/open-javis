@@ -6,7 +6,9 @@ import pytest
 
 from openharness.ui.runtime import RuntimeBundle
 
-from javis.engine.mock_engine import MockEngine
+from javis.corecoder.agent import Agent
+from javis.corecoder.llm import ScriptedLLM
+from javis.engine.corecoder_engine import CoreCoderEngine
 from javis.runtime import MockApiClient, build_javis_runtime
 from javis.session_storage import JavisSessionBackend
 
@@ -17,6 +19,11 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("JAVIS_WORKSPACE", str(tmp_path / "javis-workspace"))
+    # A local socks proxy in the environment breaks httpx client construction
+    # (socksio not installed); drop proxy vars so OpenAI clients can build.
+    for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                "http_proxy", "https_proxy", "all_proxy"):
+        monkeypatch.delenv(var, raising=False)
     return tmp_path
 
 
@@ -27,10 +34,21 @@ async def test_build_javis_runtime_returns_bundle(isolated_env):
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_uses_mock_engine(isolated_env):
+async def test_build_javis_runtime_uses_corecoder_engine(isolated_env):
     bundle = await build_javis_runtime(cwd=str(isolated_env))
-    assert isinstance(bundle.engine, MockEngine)
-    assert bundle.engine.model == "javis-mock"
+    assert isinstance(bundle.engine, CoreCoderEngine)
+    assert bundle.engine.model  # non-empty model resolved from env/config
+
+
+@pytest.mark.asyncio
+async def test_build_javis_runtime_injects_custom_agent(isolated_env):
+    llm = ScriptedLLM(script=[])
+    agent = Agent(llm=llm, max_rounds=5, system_prompt="test prompt")
+    bundle = await build_javis_runtime(
+        cwd=str(isolated_env), agent=agent, model="test-model", system_prompt="test prompt"
+    )
+    assert bundle.engine.model == "test-model"
+    assert bundle.engine.system_prompt == "test prompt"
 
 
 @pytest.mark.asyncio
