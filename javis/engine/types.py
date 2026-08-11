@@ -1,9 +1,9 @@
 """Generic agent event model — the bridge between javis and any agent backend.
 
-These types are intentionally decoupled from OpenHarness's ``StreamEvent`` so
-that a real agent implementation can emit a stable, framework-neutral event
-stream. ``MockEngine`` is responsible for translating ``AgentEvent`` into
-OpenHarness ``StreamEvent`` at the boundary.
+``AgentEvent`` is the single event stream protocol. An ``AgentBackend`` yields
+these; ``MockEngine`` passes them through; ``JavisBackendHost`` renders them
+into ``BackendEvent`` for the React frontend. No separate ``StreamEvent``
+layer — javis collapsed it to reduce translation hops.
 """
 
 from __future__ import annotations
@@ -11,7 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Union
 
-from openharness.engine.messages import ConversationMessage
+from javis.messages import ConversationMessage
+from javis.usage import UsageSnapshot
 
 
 @dataclass(frozen=True)
@@ -54,12 +55,16 @@ class AgentToolCallResult:
 class AgentTurnEnd:
     """Marks the end of one assistant turn.
 
-    ``text`` is the final assembled assistant text for the turn. If empty,
-    ``MockEngine`` will use whatever text was accumulated from
-    ``AgentTextDelta`` events.
+    ``text`` is the final assembled assistant text. If empty, the host uses
+    whatever was accumulated from ``AgentTextDelta`` events.
+
+    ``usage`` (optional) is the token consumption of THIS turn; when present
+    the engine layer accumulates it, otherwise it falls back to word-count
+    estimation. Consumption is an engine-layer concern, not the backend's.
     """
 
     text: str = ""
+    usage: UsageSnapshot | None = None
 
 
 @dataclass(frozen=True)

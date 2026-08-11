@@ -4,19 +4,18 @@ from __future__ import annotations
 
 import pytest
 
-from openharness.api.usage import UsageSnapshot
-from openharness.engine.messages import ConversationMessage, TextBlock
-from openharness.engine.stream_events import (
-    AssistantTextDelta,
-    AssistantTurnComplete,
-    ErrorEvent,
-    StatusEvent,
-    ToolExecutionCompleted,
-    ToolExecutionStarted,
-)
-
 from javis.engine.mock_agent import MockAgent
 from javis.engine.mock_engine import MockEngine
+from javis.engine.types import (
+    AgentError,
+    AgentStatus,
+    AgentTextDelta,
+    AgentToolCallResult,
+    AgentToolCallStart,
+    AgentTurnEnd,
+)
+from javis.messages import ConversationMessage
+from javis.usage import UsageSnapshot
 
 
 def _engine(prompt: str = "") -> MockEngine:
@@ -51,8 +50,6 @@ def test_setters_are_noop_or_assign():
     assert engine.max_turns is None
     # These should not raise
     engine.set_effort("high")
-    engine.set_api_client(None)
-    engine.set_permission_checker(None)
 
 
 def test_load_and_clear_messages():
@@ -69,14 +66,14 @@ async def test_submit_message_yields_assistant_turn():
     engine = _engine()
     events = [e async for e in engine.submit_message("hello")]
 
-    assert any(isinstance(e, AssistantTextDelta) for e in events)
-    assert any(isinstance(e, AssistantTurnComplete) for e in events)
+    assert any(isinstance(e, AgentTextDelta) for e in events)
+    assert any(isinstance(e, AgentTurnEnd) for e in events)
     # User message + assistant message
     assert len(engine.messages) == 2
     assert engine.messages[0].role == "user"
     assert engine.messages[1].role == "assistant"
-    complete = next(e for e in events if isinstance(e, AssistantTurnComplete))
-    assert complete.message.role == "assistant"
+    complete = next(e for e in events if isinstance(e, AgentTurnEnd))
+    assert complete.text
 
 
 @pytest.mark.asyncio
@@ -84,9 +81,9 @@ async def test_submit_message_with_tool_call():
     engine = _engine()
     events = [e async for e in engine.submit_message("use a tool please")]
 
-    assert any(isinstance(e, ToolExecutionStarted) for e in events)
-    assert any(isinstance(e, ToolExecutionCompleted) for e in events)
-    started = next(e for e in events if isinstance(e, ToolExecutionStarted))
+    assert any(isinstance(e, AgentToolCallStart) for e in events)
+    assert any(isinstance(e, AgentToolCallResult) for e in events)
+    started = next(e for e in events if isinstance(e, AgentToolCallStart))
     assert started.tool_name == "echo"
 
 
@@ -95,9 +92,9 @@ async def test_submit_message_error_does_not_complete_turn():
     engine = _engine()
     events = [e async for e in engine.submit_message("trigger an error")]
 
-    assert any(isinstance(e, ErrorEvent) for e in events)
-    # No AssistantTurnComplete on error
-    assert not any(isinstance(e, AssistantTurnComplete) for e in events)
+    assert any(isinstance(e, AgentError) for e in events)
+    # No AgentTurnEnd on error
+    assert not any(isinstance(e, AgentTurnEnd) for e in events)
     # Only the user message is appended
     assert len(engine.messages) == 1
 
@@ -108,7 +105,7 @@ async def test_submit_message_with_conversation_message():
     msg = ConversationMessage.from_user_text("custom message")
     events = [e async for e in engine.submit_message(msg)]
 
-    assert any(isinstance(e, AssistantTurnComplete) for e in events)
+    assert any(isinstance(e, AgentTurnEnd) for e in events)
     assert engine.messages[0].role == "user"
     assert engine.messages[0].text == "custom message"
 
@@ -118,10 +115,42 @@ async def test_continue_pending_is_noop():
     engine = _engine()
     events = [e async for e in engine.continue_pending(max_turns=4)]
     assert len(events) == 1
-    assert isinstance(events[0], StatusEvent)
+    assert isinstance(events[0], AgentStatus)
 
 
 def test_tool_metadata_is_mutable():
     engine = _engine()
     engine.tool_metadata["foo"] = "bar"
     assert engine.tool_metadata["foo"] == "bar"
+
+
+class UsageBackend:
+    """Backend that reports real usage in AgentTurnEnd."""
+
+    async def run_turn(self, prompt, *, context):
+        yield AgentTextDelta(text="hi")
+        yield AgentTurnEnd(text="hi", usage=UsageSnapshot(input_tokens=5, output_tokens=7))
+
+
+@pytest.mark.asyncio
+async def test_submit_message_uses_backend_usage():
+    engine = MockEngine(UsageBackend(), model="m", system_prompt="s", cwd="/tmp")
+    [e async for e in engine.submit_message("hello")]
+    assert engine.total_usage.input_tokens == 5
+    assert engine.total_usage.output_tokens == 7
+
+
+class HookBackend(UsageBackend):
+    def __init__(self) -> None:
+        self.cleared = False
+
+    def clear_history(self) -> None:
+        self.cleared = True
+
+
+@pytest.mark.asyncio
+async def test_clear_forwards_to_backend_hook():
+    backend = HookBackend()
+    engine = MockEngine(backend, model="m", system_prompt="s", cwd="/tmp")
+    engine.clear()
+    assert backend.cleared is True

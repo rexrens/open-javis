@@ -9,14 +9,25 @@ from __future__ import annotations
 
 from typing import AsyncIterator, Protocol, runtime_checkable
 
-from openharness.engine.messages import ConversationMessage
+from javis.messages import ConversationMessage
 
 from javis.engine.types import AgentContext, AgentEvent
 
 
 @runtime_checkable
 class AgentBackend(Protocol):
-    """Generic agent interface yielding a stream of ``AgentEvent`` per turn."""
+    """Generic agent interface yielding a stream of ``AgentEvent`` per turn.
+
+    Optional hooks (documented here, NOT in the Protocol class — runtime_checkable
+    isinstance() checks member presence, so optional members would break
+    backends that don't implement them; the engine layer probes with hasattr):
+
+        def load_history(self, messages: list[ConversationMessage]) -> None:
+            '''Rebuild engine-internal history from javis mirror messages.'''
+
+        def clear_history(self) -> None:
+            '''Clear engine-internal history.'''
+    """
 
     async def run_turn(
         self,
@@ -26,14 +37,8 @@ class AgentBackend(Protocol):
     ) -> AsyncIterator[AgentEvent]:
         """Process one user turn and yield events.
 
-        Args:
-            prompt: The user's input. May be a raw string or a pre-built
-                ``ConversationMessage`` (e.g. with image attachments).
-            context: Runtime context (cwd, model, system prompt, history).
-
-        Yields:
-            ``AgentEvent`` instances. A turn should end with exactly one
-            ``AgentTurnEnd`` event (unless it ends with ``AgentError``).
+        A turn should end with exactly one ``AgentTurnEnd`` event (unless it
+        ends with ``AgentError``).
         """
         ...
 
