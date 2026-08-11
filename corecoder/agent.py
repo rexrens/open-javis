@@ -160,3 +160,11 @@ class Agent:
     def reset(self):
         """Clear conversation history."""
         self.messages.clear()
+
+    def load_messages(self, messages: list[dict]):
+        """Replace conversation history (used when restoring a session)."""
+        self.messages = list(messages)
+
+    def set_system_prompt(self, prompt: str):
+        """Replace the system prompt for subsequent rounds."""
+        self._system = prompt

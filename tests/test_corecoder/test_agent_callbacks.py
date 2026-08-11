@@ -76,3 +76,18 @@ def test_on_tool_result_unknown_tool():
     assert len(calls) == 1
     assert calls[0][0] == "nope"
     assert calls[0][3] is True
+
+
+def test_load_messages_replaces_history():
+    agent = _agent([LLMResponse(content="hi")])
+    agent.chat("hello")
+    assert len(agent.messages) == 2
+
+    agent.load_messages([{"role": "user", "content": "restored"}])
+    assert agent.messages == [{"role": "user", "content": "restored"}]
+
+
+def test_set_system_prompt_updates_system():
+    agent = _agent([LLMResponse(content="hi")])
+    agent.set_system_prompt("custom system prompt")
+    assert agent._system == "custom system prompt"
