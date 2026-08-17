@@ -194,7 +194,13 @@ def build_corecoder_backend(
         )
 
     resolved_model = model or cfg.model
-    llm = AsyncLLM(model=resolved_model, api_key=cfg.api_key, base_url=cfg.base_url)
+    llm = AsyncLLM(
+        model=resolved_model,
+        api_key=cfg.api_key,
+        base_url=cfg.base_url,
+        max_tokens=cfg.max_tokens,
+        temperature=cfg.temperature,
+    )
     agent = Agent(llm=llm, max_context_tokens=cfg.max_context_tokens)
     return CoreCoderBackend(
         agent,

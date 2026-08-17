@@ -140,9 +140,12 @@ def test_build_corecoder_backend_applies_config(monkeypatch):
         system_prompt="sp",
         cwd="/tmp",
         max_turns=12,
-        engine_config={"api_key": "k"},
+        engine_config={"api_key": "k", "max_tokens": 2048, "temperature": 0.2},
     )
     assert isinstance(backend, CoreCoderBackend)
     assert backend.model == "deepseek-chat"
     assert backend.agent.max_rounds == 12
     assert backend.agent._system == "sp"
+    llm = backend.agent.llm
+    assert llm.extra["max_tokens"] == 2048
+    assert llm.extra["temperature"] == 0.2
