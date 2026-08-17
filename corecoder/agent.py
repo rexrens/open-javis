@@ -9,9 +9,10 @@ It keeps looping until the LLM responds with plain text (no tool calls),
 which means it's done working and ready to report back.
 """
 
+import asyncio
 import concurrent.futures
 import inspect
-from .llm import LLM
+from .llm import LLM, ToolCall
 from .tools import ALL_TOOLS
 from .tools.base import Tool
 from .tools.agent import AgentTool
@@ -101,6 +102,68 @@ class Agent:
             self.context.maybe_compress(self.messages, self.llm)
 
         return "(reached maximum tool-call rounds)"
+
+    async def achat(self, user_input: str, on_token=None, on_tool=None, on_tool_result=None) -> str:
+        """Async counterpart of chat(): same loop over awaitable LLM.chat().
+
+        Cancellation semantics: a CancelledError raised at any await point
+        triggers _answer_pending_tool_calls for the in-flight round, keeping
+        the history valid for OpenAI-compatible APIs, then re-raises.
+        Sync tool execution runs in a thread (asyncio.to_thread); cancellation
+        does not take effect while a tool is running.
+        """
+        self.messages.append({"role": "user", "content": user_input})
+        self.context.maybe_compress(self.messages)
+        pending_tool_calls: list[ToolCall] = []
+
+        try:
+            for _ in range(self.max_rounds):
+                resp = await self.llm.chat(
+                    messages=self._full_messages(),
+                    tools=self._tool_schemas(),
+                    on_token=on_token,
+                )
+
+                # no tool calls -> LLM is done, return text
+                if not resp.tool_calls:
+                    self.messages.append(resp.message)
+                    return resp.content
+
+                # tool calls -> execute (parallel when multiple)
+                self.messages.append(resp.message)
+                pending_tool_calls = resp.tool_calls
+
+                if len(resp.tool_calls) == 1:
+                    tc = resp.tool_calls[0]
+                    if on_tool:
+                        on_tool(tc.name, tc.arguments)
+                    result, is_error = await asyncio.to_thread(self._exec_tool_with_status, tc)
+                    if on_tool_result:
+                        on_tool_result(tc.name, tc.arguments, result, is_error)
+                    self.messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result,
+                    })
+                else:
+                    results = await asyncio.to_thread(self._exec_tools_parallel, resp.tool_calls, on_tool)
+                    for tc, (result, is_error) in zip(resp.tool_calls, results):
+                        if on_tool_result:
+                            on_tool_result(tc.name, tc.arguments, result, is_error)
+                        self.messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": result,
+                        })
+
+                # compress if tool outputs are big (extraction fallback only:
+                # LLM-powered summarization is sync and would break the loop)
+                self.context.maybe_compress(self.messages)
+
+            return "(reached maximum tool-call rounds)"
+        except asyncio.CancelledError:
+            self._answer_pending_tool_calls(pending_tool_calls)
+            raise
 
     def _exec_tool_with_status(self, tc) -> tuple[str, bool]:
         """Execute a single tool call, returning (result_text, is_error).
