@@ -283,7 +283,9 @@ class AsyncLLM:
         **kwargs,
     ):
         self.model = model
-        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        # The OpenAI SDK raises at construction without a key; the placeholder
+        # keeps the engine bootable and defers the auth failure to first call.
+        self.client = AsyncOpenAI(api_key=api_key or "sk-missing", base_url=base_url)
         self.extra = kwargs  # temperature, max_tokens, etc.
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0

@@ -25,12 +25,11 @@ from uuid import uuid4
 from javis.commands import CommandContext, CommandRegistry, create_default_command_registry
 from javis.engine.mock_engine import MockEngine
 from javis.engine.protocol import AgentBackend
-from javis.engine.types import AgentEvent, AgentTextDelta, AgentToolCallStart, AgentToolCallResult, AgentTurnEnd, AgentError, AgentStatus
+from javis.engine.types import AgentEvent, AgentTextDelta, AgentTurnEnd, AgentError, AgentStatus
 from javis.messages import ConversationMessage, sanitize_conversation_messages
 from javis.prompts import build_javis_system_prompt
 from javis.session_storage import JavisSessionBackend
 from javis.state import AppState, AppStateStore
-from javis.usage import UsageSnapshot
 from javis.workspace import initialize_workspace
 
 SystemPrinter = Callable[[str], Awaitable[None]]

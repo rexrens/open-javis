@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
 from pathlib import Path
 
 import typer
@@ -33,7 +32,7 @@ def main(
     ctx: typer.Context,
     print_mode: str | None = typer.Option(None, "--print", "-p", help="Run a single prompt and exit"),
     model: str | None = typer.Option(None, "--model", help="Model override for this session"),
-    engine: str | None = typer.Option(None, "--engine", help="Agent engine (default: config.json or corecoder)"),
+    engine: str | None = typer.Option(None, "--engine", help="Agent engine (default: config.json, JAVIS_ENGINE, or corecoder)"),
     workspace: str | None = typer.Option(None, "--workspace", help=_WORKSPACE_HELP),
     max_turns: int | None = typer.Option(None, "--max-turns", help="Override max turns"),
     cwd: str = typer.Option(str(Path.cwd()), "--cwd", help="Working directory"),
