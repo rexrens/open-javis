@@ -106,6 +106,12 @@ class Agent:
     async def achat(self, user_input: str, on_token=None, on_tool=None, on_tool_result=None) -> str:
         """Async counterpart of chat(): same loop over awaitable LLM.chat().
 
+        Requires an async LLM (AsyncLLM/AsyncScriptedLLM); building the Agent
+        with a sync LLM (LLM/ScriptedLLM/LiteLLM) raises TypeError on the
+        first call because llm.chat() is not awaitable.  on_tool and
+        on_tool_result fire on the event-loop thread (never from a worker
+        thread), so they may safely use put_nowait-style asyncio APIs.
+
         Cancellation semantics: a CancelledError raised at any await point
         triggers _answer_pending_tool_calls for the in-flight round, keeping
         the history valid for OpenAI-compatible APIs, then re-raises.
@@ -146,7 +152,13 @@ class Agent:
                         "content": result,
                     })
                 else:
-                    results = await asyncio.to_thread(self._exec_tools_parallel, resp.tool_calls, on_tool)
+                    # fire on_tool on the event-loop thread (NOT inside
+                    # _exec_tools_parallel, which the to_thread worker runs);
+                    # put_nowait-style callbacks are only safe here
+                    if on_tool:
+                        for tc in resp.tool_calls:
+                            on_tool(tc.name, tc.arguments)
+                    results = await asyncio.to_thread(self._exec_tools_parallel, resp.tool_calls)
                     for tc, (result, is_error) in zip(resp.tool_calls, results):
                         if on_tool_result:
                             on_tool_result(tc.name, tc.arguments, result, is_error)
