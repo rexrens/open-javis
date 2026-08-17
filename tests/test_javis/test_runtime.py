@@ -4,20 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from openharness.ui.runtime import RuntimeBundle
-
-from javis.corecoder.agent import Agent
-from javis.corecoder.llm import ScriptedLLM
-from javis.engine.corecoder_engine import CoreCoderEngine
-from javis.runtime import MockApiClient, build_javis_runtime
+from javis.engine.mock_agent import MockAgent
+from javis.engine.mock_engine import MockEngine
+from javis.runtime import RuntimeBundle, build_javis_runtime
 from javis.session_storage import JavisSessionBackend
 
 
 @pytest.fixture
 def isolated_env(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("JAVIS_WORKSPACE", str(tmp_path / "javis-workspace"))
     # A local socks proxy in the environment breaks httpx client construction
     # (socksio not installed); drop proxy vars so OpenAI clients can build.
@@ -29,45 +24,41 @@ def isolated_env(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_returns_bundle(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env))
+    bundle = await build_javis_runtime(cwd=str(isolated_env), engine="mock")
     assert isinstance(bundle, RuntimeBundle)
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_uses_corecoder_engine(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env))
-    assert isinstance(bundle.engine, CoreCoderEngine)
+async def test_build_javis_runtime_uses_mock_engine(isolated_env):
+    bundle = await build_javis_runtime(cwd=str(isolated_env), engine="mock")
+    assert isinstance(bundle.engine, MockEngine)
+    assert isinstance(bundle.engine._agent, MockAgent)
     assert bundle.engine.model  # non-empty model resolved from env/config
 
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_injects_custom_agent(isolated_env):
-    llm = ScriptedLLM(script=[])
-    agent = Agent(llm=llm, max_rounds=5, system_prompt="test prompt")
     bundle = await build_javis_runtime(
-        cwd=str(isolated_env), agent=agent, model="test-model", system_prompt="test prompt"
+        cwd=str(isolated_env),
+        agent_backend=MockAgent(),
+        model="test-model",
+        system_prompt="test prompt",
     )
     assert bundle.engine.model == "test-model"
     assert bundle.engine.system_prompt == "test prompt"
-
-
-@pytest.mark.asyncio
-async def test_build_javis_runtime_uses_mock_api_client(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env))
-    assert isinstance(bundle.api_client, MockApiClient)
-    assert bundle.external_api_client is True
+    assert isinstance(bundle.engine._agent, MockAgent)
 
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_session_backend(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env))
+    bundle = await build_javis_runtime(cwd=str(isolated_env), engine="mock")
     assert isinstance(bundle.session_backend, JavisSessionBackend)
 
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_preserves_cwd(isolated_env):
     cwd = str(isolated_env / "project")
-    bundle = await build_javis_runtime(cwd=cwd)
+    bundle = await build_javis_runtime(cwd=cwd, engine="mock")
     assert bundle.cwd == cwd
     assert bundle.engine.system_prompt  # non-empty default
 
@@ -78,7 +69,9 @@ async def test_build_javis_runtime_restores_messages(isolated_env):
         {"role": "user", "content": [{"type": "text", "text": "previous question"}]},
         {"role": "assistant", "content": [{"type": "text", "text": "previous answer"}]},
     ]
-    bundle = await build_javis_runtime(cwd=str(isolated_env), restore_messages=messages)
+    bundle = await build_javis_runtime(
+        cwd=str(isolated_env), engine="mock", restore_messages=messages
+    )
     assert len(bundle.engine.messages) == 2
     assert bundle.engine.messages[0].role == "user"
     assert bundle.engine.messages[1].role == "assistant"
@@ -86,14 +79,67 @@ async def test_build_javis_runtime_restores_messages(isolated_env):
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_accepts_custom_model(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env), model="custom-model")
+    bundle = await build_javis_runtime(cwd=str(isolated_env), model="custom-model", engine="mock")
     assert bundle.engine.model == "custom-model"
 
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_includes_commands(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env))
+    bundle = await build_javis_runtime(cwd=str(isolated_env), engine="mock")
     command_names = {cmd.name for cmd in bundle.commands.list_commands()}
     assert "help" in command_names
     assert "exit" in command_names
     assert "clear" in command_names
+
+
+@pytest.mark.asyncio
+async def test_build_javis_runtime_default_engine_is_corecoder(isolated_env, monkeypatch):
+    from javis.engines.corecoder_backend import CoreCoderBackend
+
+    # The installed openai SDK refuses to construct a client without a
+    # non-empty api_key (it validates credentials eagerly). The fixture already
+    # stripped proxy vars; supply a dummy key so AsyncOpenAI can build.
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    bundle = await build_javis_runtime(cwd=str(isolated_env), engine="corecoder")
+    assert isinstance(bundle.engine._agent, CoreCoderBackend)
+
+
+@pytest.mark.asyncio
+async def test_build_javis_runtime_engine_mock(isolated_env):
+    bundle = await build_javis_runtime(cwd=str(isolated_env), engine="mock")
+    assert isinstance(bundle.engine._agent, MockAgent)
+
+
+@pytest.mark.asyncio
+async def test_build_javis_runtime_engine_and_backend_mutually_exclusive(isolated_env):
+    with pytest.raises(ValueError, match="either engine= or agent_backend="):
+        await build_javis_runtime(cwd=str(isolated_env), engine="mock", agent_backend=MockAgent())
+
+
+@pytest.mark.asyncio
+async def test_build_javis_runtime_unknown_engine_raises(isolated_env):
+    with pytest.raises(ValueError, match="Unknown engine 'nope'"):
+        await build_javis_runtime(cwd=str(isolated_env), engine="nope")
+
+
+@pytest.mark.asyncio
+async def test_build_javis_runtime_restore_calls_backend_load_history(isolated_env):
+    class RecordingBackend(MockAgent):
+        def __init__(self) -> None:
+            super().__init__()
+            self.history_calls = 0
+
+        def load_history(self, messages) -> None:
+            self.history_calls += 1
+
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "previous question"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "previous answer"}]},
+    ]
+    backend = RecordingBackend()
+    bundle = await build_javis_runtime(
+        cwd=str(isolated_env), agent_backend=backend, restore_messages=messages
+    )
+    assert backend.history_calls == 1
+    assert len(bundle.engine.messages) == 2

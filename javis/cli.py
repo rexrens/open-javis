@@ -1,68 +1,125 @@
-"""CLI entry point for javis."""
+"""CLI entry point for javis.
+
+Three modes:
+    - default:           launch the React terminal frontend
+    - ``--backend-only``: run the JSON-lines backend host on stdin/stdout
+    - ``--print``/``-p``: run a single prompt and print to stdout
+"""
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
 import typer
 
-from javis.runtime import launch_javis_tui, run_javis_backend, run_javis_print_mode
+from javis.runtime import run_javis_print_mode
+from javis.workspace import initialize_workspace
 
 app = typer.Typer(
     name="javis",
-    help="javis: a custom agent app built on the OpenHarness TUI.",
+    help="javis: a minimal TUI for driving a custom agent.",
     invoke_without_command=True,
     add_completion=False,
 )
 
+_WORKSPACE_HELP = "Path to the javis workspace (defaults to ~/.javis)"
 
-@app.callback()
+
+@app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    cwd: str = typer.Option(None, "--cwd", help="Working directory for the agent."),
-    workspace: str = typer.Option(None, "--workspace", help="Path to the javis workspace (~/.javis)."),
-    model: str = typer.Option(None, "--model", help="Model name shown in the UI status bar."),
-    max_turns: int = typer.Option(None, "--max-turns", help="Maximum agent turns per prompt."),
-    backend_only: bool = typer.Option(False, "--backend-only", help="Run the structured backend host (used internally by the React frontend)."),
-    print_prompt: str = typer.Option(None, "--print", "-p", help="Run a single prompt in print mode and exit."),
+    print_mode: str | None = typer.Option(None, "--print", "-p", help="Run a single prompt and exit"),
+    model: str | None = typer.Option(None, "--model", help="Model override for this session"),
+    engine: str | None = typer.Option(None, "--engine", help="Agent engine (default: config.json or corecoder)"),
+    workspace: str | None = typer.Option(None, "--workspace", help=_WORKSPACE_HELP),
+    max_turns: int | None = typer.Option(None, "--max-turns", help="Override max turns"),
+    cwd: str = typer.Option(str(Path.cwd()), "--cwd", help="Working directory"),
+    backend_only: bool = typer.Option(False, "--backend-only", hidden=True),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
-    """Run javis — launch the TUI by default, or a single prompt with -p."""
+    """Launch javis or run a subcommand."""
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
     if ctx.invoked_subcommand is not None:
         return
 
-    if backend_only:
-        rc = asyncio.run(
-            run_javis_backend(cwd=cwd, workspace=workspace, model=model, max_turns=max_turns)
-        )
-        raise typer.Exit(code=rc)
+    cwd_path = str(Path(cwd).resolve())
+    workspace_root = initialize_workspace(workspace)
 
-    if print_prompt is not None:
-        rc = asyncio.run(
-            run_javis_print_mode(
-                prompt=print_prompt,
-                cwd=cwd,
-                workspace=workspace,
-                model=model,
-                max_turns=max_turns,
+    if backend_only:
+        from javis.backend_host import run_javis_backend
+
+        raise SystemExit(
+            asyncio.run(
+                run_javis_backend(
+                    cwd=cwd_path,
+                    workspace=workspace_root,
+                    model=model,
+                    max_turns=max_turns,
+                    engine=engine,
+                )
             )
         )
-        raise typer.Exit(code=rc)
 
-    rc = asyncio.run(
-        launch_javis_tui(cwd=cwd, workspace=workspace, model=model, max_turns=max_turns)
+    if print_mode is not None:
+        raise SystemExit(
+            asyncio.run(
+                run_javis_print_mode(
+                    prompt=print_mode,
+                    cwd=cwd_path,
+                    workspace=workspace_root,
+                    model=model,
+                    max_turns=max_turns,
+                    engine=engine,
+                )
+            )
+        )
+
+    from javis.react_launcher import launch_react_tui
+
+    raise SystemExit(
+        asyncio.run(
+            launch_react_tui(
+                cwd=cwd_path,
+                workspace=workspace_root,
+                model=model,
+                max_turns=max_turns,
+                engine=engine,
+            )
+        )
     )
-    raise typer.Exit(code=rc)
 
 
-@app.command()
-def version() -> None:
-    """Print the javis version and exit."""
+@app.command("doctor")
+def doctor(
+    cwd: str = typer.Option(str(Path.cwd()), "--cwd", help="Working directory"),
+    workspace: str | None = typer.Option(None, "--workspace", help=_WORKSPACE_HELP),
+) -> None:
+    """Check the javis workspace and frontend layout."""
+    from javis.react_launcher import get_frontend_dir
+    from javis.workspace import workspace_health
+
+    workspace_root = initialize_workspace(workspace)
+    print(f"javis workspace: {workspace_root}")
+    for key, ok in workspace_health(workspace_root).items():
+        print(f"  {key}: {'ok' if ok else 'missing'}")
+
+    print(f"frontend dir:   {get_frontend_dir()}")
+    print(f"cwd:            {Path(cwd).resolve()}")
+
+
+@app.command("version")
+def version_cmd() -> None:
+    """Show the javis version."""
     from javis import __version__
 
-    typer.echo(f"javis {__version__}")
+    print(f"javis {__version__}")
 
 
-if __name__ == "__main__":
-    app()
+__all__ = ["app"]

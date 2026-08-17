@@ -1,223 +1,55 @@
-"""Runtime assembly for javis — a slim alternative to ``openharness.ui.runtime.build_runtime``.
+"""Runtime assembly and request dispatch for javis.
 
-Skips MCP connection, hook loading, docker sandbox, autodream and session
-memory. The engine is a ``CoreCoderEngine`` over a real CoreCoder ``Agent``
-(LLM configured from env vars via ``Config.from_env``).
+This is the javis equivalent of ``openharness.ui.runtime`` — but stripped of
+MCP, hooks, permissions, bridge, tasks, coordinator, auth, sandbox, plugins,
+themes and output-styles. What remains:
 
-To inject a custom agent (e.g. with a ``ScriptedLLM`` for tests), pass it to
-``build_javis_runtime`` via ``agent=`` — no other change is needed.
+- ``RuntimeBundle`` — engine + commands + app_state + session_backend
+- ``build_javis_runtime`` — assembles a bundle with a ``MockEngine``
+- ``handle_line`` — the single dispatch point (slash commands + agent turns)
+- ``start_runtime`` / ``close_runtime`` — lifecycle hooks (currently no-ops)
+- ``run_javis_print_mode`` — non-interactive single-prompt mode
+
+``handle_line`` yields ``AgentEvent`` straight through to the host's
+``render_event`` callback — no ``StreamEvent`` translation layer.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
-import os
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
-from openharness.api.client import SupportsStreamingMessages
-from openharness.api.usage import UsageSnapshot
-from openharness.bridge import get_bridge_manager
-from openharness.commands import create_default_command_registry
-from openharness.config.settings import load_settings
-from openharness.engine.messages import ConversationMessage, sanitize_conversation_messages
-from openharness.engine.stream_events import (
-    AssistantTextDelta,
-    AssistantTurnComplete,
-    CompactProgressEvent,
-    ErrorEvent,
-    StatusEvent,
-)
-from openharness.hooks import HookEvent, HookExecutionContext, HookExecutor
-from openharness.hooks.loader import HookRegistry
-from openharness.mcp.client import McpClientManager
-from openharness.tools import create_default_tool_registry
-from openharness.ui.backend_host import BackendHostConfig
-from openharness.ui.react_launcher import _resolve_npm, _resolve_tsx, get_frontend_dir
-from openharness.ui.runtime import RuntimeBundle, close_runtime, handle_line, start_runtime
-
-from javis.corecoder.agent import Agent
-from javis.corecoder.config import Config
-from javis.corecoder.llm import LLM
-from javis.corecoder.tools import ALL_TOOLS
-from javis.engine.corecoder_engine import CoreCoderEngine
+from javis.commands import CommandContext, CommandRegistry, create_default_command_registry
+from javis.engine.mock_engine import MockEngine
+from javis.engine.protocol import AgentBackend
+from javis.engine.types import AgentEvent, AgentTextDelta, AgentToolCallStart, AgentToolCallResult, AgentTurnEnd, AgentError, AgentStatus
+from javis.messages import ConversationMessage, sanitize_conversation_messages
 from javis.prompts import build_javis_system_prompt
 from javis.session_storage import JavisSessionBackend
+from javis.state import AppState, AppStateStore
+from javis.usage import UsageSnapshot
 from javis.workspace import initialize_workspace
 
-
-class MockApiClient:
-    """No-op ``SupportsStreamingMessages`` used to satisfy runtime typing.
-
-    The engine (``CoreCoderEngine``) never calls ``stream_message`` — the
-    CoreCoder loop talks to its own ``LLM``. This class exists so
-    ``RuntimeBundle.api_client`` and ``HookExecutionContext.api_client`` have a
-    value to hold.
-    """
-
-    async def stream_message(self, request):  # pragma: no cover - never called
-        del request
-        return
-        yield  # make this an async generator for typing purposes
-
-    async def close(self) -> None:
-        return None
+SystemPrinter = Callable[[str], Awaitable[None]]
+StreamRenderer = Callable[[AgentEvent], Awaitable[None]]
+ClearHandler = Callable[[], Awaitable[None]]
 
 
-def _resolve_model(model: str | None) -> str:
-    if model:
-        return model
-    return Config.from_env().model
+@dataclass
+class RuntimeBundle:
+    """Everything the host needs to drive one interactive session."""
 
-
-def _build_agent(
-    model: str | None,
-    max_turns: int | None,
-    system_prompt: str,
-) -> Agent:
-    """Create the CoreCoder agent with env-based LLM configuration."""
-    cfg = Config.from_env()
-    llm = LLM(
-        model=_resolve_model(model),
-        # The OpenAI SDK raises at construction without a key; the placeholder
-        # keeps the engine bootable and defers the auth failure to first call.
-        api_key=cfg.api_key or "sk-missing",
-        base_url=cfg.base_url,
-        max_tokens=cfg.max_tokens,
-        temperature=cfg.temperature,
-    )
-    return Agent(
-        llm=llm,
-        tools=ALL_TOOLS,
-        max_rounds=max(1, int(max_turns)) if max_turns is not None else 50,
-        system_prompt=system_prompt,
-    )
-
-
-async def build_javis_runtime(
-    *,
-    cwd: str | None = None,
-    model: str | None = None,
-    max_turns: int | None = None,
-    system_prompt: str | None = None,
-    agent: Agent | None = None,
-    restore_messages: list[dict] | None = None,
-    restore_tool_metadata: dict[str, object] | None = None,
-    session_backend: JavisSessionBackend | None = None,
-    workspace: str | Path | None = None,
-    extra_skill_dirs: Iterable[str | Path] = (),
-    extra_plugin_roots: Iterable[str | Path] = (),
-) -> RuntimeBundle:
-    """Assemble a ``RuntimeBundle`` with a ``CoreCoderEngine``.
-
-    Mirrors the shape of ``openharness.ui.runtime.build_runtime`` but drops
-    model-client resolution, MCP connect, hook loading, sandbox, autodream and
-    session memory. The engine is a ``CoreCoderEngine`` over a real CoreCoder
-    ``Agent`` (``LLM`` built from env vars via ``Config.from_env``). Pass
-    ``agent=`` to inject a custom agent (e.g. with a ``ScriptedLLM`` for tests).
-    """
-    settings = load_settings()
-    cwd_resolved = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd())
-    workspace_root = initialize_workspace(workspace)
-    model_name = _resolve_model(model)
-    system_prompt_text = system_prompt or build_javis_system_prompt(cwd_resolved, workspace=workspace_root)
-
-    # MCP manager constructed but not connected — mock agent doesn't use MCP.
-    mcp_manager = McpClientManager({})
-    tool_registry = create_default_tool_registry(mcp_manager)
-
-    # Empty hook registry so SESSION_START / SESSION_END are no-ops.
-    api_client = MockApiClient()
-    hook_executor = HookExecutor(
-        HookRegistry(),
-        HookExecutionContext(
-            cwd=Path(cwd_resolved),
-            api_client=api_client,  # type: ignore[arg-type]
-            default_model=model_name,
-        ),
-    )
-
-    # App state — minimal fields filled so the React status bar renders.
-    from openharness.state import AppState, AppStateStore
-
-    app_state = AppStateStore(
-        AppState(
-            model=model_name,
-            permission_mode=settings.permission.mode.value,
-            theme=settings.theme,
-            cwd=cwd_resolved,
-            provider="javis",
-            auth_status="ok",
-            base_url="",
-            effort=settings.effort,
-            passes=settings.passes,
-            output_style=settings.output_style,
-        )
-    )
-
-    # CoreCoderEngine — the real agent loop.
-    agent = agent or _build_agent(model_name, max_turns, system_prompt_text)
-    tool_metadata: dict[str, Any] = {
-        "permission_mode": settings.permission.mode.value,
-        "read_file_state": [],
-        "invoked_skills": [],
-        "async_agent_state": [],
-        "async_agent_tasks": [],
-        "recent_work_log": [],
-        "recent_verified_work": [],
-        "task_focus_state": {
-            "goal": "",
-            "recent_goals": [],
-            "active_artifacts": [],
-            "verified_state": [],
-            "next_step": "",
-        },
-        "compact_checkpoints": [],
-    }
-    if isinstance(restore_tool_metadata, dict):
-        tool_metadata.update(restore_tool_metadata)
-
-    session_id = uuid4().hex[:12]
-    tool_metadata["session_id"] = session_id
-
-    engine = CoreCoderEngine(
-        agent=agent,
-        model=model_name,
-        system_prompt=system_prompt_text,
-        cwd=cwd_resolved,
-        max_turns=max_turns,
-        tool_metadata=tool_metadata,
-        api_client=api_client,
-    )
-
-    if restore_messages:
-        restored = sanitize_conversation_messages(
-            [ConversationMessage.model_validate(m) for m in restore_messages]
-        )
-        engine.load_messages(restored)
-
-    normalized_skill_dirs = tuple(str(Path(p).expanduser().resolve()) for p in extra_skill_dirs)
-    normalized_plugin_roots = tuple(str(Path(p).expanduser().resolve()) for p in extra_plugin_roots)
-
-    return RuntimeBundle(
-        api_client=api_client,  # type: ignore[arg-type]
-        cwd=cwd_resolved,
-        mcp_manager=mcp_manager,
-        tool_registry=tool_registry,
-        app_state=app_state,
-        hook_executor=hook_executor,
-        engine=engine,  # type: ignore[arg-type]
-        commands=create_default_command_registry(),
-        external_api_client=True,
-        enforce_max_turns=False,
-        session_id=session_id,
-        session_backend=session_backend or JavisSessionBackend(workspace_root),
-        extra_skill_dirs=normalized_skill_dirs,
-        extra_plugin_roots=normalized_plugin_roots,
-    )
+    engine: MockEngine
+    cwd: str
+    app_state: AppStateStore
+    commands: CommandRegistry
+    session_backend: JavisSessionBackend
+    session_id: str
+    system_prompt: str = ""
+    settings_overrides: dict[str, Any] = field(default_factory=dict)
 
 
 def build_javis_backend_command(
@@ -227,7 +59,7 @@ def build_javis_backend_command(
     model: str | None = None,
     max_turns: int | None = None,
 ) -> list[str]:
-    """Return the backend command the React frontend will spawn."""
+    """Return the command the React frontend will spawn to start the backend."""
     command = [sys.executable, "-m", "javis", "--backend-only"]
     if cwd:
         command.extend(["--cwd", cwd])
@@ -240,94 +72,181 @@ def build_javis_backend_command(
     return command
 
 
-async def run_javis_backend(
+async def build_javis_runtime(
     *,
     cwd: str | None = None,
-    workspace: str | Path | None = None,
     model: str | None = None,
     max_turns: int | None = None,
+    system_prompt: str | None = None,
+    agent_backend: AgentBackend | None = None,
+    engine: str | None = None,
     restore_messages: list[dict] | None = None,
     restore_tool_metadata: dict[str, object] | None = None,
-) -> int:
-    """Run the structured React backend host with javis's CoreCoderEngine."""
-    from javis.backend_host import JavisBackendHost
-
-    cwd_path = str(Path(cwd or Path.cwd()).resolve())
-    workspace_root = initialize_workspace(workspace)
-    bundle = await build_javis_runtime(
-        cwd=cwd_path,
-        model=model,
-        max_turns=max_turns,
-        restore_messages=restore_messages,
-        restore_tool_metadata=restore_tool_metadata,
-        workspace=workspace_root,
-    )
-    host = JavisBackendHost(
-        bundle=bundle,
-        config=BackendHostConfig(
-            model=model,
-            max_turns=max_turns,
-            cwd=cwd_path,
-        ),
-    )
-    return await host.run()
-
-
-async def launch_javis_tui(
-    *,
-    cwd: str | None = None,
+    session_backend: JavisSessionBackend | None = None,
     workspace: str | Path | None = None,
-    model: str | None = None,
-    max_turns: int | None = None,
-) -> int:
-    """Launch the React terminal frontend with a javis backend.
+) -> RuntimeBundle:
+    """Assemble a ``RuntimeBundle`` backed by a ``MockEngine``.
 
-    Mirrors ``openharness.ui.react_launcher.launch_react_tui`` but spawns
-    ``python -m javis --backend-only`` instead of ``python -m openharness``.
+    The agent backend is resolved in one of two ways:
+      - ``agent_backend=...`` — explicit backend (used by tests)
+      - ``engine=...`` — named engine via the registry (config.json / env
+        fall back to the default engine when omitted)
+    Passing both raises ``ValueError``.
     """
-    frontend_dir = get_frontend_dir()
-    package_json = frontend_dir / "package.json"
-    if not package_json.exists():
-        raise RuntimeError(f"React terminal frontend is missing: {package_json}")
+    if engine is not None and agent_backend is not None:
+        raise ValueError("Pass either engine= or agent_backend=, not both")
 
-    npm = _resolve_npm()
-    if not (frontend_dir / "node_modules").exists():
-        install = await asyncio.create_subprocess_exec(
-            npm,
-            "install",
-            "--no-fund",
-            "--no-audit",
-            cwd=str(frontend_dir),
-        )
-        if await install.wait() != 0:
-            raise RuntimeError("Failed to install React terminal frontend dependencies")
-
-    cwd_path = str(Path(cwd or Path.cwd()).resolve())
+    cwd_resolved = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd())
     workspace_root = initialize_workspace(workspace)
-    env = os.environ.copy()
-    env["OPENHARNESS_FRONTEND_CONFIG"] = json.dumps(
-        {
-            "backend_command": build_javis_backend_command(
-                cwd=cwd_path,
-                workspace=workspace_root,
-                model=model,
-                max_turns=max_turns,
-            ),
-            "initial_prompt": None,
-            "theme": "default",
-        }
+    system_prompt_text = system_prompt or build_javis_system_prompt(cwd_resolved, workspace=workspace_root)
+
+    tool_metadata: dict[str, Any] = {
+        "permission_mode": "default",
+        "session_id": "",
+    }
+    if isinstance(restore_tool_metadata, dict):
+        tool_metadata.update(restore_tool_metadata)
+
+    session_id = uuid4().hex[:12]
+    tool_metadata["session_id"] = session_id
+
+    if agent_backend is None:
+        from javis.config import load_config, resolve_engine_name
+        from javis.engines import create_agent_backend, get_engine_config
+
+        config_data = load_config(workspace_root)
+        engine_name = resolve_engine_name(engine, config_data)
+        agent_backend = create_agent_backend(
+            engine_name,
+            model=model,
+            system_prompt=system_prompt_text,
+            cwd=cwd_resolved,
+            max_turns=max_turns,
+            tool_metadata=tool_metadata,
+            engine_config=get_engine_config(engine_name, config_data),
+        )
+
+    model_name = model or getattr(agent_backend, "model", None) or "javis-mock"
+
+    engine_obj = MockEngine(
+        agent_backend=agent_backend,
+        model=model_name,
+        system_prompt=system_prompt_text,
+        cwd=cwd_resolved,
+        max_turns=max_turns,
+        tool_metadata=tool_metadata,
     )
-    tsx_cmd = _resolve_tsx(frontend_dir)
-    process = await asyncio.create_subprocess_exec(
-        *tsx_cmd,
-        "src/index.tsx",
-        cwd=str(frontend_dir),
-        env=env,
-        stdin=None,
-        stdout=None,
-        stderr=None,
+
+    if restore_messages:
+        restored = sanitize_conversation_messages(
+            [ConversationMessage.model_validate(m) for m in restore_messages]
+        )
+        engine_obj.load_messages(restored)
+        if hasattr(agent_backend, "load_history"):
+            agent_backend.load_history(restored)
+
+    app_state = AppStateStore(
+        AppState(
+            model=model_name,
+            cwd=cwd_resolved,
+            permission_mode="default",
+            theme="default",
+            provider="javis",
+            auth_status="ok",
+            effort="medium",
+            passes=1,
+            output_style="default",
+        )
     )
-    return await process.wait()
+
+    return RuntimeBundle(
+        engine=engine_obj,
+        cwd=cwd_resolved,
+        app_state=app_state,
+        commands=create_default_command_registry(),
+        session_backend=session_backend or JavisSessionBackend(workspace_root),
+        session_id=session_id,
+        system_prompt=system_prompt_text,
+    )
+
+
+async def start_runtime(bundle: RuntimeBundle) -> None:
+    """Lifecycle hook — currently a no-op (no hooks/MCP/sandbox to start)."""
+    return None
+
+
+async def close_runtime(bundle: RuntimeBundle) -> None:
+    """Lifecycle hook — currently a no-op (no resources to close)."""
+    return None
+
+
+def _save_session(bundle: RuntimeBundle) -> None:
+    """Persist the current conversation to the session backend."""
+    bundle.session_backend.save_snapshot(
+        cwd=bundle.cwd,
+        model=bundle.engine.model,
+        system_prompt=bundle.engine.system_prompt,
+        messages=bundle.engine.messages,
+        usage=bundle.engine.total_usage,
+        session_id=bundle.session_id,
+        tool_metadata=bundle.engine.tool_metadata,
+    )
+
+
+async def handle_line(
+    bundle: RuntimeBundle,
+    line: str,
+    *,
+    print_system: SystemPrinter,
+    render_event: StreamRenderer,
+    clear_output: ClearHandler,
+    user_message: ConversationMessage | None = None,
+) -> bool:
+    """Handle one submitted line. Returns ``True`` to continue, ``False`` to exit."""
+    parsed = None if user_message is not None else bundle.commands.lookup(line)
+    if parsed is not None:
+        command, args = parsed
+        context = CommandContext(
+            engine=bundle.engine,
+            app_state=bundle.app_state,
+            cwd=bundle.cwd,
+            session_id=bundle.session_id,
+        )
+        result = await command.handler(args, context)
+        if result.clear_screen:
+            await clear_output()
+        if result.message:
+            await print_system(result.message)
+        if result.replay_messages:
+            await clear_output()
+            await print_system("Session restored:")
+            for msg in result.replay_messages:
+                if msg.role == "user":
+                    await print_system(f"> {msg.text}")
+                elif msg.role == "assistant" and msg.text.strip():
+                    async for event in _replay_assistant(msg):
+                        await render_event(event)
+        if result.submit_prompt:
+            async for event in bundle.engine.submit_message(result.submit_prompt):
+                await render_event(event)
+            _save_session(bundle)
+        if result.continue_pending:
+            async for event in bundle.engine.continue_pending(max_turns=result.continue_turns):
+                await render_event(event)
+            _save_session(bundle)
+        return not result.should_exit
+
+    # Normal prompt — feed it to the engine.
+    async for event in bundle.engine.submit_message(user_message or line):
+        await render_event(event)
+    _save_session(bundle)
+    return True
+
+
+async def _replay_assistant(message: ConversationMessage):
+    """Replay a restored assistant message as a text delta + turn end."""
+    yield AgentTextDelta(text=message.text)
+    yield AgentTurnEnd(text=message.text)
 
 
 async def run_javis_print_mode(
@@ -337,18 +256,20 @@ async def run_javis_print_mode(
     workspace: str | Path | None = None,
     model: str | None = None,
     max_turns: int | None = None,
+    engine: str | None = None,
 ) -> int:
-    """Run a single javis prompt and print the assistant output."""
+    """Run a single prompt and print the assistant output to stdout."""
     cwd_path = str(Path(cwd or Path.cwd()).resolve())
-    workspace_root = initialize_workspace(workspace)
     previous_cwd = Path.cwd()
+    import os
     os.chdir(cwd_path)
     try:
         bundle = await build_javis_runtime(
             cwd=cwd_path,
             model=model,
             max_turns=max_turns,
-            workspace=workspace_root,
+            engine=engine,
+            workspace=workspace,
         )
         await start_runtime(bundle)
 
@@ -359,20 +280,18 @@ async def run_javis_print_mode(
 
         async def _render_event(event) -> None:
             nonlocal saw_error
-            if isinstance(event, AssistantTextDelta):
+            if isinstance(event, AgentTextDelta):
                 sys.stdout.write(event.text)
                 sys.stdout.flush()
-            elif isinstance(event, AssistantTurnComplete):
+            elif isinstance(event, AgentTurnEnd):
                 sys.stdout.write("\n")
                 sys.stdout.flush()
-            elif isinstance(event, ErrorEvent):
+            elif isinstance(event, AgentError):
                 saw_error = True
                 print(event.message, file=sys.stderr)
-            elif isinstance(event, CompactProgressEvent):
-                if event.message:
-                    print(event.message, file=sys.stderr)
-            elif isinstance(event, StatusEvent):
+            elif isinstance(event, AgentStatus):
                 print(event.message, file=sys.stderr)
+            # Tool start/result events are not printed in print mode.
 
         async def _clear_output() -> None:
             return None
@@ -391,10 +310,11 @@ async def run_javis_print_mode(
 
 
 __all__ = [
-    "MockApiClient",
+    "RuntimeBundle",
     "build_javis_backend_command",
     "build_javis_runtime",
-    "launch_javis_tui",
-    "run_javis_backend",
+    "close_runtime",
+    "handle_line",
     "run_javis_print_mode",
+    "start_runtime",
 ]
