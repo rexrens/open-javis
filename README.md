@@ -1,5 +1,7 @@
 # javis
 
+**English** | [简体中文](README.zh-CN.md)
+
 > An open-source, Python-native terminal AI coding assistant — a from-scratch port of the Claude Code experience.
 
 javis drives an agentic coding loop from your terminal: you type a request, the agent reads files, runs commands, edits code, and streams its progress back — all rendered in a React/Ink TUI talking to a Python backend over a JSON-lines protocol.
@@ -152,13 +154,6 @@ javis/                Shell: CLI, runtime, backend host, protocol, engine regist
   frontend/terminal   React/Ink TUI (TypeScript)
 tests/                pytest suite
 ```
-
-## Roadmap
-
-- [ ] Raise test coverage on the LLM streaming layer (`corecoder/llm.py`) and backend host
-- [ ] Wire the `TodoPanel` frontend component to a `todo_update` backend event source
-- [ ] Implement real `start_runtime` / `close_runtime` lifecycle hooks (session cleanup)
-- [ ] MCP / plugin support
 
 ## License
 
