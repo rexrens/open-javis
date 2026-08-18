@@ -2,17 +2,24 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-> An open-source, Python-native terminal AI coding assistant — a from-scratch port of the Claude Code experience.
+> javis — your own local AI coding assistant. Fully customizable, written in Python.
 
-javis drives an agentic coding loop from your terminal: you type a request, the agent reads files, runs commands, edits code, and streams its progress back — all rendered in a React/Ink TUI talking to a Python backend over a JSON-lines protocol.
+You use Claude Code every day, but it's a closed box — you can't shape it to your workflow. javis is a Python-native local assistant built to be **yours**: the frontend, the agent loop, and the extension surface are all open to customization.
 
-It is built from two layers:
+- **Frontend** — built on the **openharness** React/Ink terminal UI and continuously customized for javis. You never need to write TypeScript: the frontend is AI-maintained, while you stay in Python.
+- **Backend** — a **self-developed AgentLoop in Python** (`corecoder/`): LLM tool-calling loop, parallel tool execution, context compression, retry/backoff and cost tracking.
+- **Extensibility** — a **plugin system is planned**, following the DeepSeek Harness approach, to deliver a wide range of extensions through pluggable plugins.
 
-- **`corecoder/`** — the agent engine: an LLM tool-calling loop with parallel tool execution, context compression, retry/backoff and cost tracking.
-- **`javis/`** — the shell: CLI, runtime, JSON-lines backend host, engine registry, slash commands, session persistence, and the React TUI launcher.
+Two layers:
+
+- **`corecoder/`** — the self-developed AgentLoop: LLM tool-calling loop with parallel tool execution, context compression, retry/backoff and cost tracking.
+- **`javis/`** — the shell: CLI, runtime, JSON-lines backend host, engine registry, slash commands, session persistence, and the TUI launcher.
 
 ## Features
 
+- **Built on the openharness frontend** — the React/Ink TUI is forked from openharness and customized for javis; frontend changes are AI-assisted, so you never have to write TypeScript.
+- **Self-developed AgentLoop** — the Python agent engine (`corecoder/`) is written from scratch: tool loop, parallel execution, context compression, retries, cost tracking.
+- **Plugin system (planned)** — following the DeepSeek Harness **"everything is a plugin"** philosophy: model adapters, tool registry, even the agent loop itself will be pluggable and swappable.
 - **Any OpenAI-compatible model** — DeepSeek, Qwen, Kimi, GLM, Ollama, etc. Switch providers by changing `base_url` + `api_key`. Non-OpenAI providers (Bedrock, Vertex, …) work via the built-in LiteLLM backend.
 - **Agentic tool loop** — `bash`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, plus a nested sub-`agent` tool. Multiple tool calls execute **in parallel** (thread-pool based, inspired by Claude Code's `StreamingToolExecutor`).
 - **Streaming TUI** — React + Ink terminal frontend with markdown rendering, tool transcripts, permission/edit modals, theme/permission/turns selectors, and image attachments.
@@ -23,6 +30,8 @@ It is built from two layers:
 - **Deterministic offline testing** — `ScriptedLLM` / `AsyncScriptedLLM` and a built-in `mock` engine let you exercise the full stack without network.
 
 ## Architecture
+
+The React/Ink frontend is forked from openharness and customized for javis; everything below it — protocol, runtime, agent loop — is our own Python implementation.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐

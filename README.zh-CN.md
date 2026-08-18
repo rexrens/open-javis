@@ -2,17 +2,24 @@
 
 [English](README.md) | **简体中文**
 
-> 一个开源的、纯 Python 实现的终端 AI 编程助手 —— 从零重写 Claude Code 的体验。
+> javis —— 你自己的本地 AI 编程助理。完全可自定义，用 Python 编写。
 
-javis 在终端里驱动一个智能体编码循环：你输入请求，智能体读取文件、执行命令、编辑代码，并实时流式回显进度 —— 全部渲染在一个 React/Ink 终端界面中，通过 JSON-lines 协议与 Python 后端通信。
+你每天都在用 Claude Code，但它是一个黑盒——无法按照你的工作流去改造它。javis 是一个纯 Python 的本地助理，从设计上就属于**你**：前端、Agent 循环、扩展面全部开放，可自由定制。
 
-它由两层组成：
+- **前端** — 基于 **openharness** 的 React/Ink 终端界面，并持续为 javis 定制改造。你不需要写 TypeScript：前端由 AI 维护，你只管 Python。
+- **后端** — **自研的 Python AgentLoop**（`corecoder/`）：LLM 工具调用循环、并行工具执行、上下文压缩、重试/退避和成本统计。
+- **可扩展性** — **插件系统（规划中）**，借鉴 DeepSeek Harness 的思路，通过可插拔的插件承载各类扩展方案。
 
-- **`corecoder/`** — 智能体引擎：LLM 工具调用循环，支持并行工具执行、上下文压缩、重试/退避和成本统计。
-- **`javis/`** — 外壳层：CLI、运行时、JSON-lines 后端主机、引擎注册表、斜杠命令、会话持久化和 React TUI 启动器。
+由两层组成：
+
+- **`corecoder/`** — 自研 AgentLoop：LLM 工具调用循环，支持并行工具执行、上下文压缩、重试/退避和成本统计。
+- **`javis/`** — 外壳层：CLI、运行时、JSON-lines 后端主机、引擎注册表、斜杠命令、会话持久化和 TUI 启动器。
 
 ## 特性
 
+- **基于 openharness 前端** — React/Ink TUI 从 openharness fork 而来，并针对 javis 持续定制；前端改动由 AI 协助完成，你永远不需要写 TypeScript。
+- **自研 AgentLoop** — Python 智能体引擎（`corecoder/`）从零编写：工具循环、并行执行、上下文压缩、重试、成本统计。
+- **插件系统（规划中）** — 借鉴 DeepSeek Harness **"一切皆插件"** 的理念：模型适配器、工具注册表，甚至 Agent 循环本身都将可插拔、可替换。
 - **任意 OpenAI 兼容模型** — DeepSeek、Qwen、Kimi、GLM、Ollama 等。修改 `base_url` + `api_key` 即可切换供应商。非 OpenAI 兼容供应商（Bedrock、Vertex 等）可通过内置的 LiteLLM 后端使用。
 - **智能体工具循环** — `bash`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`，以及嵌套的子 `agent` 工具。多个工具调用**并行执行**（基于线程池，灵感来自 Claude Code 的 `StreamingToolExecutor`）。
 - **流式 TUI** — React + Ink 终端前端，支持 Markdown 渲染、工具记录、权限/编辑确认弹窗、主题/权限/轮次选择器，以及图片附件。
@@ -23,6 +30,8 @@ javis 在终端里驱动一个智能体编码循环：你输入请求，智能�
 - **确定性离线测试** — `ScriptedLLM` / `AsyncScriptedLLM` 和内置的 `mock` 引擎让你无需联网即可跑通全栈。
 
 ## 架构
+
+前端 React/Ink 界面从 openharness fork 而来并针对 javis 定制改造；其下的协议、运行时、Agent 循环全部是自研的 Python 实现。
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
