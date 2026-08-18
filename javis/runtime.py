@@ -23,9 +23,9 @@ from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from javis.commands import CommandContext, CommandRegistry, create_default_command_registry
-from javis.engine.mock_engine import MockEngine
-from javis.engine.protocol import AgentBackend
-from javis.engine.types import AgentEvent, AgentTextDelta, AgentTurnEnd, AgentError, AgentStatus
+from javis.core.engine import MockEngine
+from javis.core.protocol import AgentBackend
+from javis.core.types import AgentEvent, AgentTextDelta, AgentTurnEnd, AgentError, AgentStatus
 from javis.messages import ConversationMessage, sanitize_conversation_messages
 from javis.prompts import build_javis_system_prompt
 from javis.session_storage import JavisSessionBackend

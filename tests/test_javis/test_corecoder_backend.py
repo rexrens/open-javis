@@ -8,14 +8,14 @@ import pytest
 
 from corecoder.agent import Agent
 from corecoder.llm import AsyncScriptedLLM, LLMResponse, ToolCall
-from javis.engine.types import (
+from javis.core.types import (
     AgentError,
     AgentTextDelta,
     AgentToolCallResult,
     AgentToolCallStart,
     AgentTurnEnd,
 )
-from javis.engines.corecoder_backend import CoreCoderBackend, _to_corecoder_messages
+from javis.engines.corecoder.backend import CoreCoderBackend, _to_corecoder_messages
 from javis.messages import ConversationMessage, ImageBlock, TextBlock, ToolResultBlock
 
 
@@ -182,7 +182,7 @@ def test_to_corecoder_messages_handles_images_and_tool_results():
 
 
 def test_build_corecoder_backend_applies_config(monkeypatch):
-    from javis.engines.corecoder_backend import build_corecoder_backend
+    from javis.engines.corecoder.backend import build_corecoder_backend
 
     # AsyncOpenAI builds an httpx client eagerly from proxy env vars; this
     # machine sets ALL_PROXY=socks://... which httpx rejects. Neutralize the

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from javis.engine.mock_agent import MockAgent
-from javis.engine.types import (
+from javis.engines.mock.agent import MockAgent
+from javis.core.types import (
     AgentContext,
     AgentError,
     AgentStatus,

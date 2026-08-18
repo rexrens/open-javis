@@ -549,7 +549,7 @@ async def run_javis_backend(
 
 
 # Late imports — keep these at the bottom to avoid circular dependencies.
-from javis.engine.types import (  # noqa: E402
+from javis.core.types import (  # noqa: E402
     AgentError,
     AgentStatus,
     AgentTextDelta,

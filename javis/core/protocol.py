@@ -11,7 +11,7 @@ from typing import AsyncIterator, Protocol, runtime_checkable
 
 from javis.messages import ConversationMessage
 
-from javis.engine.types import AgentContext, AgentEvent
+from javis.core.types import AgentContext, AgentEvent
 
 
 @runtime_checkable

@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from javis.engine.protocol import AgentBackend
+from javis.core.protocol import AgentBackend
 
 BackendFactory = Callable[..., AgentBackend]
 
@@ -61,13 +61,13 @@ def create_agent_backend(
 
 def _build_mock_backend(**kwargs) -> AgentBackend:
     del kwargs
-    from javis.engine.mock_agent import MockAgent
+    from javis.engines.mock.agent import MockAgent
 
     return MockAgent()
 
 
 def _build_corecoder_backend(**kwargs) -> AgentBackend:
-    from javis.engines.corecoder_backend import build_corecoder_backend
+    from javis.engines.corecoder.backend import build_corecoder_backend
 
     return build_corecoder_backend(**kwargs)
 

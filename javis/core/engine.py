@@ -19,8 +19,8 @@ from typing import Any, AsyncIterator
 from javis.messages import ConversationMessage, TextBlock
 from javis.usage import UsageSnapshot
 
-from javis.engine.protocol import AgentBackend
-from javis.engine.types import (
+from javis.core.protocol import AgentBackend
+from javis.core.types import (
     AgentContext,
     AgentError,
     AgentEvent,

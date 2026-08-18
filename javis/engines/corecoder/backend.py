@@ -15,8 +15,8 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-from javis.engine.protocol import AgentBackend
-from javis.engine.types import (
+from javis.core.protocol import AgentBackend
+from javis.core.types import (
     AgentContext,
     AgentError,
     AgentEvent,

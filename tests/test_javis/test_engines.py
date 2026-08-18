@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from javis.engine.mock_agent import MockAgent
+from javis.engines.mock.agent import MockAgent
 from javis.engines import create_agent_backend, get_engine_config, list_engines, register_engine
 
 

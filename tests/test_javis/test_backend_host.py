@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from javis.backend_host import BackendHostConfig, JavisBackendHost
-from javis.engine.mock_agent import MockAgent
+from javis.engines.mock.agent import MockAgent
 from javis.protocol import BackendEvent
 from javis.runtime import build_javis_runtime, close_runtime, start_runtime
 

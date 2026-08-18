@@ -12,7 +12,7 @@ from typing import AsyncIterator
 
 from javis.messages import ConversationMessage
 
-from javis.engine.types import (
+from javis.core.types import (
     AgentContext,
     AgentError,
     AgentEvent,

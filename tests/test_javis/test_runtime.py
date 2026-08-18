@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from javis.engine.mock_agent import MockAgent
-from javis.engine.mock_engine import MockEngine
+from javis.engines.mock.agent import MockAgent
+from javis.core.engine import MockEngine
 from javis.runtime import RuntimeBundle, build_javis_runtime
 from javis.session_storage import JavisSessionBackend
 
@@ -94,7 +94,7 @@ async def test_build_javis_runtime_includes_commands(isolated_env):
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_default_engine_is_corecoder(isolated_env, monkeypatch):
-    from javis.engines.corecoder_backend import CoreCoderBackend
+    from javis.engines.corecoder.backend import CoreCoderBackend
 
     # The installed openai SDK refuses to construct a client without a
     # non-empty api_key (it validates credentials eagerly). The fixture already
