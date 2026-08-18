@@ -10,16 +10,22 @@ themes and output-styles. What remains:
 - ``start_runtime`` / ``close_runtime`` — lifecycle hooks (currently no-ops)
 - ``run_javis_print_mode`` — non-interactive single-prompt mode
 
+Configuration (``load_config`` / ``resolve_engine_name``) and the system-prompt
+builder (``build_javis_system_prompt``) live here too — they only feed
+``build_javis_runtime``.
+
 ``handle_line`` yields ``AgentEvent`` straight through to the host's
 ``render_event`` callback — no ``StreamEvent`` translation layer.
 """
 
 from __future__ import annotations
 
+import json
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Mapping
 from uuid import uuid4
 
 from javis.commands.registry import CommandContext, CommandRegistry, create_default_command_registry
@@ -27,14 +33,66 @@ from javis.host.query_engine import QueryEngine
 from javis.contracts.protocol import AgentBackend
 from javis.contracts.types import AgentEvent, AgentTextDelta, AgentTurnEnd, AgentError, AgentStatus
 from javis.contracts.messages import ConversationMessage, sanitize_conversation_messages
-from javis.host.prompts import build_javis_system_prompt
 from javis.session.session_storage import JavisSessionBackend
 from javis.session.state import AppState, AppStateStore
-from javis.session.workspace import initialize_workspace
+from javis.session.workspace import get_workspace_root, initialize_workspace
 
 SystemPrinter = Callable[[str], Awaitable[None]]
 StreamRenderer = Callable[[AgentEvent], Awaitable[None]]
 ClearHandler = Callable[[], Awaitable[None]]
+
+
+# ---------------------------------------------------------------------------
+# Configuration — engine selection from config.json, env and CLI.
+# Priority: CLI --engine > env JAVIS_ENGINE > config.json "engine" > default.
+# ---------------------------------------------------------------------------
+
+DEFAULT_ENGINE = "corecoder"
+CONFIG_FILENAME = "config.json"
+
+
+def load_config(workspace: str | Path | None = None) -> dict:
+    """Read <workspace>/config.json. Missing or corrupt file -> {}."""
+    config_path = get_workspace_root(workspace) / CONFIG_FILENAME
+    if not config_path.exists():
+        return {}
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def resolve_engine_name(
+    cli: str | None = None,
+    config: dict | None = None,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    """Resolve the active engine name by priority: CLI > env > config > default."""
+    env = env if env is not None else os.environ
+    config = config or {}
+    if cli:
+        return cli
+    if env.get("JAVIS_ENGINE"):
+        return env["JAVIS_ENGINE"]
+    if config.get("engine"):
+        return str(config["engine"])
+    return DEFAULT_ENGINE
+
+
+# ---------------------------------------------------------------------------
+# System prompt builder
+# ---------------------------------------------------------------------------
+
+def build_javis_system_prompt(cwd: str | Path | None = None, *, workspace: str | Path | None = None) -> str:
+    """Return a short system prompt for the agent."""
+    del cwd, workspace  # signature kept for parity; stored on the engine
+    return (
+        "You are javis, an agent running on the javis TUI.\n\n"
+        "You are backed by an ``AgentBackend`` implementation. Your responses "
+        "stream through the React terminal frontend via the JSON-lines wire "
+        "protocol."
+    )
 
 
 @dataclass
@@ -90,7 +148,6 @@ async def build_javis_runtime(
     tool_metadata["session_id"] = session_id
 
     if agent_backend is None:
-        from javis.host.config import load_config, resolve_engine_name
         from javis.engines import create_agent_backend, get_engine_config
 
         config_data = load_config(workspace_root)
@@ -289,10 +346,15 @@ async def run_javis_print_mode(
 
 
 __all__ = [
+    "CONFIG_FILENAME",
+    "DEFAULT_ENGINE",
     "RuntimeBundle",
     "build_javis_runtime",
+    "build_javis_system_prompt",
     "close_runtime",
     "handle_line",
+    "load_config",
+    "resolve_engine_name",
     "run_javis_print_mode",
     "start_runtime",
 ]
