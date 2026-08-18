@@ -120,12 +120,20 @@ def create_default_command_registry() -> CommandRegistry:
             )
         )
 
+    async def _theme_handler(args: str, context: CommandContext) -> CommandResult:
+        value = args.strip()
+        if not value:
+            return CommandResult(message="Usage: /theme <name>")
+        context.app_state.set(theme=value)
+        return CommandResult(message=f"Theme set to {value}.")
+
     registry.register(Command("help", "Show this help", _help_handler))
     registry.register(Command("exit", "Exit javis", _exit_handler))
     registry.register(Command("quit", "Exit javis", _exit_handler))
     registry.register(Command("clear", "Clear conversation history", _clear_handler))
     registry.register(Command("version", "Show javis version", _version_handler))
     registry.register(Command("status", "Show session status", _status_handler))
+    registry.register(Command("theme", "Set UI theme", _theme_handler))
     return registry
 
 

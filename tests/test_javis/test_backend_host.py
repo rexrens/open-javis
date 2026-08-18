@@ -151,3 +151,15 @@ async def test_backend_host_select_command_model(isolated_env):
         await close_runtime(host._bundle)
 
     assert any(event.type == "select_request" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_apply_select_theme_updates_state(isolated_env):
+    """P0: /theme selector must update AppState, not fall through to the LLM."""
+    host, events = await _make_host(isolated_env)
+    try:
+        await host._apply_select_command("theme", "dark")
+    finally:
+        await close_runtime(host._bundle)
+
+    assert host._bundle.app_state.get().theme == "dark"
