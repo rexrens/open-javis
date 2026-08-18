@@ -188,3 +188,28 @@ async def test_apply_select_turns_unlimited_clears_limit(isolated_env):
         await close_runtime(host._bundle)
 
     assert host._bundle.engine.max_turns is None
+
+
+@pytest.mark.asyncio
+async def test_apply_select_theme_requires_value(isolated_env):
+    """An empty /theme value leaves the theme unchanged and emits a usage message."""
+    host, _ = await _make_host(isolated_env)
+    try:
+        await host._process_line("/theme")
+    finally:
+        await close_runtime(host._bundle)
+
+    assert host._bundle.app_state.get().theme == "default"
+
+
+@pytest.mark.asyncio
+async def test_apply_select_turns_rejects_non_numeric(isolated_env):
+    """A non-numeric /turns value must leave the existing limit unchanged."""
+    host, _ = await _make_host(isolated_env)
+    try:
+        await host._apply_select_command("turns", "64")
+        await host._apply_select_command("turns", "abc")
+    finally:
+        await close_runtime(host._bundle)
+
+    assert host._bundle.engine.max_turns == 64
