@@ -401,7 +401,7 @@ class JavisBackendHost:
 
         if command == "model":
             current = state.model
-            candidates = [current, "javis-mock", "javis-real", "javis-experimental"]
+            candidates = [current] if current else []
             seen: set[str] = set()
             options = []
             for value in candidates:

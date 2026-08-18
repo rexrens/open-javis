@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from javis.engines.mock.agent import MockAgent
+from tests.test_javis.fake_backend import FakeBackend
 from javis.core.query_engine import QueryEngine
 from javis.core.types import (
     AgentError,
@@ -20,8 +20,8 @@ from javis.usage import UsageSnapshot
 
 def _engine(prompt: str = "") -> QueryEngine:
     return QueryEngine(
-        MockAgent(),
-        model="javis-mock",
+        FakeBackend(),
+        model="test-model",
         system_prompt="test",
         cwd="/tmp",
         max_turns=8,
@@ -31,7 +31,7 @@ def _engine(prompt: str = "") -> QueryEngine:
 def test_initial_state():
     engine = _engine()
     assert engine.messages == []
-    assert engine.model == "javis-mock"
+    assert engine.model == "test-model"
     assert engine.system_prompt == "test"
     assert engine.max_turns == 8
     assert engine.has_pending_continuation() is False

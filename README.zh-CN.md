@@ -27,7 +27,7 @@
 - **上下文管理** — 当工具输出使对话超过 token 预算时自动压缩。
 - **健壮的 LLM 层** — 指数退避重试（限流 / 超时 / 5xx）、对不支持 `stream_options` 的供应商自动回退、用量统计和按模型的成本估算。
 - **会话持久化** — 每个会话以原子方式写入 JSON 快照，存放在 `~/.javis/sessions/` 下，TUI 中支持 `/resume` 恢复。
-- **确定性离线测试** — `ScriptedLLM` / `AsyncScriptedLLM` 和内置的 `mock` 引擎让你无需联网即可跑通全栈。
+- **确定性离线测试** — `ScriptedLLM` / `AsyncScriptedLLM` 让你无需联网即可跑通 corecoder 引擎。
 
 ## 架构
 
@@ -46,7 +46,7 @@
                             │ AgentEvent 事件流
 ┌───────────────────────────┴───────────────────────────────────┐
 │  javis.runtime.handle_line (斜杠命令 + 智能体回合)              │
-│  javis.engine.mock_engine.MockEngine (对话历史)                │
+│  javis.core.query_engine.QueryEngine (对话历史)                │
 └───────────────────────────▲───────────────────────────────────┘
                             │ AgentBackend 协议（唯一的接缝）
 ┌───────────────────────────┴───────────────────────────────────┐
@@ -121,7 +121,7 @@ uv run javis -p "解释一下这个仓库"
 uv run javis                    # React/Ink TUI（默认）
 uv run javis -p "提示词"         # 单次提问，打印结果后退出
 uv run javis --backend-only     # JSON-lines 后端主机（供自定义前端使用）
-uv run javis --engine mock -p "hi"   # 完全离线（内置 mock 智能体）
+uv run javis --engine mock -p "hi"   #（mock 引擎已移除，请用 corecoder）
 uv run javis -v                 # 调试日志输出到 stderr
 uv run javis doctor             # 检查工作区与前端布局
 ```
@@ -158,8 +158,8 @@ uv run mypy javis/
 ```
 corecoder/            智能体引擎：工具循环、LLM 层、工具、上下文管理
 javis/                外壳层：CLI、运行时、后端主机、协议、引擎注册表
-  engine/             AgentBackend 协议 + MockEngine/MockAgent + 事件类型
-  engines/            后端适配器（corecoder、mock）+ 注册
+  core/               AgentBackend 协议 + QueryEngine + 事件类型
+  engines/            后端适配器（corecoder）+ 注册
   frontend/terminal   React/Ink TUI（TypeScript）
 tests/                pytest 测试套件
 ```

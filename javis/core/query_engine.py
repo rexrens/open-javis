@@ -8,8 +8,8 @@ plumbing itself; those live in the injected backend. It just:
 2. Calls ``AgentBackend.run_turn`` and yields ``AgentEvent`` straight through.
 3. On ``AgentTurnEnd``, appends the assistant message to history.
 
-The ``AgentBackend`` is the only seam — swap ``MockAgent`` for a real agent
-without touching this engine or the TUI.
+The ``AgentBackend`` is the only seam — swap in a real backend (e.g.
+``CoreCoderBackend``) without touching this engine or the TUI.
 """
 
 from __future__ import annotations

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from javis.engines.mock.agent import MockAgent
+from tests.test_javis.fake_backend import FakeBackend
 from javis.engines import create_agent_backend, get_engine_config, list_engines, register_engine
 
 
 def _dummy_factory(**kwargs):
-    return MockAgent()
+    return FakeBackend()
 
 
 def test_register_and_list():
@@ -20,7 +20,7 @@ def test_register_and_list():
 def test_create_agent_backend_by_name():
     register_engine("dummy-test-2", _dummy_factory)
     backend = create_agent_backend("dummy-test-2", cwd="/tmp")
-    assert isinstance(backend, MockAgent)
+    assert isinstance(backend, FakeBackend)
 
 
 def test_unknown_engine_raises():
@@ -38,10 +38,6 @@ def test_get_engine_config_extracts_subsection():
     assert get_engine_config("corecoder", config) == {"model": "x"}
     assert get_engine_config("unknown", config) == {}
 
-
-def test_builtin_mock_engine():
-    backend = create_agent_backend("mock", cwd="/tmp")
-    assert isinstance(backend, MockAgent)
 
 
 def test_builtin_corecoder_engine_registered():

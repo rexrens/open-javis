@@ -1,7 +1,7 @@
 """Agent backend protocol — the seam where a real agent plugs in.
 
 Implement this ``Protocol`` to wire a custom agent into the javis TUI.
-``MockAgent`` is the reference implementation; replace it with a real one
+``CoreCoderBackend`` is the built-in implementation; swap in your own
 without touching ``QueryEngine`` or any TUI code.
 """
 

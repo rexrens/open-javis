@@ -8,7 +8,7 @@ agent backend:
 - ``query_engine.py`` — ``QueryEngine``, the reference engine shell that owns
   conversation history and delegates turns to any ``AgentBackend``
 
-Concrete backends (corecoder, mock) live in ``javis.engines.*`` and must not
+Concrete backends (currently corecoder) live in ``javis.engines.*`` and must not
 be imported from here — this package stays free of implementation details.
 """
 

@@ -3,7 +3,7 @@
 Third-party engines register themselves with register_engine(); javis
 resolves the active engine via javis.config and builds the backend with
 create_agent_backend(). The registry module itself never imports concrete
-engines (factories import lazily), so a mock-only environment stays light.
+engines (factories import lazily), so unused backends stay unloaded.
 """
 
 from __future__ import annotations
@@ -59,13 +59,6 @@ def create_agent_backend(
     )
 
 
-def _build_mock_backend(**kwargs) -> AgentBackend:
-    del kwargs
-    from javis.engines.mock.agent import MockAgent
-
-    return MockAgent()
-
-
 def _build_corecoder_backend(**kwargs) -> AgentBackend:
     from javis.engines.corecoder.backend import build_corecoder_backend
 
@@ -73,7 +66,6 @@ def _build_corecoder_backend(**kwargs) -> AgentBackend:
 
 
 def _register_builtin_engines() -> None:
-    register_engine("mock", _build_mock_backend)
     register_engine("corecoder", _build_corecoder_backend)
 
 

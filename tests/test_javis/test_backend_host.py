@@ -1,4 +1,4 @@
-"""End-to-end tests for JavisBackendHost — drives the built-in MockAgent
+"""End-to-end tests for JavisBackendHost — drives the FakeBackend test double
 through the full backend host pipeline (request dispatch, emit, modal
 futures).
 """
@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from javis.backend_host import BackendHostConfig, JavisBackendHost
-from javis.engines.mock.agent import MockAgent
+from tests.test_javis.fake_backend import FakeBackend
 from javis.protocol import BackendEvent
 from javis.runtime import build_javis_runtime, close_runtime, start_runtime
 
@@ -30,7 +30,7 @@ async def _make_host(
 ) -> tuple[JavisBackendHost, list]:
     bundle = await build_javis_runtime(
         cwd=str(isolated_env),
-        agent_backend=MockAgent(),
+        agent_backend=FakeBackend(),
         model=model,
     )
     host = JavisBackendHost(
@@ -112,7 +112,7 @@ async def test_backend_host_processes_slash_command(isolated_env):
 
 @pytest.mark.asyncio
 async def test_backend_host_emits_ready_state_snapshot(isolated_env):
-    """Verify the ready event includes the mock model name."""
+    """Verify the ready event includes the model name."""
     host, events = await _make_host(isolated_env)
     try:
         await host._emit(

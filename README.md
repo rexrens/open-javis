@@ -27,7 +27,7 @@ Two layers:
 - **Context management** — automatic compression when tool outputs push the conversation past the token budget.
 - **Robust LLM layer** — exponential-backoff retries (rate limit / timeout / 5xx), `stream_options` fallback for providers that reject it, usage tracking and per-model cost estimates.
 - **Session persistence** — atomic JSON snapshots per session under `~/.javis/sessions/`, with `/resume` support from the TUI.
-- **Deterministic offline testing** — `ScriptedLLM` / `AsyncScriptedLLM` and a built-in `mock` engine let you exercise the full stack without network.
+- **Deterministic offline testing** — `ScriptedLLM` / `AsyncScriptedLLM` let you exercise the corecoder engine without network.
 
 ## Architecture
 
@@ -46,7 +46,7 @@ The React/Ink frontend is forked from openharness and customized for javis; ever
                             │ AgentEvent stream
 ┌───────────────────────────┴───────────────────────────────────┐
 │  javis.runtime.handle_line (slash commands + agent turns)     │
-│  javis.engine.mock_engine.MockEngine (conversation history)   │
+│  javis.core.query_engine.QueryEngine (conversation history)   │
 └───────────────────────────▲───────────────────────────────────┘
                             │ AgentBackend protocol (one seam)
 ┌───────────────────────────┴───────────────────────────────────┐
@@ -121,7 +121,7 @@ Alternatively, use environment variables (read from `.env` in the working direct
 uv run javis                    # React/Ink TUI (default)
 uv run javis -p "prompt"        # single prompt, print result, exit
 uv run javis --backend-only     # JSON-lines backend host (for custom frontends)
-uv run javis --engine mock -p "hi"   # fully offline (built-in mock agent)
+uv run javis --engine mock -p "hi"   # (mock engine removed; use corecoder)
 uv run javis -v                 # debug logging to stderr
 uv run javis doctor             # check workspace & frontend layout
 ```
@@ -158,8 +158,8 @@ uv run mypy javis/
 ```
 corecoder/            Agent engine: tool loop, LLM layer, tools, context manager
 javis/                Shell: CLI, runtime, backend host, protocol, engine registry
-  engine/             AgentBackend protocol + MockEngine/MockAgent + event types
-  engines/            Backend adapters (corecoder, mock) + registration
+  core/               AgentBackend protocol + QueryEngine + event types
+  engines/            Backend adapters (corecoder) + registration
   frontend/terminal   React/Ink TUI (TypeScript)
 tests/                pytest suite
 ```

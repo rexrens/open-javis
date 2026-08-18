@@ -105,7 +105,7 @@ async def build_javis_runtime(
             engine_config=get_engine_config(engine_name, config_data),
         )
 
-    model_name = model or getattr(agent_backend, "model", None) or "javis-mock"
+    model_name = model or getattr(agent_backend, "model", None) or "unknown"
 
     engine_obj = QueryEngine(
         agent_backend=agent_backend,
