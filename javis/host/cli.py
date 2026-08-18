@@ -92,6 +92,24 @@ def main(
         )
     )
 
+@app.command("doctor")
+def doctor(
+    cwd: str = typer.Option(str(Path.cwd()), "--cwd", help="Working directory"),
+    workspace: str | None = typer.Option(None, "--workspace", help="Path to the javis workspace (defaults to ~/.javis)"),
+) -> None:
+    """Check the javis workspace and frontend layout."""
+    from javis.host.react_launcher import _get_frontend_dir
+    from javis.session.workspace import workspace_health
+
+    workspace_root = initialize_workspace(workspace)
+    print(f"javis workspace: {workspace_root}")
+    for key, ok in workspace_health(workspace_root).items():
+        print(f"  {key}: {'ok' if ok else 'missing'}")
+
+    print(f"frontend dir:   {_get_frontend_dir()}")
+    print(f"cwd:            {Path(cwd).resolve()}")
+
+
 @app.command("version")
 def version_cmd() -> None:
     """Show the javis version."""
