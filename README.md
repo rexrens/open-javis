@@ -68,7 +68,7 @@ Requires Python ≥ 3.10, Node.js ≥ 18, and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 # Install dependencies (Python + frontend)
-uv sync
+uv sync --extra dev   # --extra dev pulls in pytest, ruff, mypy
 cd frontend/terminal && npm install && cd ../..
 
 # Configure your model provider (see Configuration below)

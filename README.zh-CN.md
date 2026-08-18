@@ -68,7 +68,7 @@
 
 ```bash
 # 安装依赖（Python + 前端）
-uv sync
+uv sync --extra dev   # --extra dev pulls in pytest, ruff, mypy
 cd frontend/terminal && npm install && cd ../..
 
 # 配置模型供应商（见下方"配置"）
