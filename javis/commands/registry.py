@@ -127,6 +127,18 @@ def create_default_command_registry() -> CommandRegistry:
         context.app_state.set(theme=value)
         return CommandResult(message=f"Theme set to {value}.")
 
+    async def _turns_handler(args: str, context: CommandContext) -> CommandResult:
+        value = args.strip()
+        if value.lower() in ("", "unlimited", "none"):
+            context.engine.set_max_turns(None)
+            return CommandResult(message="Max turns set to unlimited.")
+        try:
+            turns = int(value)
+        except ValueError:
+            return CommandResult(message=f"Invalid max turns: {value!r}. Use a number or 'unlimited'.")
+        context.engine.set_max_turns(turns)
+        return CommandResult(message=f"Max turns set to {turns}.")
+
     registry.register(Command("help", "Show this help", _help_handler))
     registry.register(Command("exit", "Exit javis", _exit_handler))
     registry.register(Command("quit", "Exit javis", _exit_handler))
@@ -134,6 +146,7 @@ def create_default_command_registry() -> CommandRegistry:
     registry.register(Command("version", "Show javis version", _version_handler))
     registry.register(Command("status", "Show session status", _status_handler))
     registry.register(Command("theme", "Set UI theme", _theme_handler))
+    registry.register(Command("turns", "Set max turns", _turns_handler))
     return registry
 
 

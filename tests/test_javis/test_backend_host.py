@@ -163,3 +163,28 @@ async def test_apply_select_theme_updates_state(isolated_env):
         await close_runtime(host._bundle)
 
     assert host._bundle.app_state.get().theme == "dark"
+
+
+@pytest.mark.asyncio
+async def test_apply_select_turns_updates_engine(isolated_env):
+    """P0: /turns selector must update QueryEngine.max_turns, not fall through to the LLM."""
+    host, events = await _make_host(isolated_env)
+    try:
+        await host._apply_select_command("turns", "64")
+    finally:
+        await close_runtime(host._bundle)
+
+    assert host._bundle.engine.max_turns == 64
+
+
+@pytest.mark.asyncio
+async def test_apply_select_turns_unlimited_clears_limit(isolated_env):
+    """/turns unlimited must reset the engine's max-turn limit to None."""
+    host, events = await _make_host(isolated_env)
+    try:
+        await host._apply_select_command("turns", "64")
+        await host._apply_select_command("turns", "unlimited")
+    finally:
+        await close_runtime(host._bundle)
+
+    assert host._bundle.engine.max_turns is None
