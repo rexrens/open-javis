@@ -43,6 +43,9 @@ papers/
 *.pdf
 config.json
 conf.yaml
+.coverage
+.htmlcov/
+.coverage.*
 
 # Logs
 *.log
