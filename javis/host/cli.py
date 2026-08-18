@@ -24,8 +24,6 @@ app = typer.Typer(
     add_completion=False,
 )
 
-_WORKSPACE_HELP = "Path to the javis workspace (defaults to ~/.javis)"
-
 
 @app.callback(invoke_without_command=True)
 def main(
@@ -33,7 +31,7 @@ def main(
     print_mode: str | None = typer.Option(None, "--print", "-p", help="Run a single prompt and exit"),
     model: str | None = typer.Option(None, "--model", help="Model override for this session"),
     engine: str | None = typer.Option(None, "--engine", help="Agent engine (default: config.json, JAVIS_ENGINE, or corecoder)"),
-    workspace: str | None = typer.Option(None, "--workspace", help=_WORKSPACE_HELP),
+    workspace: str | None = typer.Option(None, "--workspace", help="Path to the javis workspace (defaults to ~/.javis)"),
     max_turns: int | None = typer.Option(None, "--max-turns", help="Override max turns"),
     cwd: str = typer.Option(str(Path.cwd()), "--cwd", help="Working directory"),
     backend_only: bool = typer.Option(False, "--backend-only", hidden=True),
@@ -93,25 +91,6 @@ def main(
             )
         )
     )
-
-
-@app.command("doctor")
-def doctor(
-    cwd: str = typer.Option(str(Path.cwd()), "--cwd", help="Working directory"),
-    workspace: str | None = typer.Option(None, "--workspace", help=_WORKSPACE_HELP),
-) -> None:
-    """Check the javis workspace and frontend layout."""
-    from javis.host.react_launcher import get_frontend_dir
-    from javis.session.workspace import workspace_health
-
-    workspace_root = initialize_workspace(workspace)
-    print(f"javis workspace: {workspace_root}")
-    for key, ok in workspace_health(workspace_root).items():
-        print(f"  {key}: {'ok' if ok else 'missing'}")
-
-    print(f"frontend dir:   {get_frontend_dir()}")
-    print(f"cwd:            {Path(cwd).resolve()}")
-
 
 @app.command("version")
 def version_cmd() -> None:

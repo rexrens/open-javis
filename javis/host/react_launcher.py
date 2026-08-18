@@ -48,7 +48,7 @@ def _resolve_tsx(frontend_dir: Path) -> tuple[str, ...]:
     return (_resolve_npm(), "exec", "--", "tsx")
 
 
-def get_frontend_dir() -> Path:
+def _get_frontend_dir() -> Path:
     """Return the React terminal frontend directory.
 
     Checks in order:
@@ -56,14 +56,15 @@ def get_frontend_dir() -> Path:
         2. Development repo layout: <repo>/frontend/terminal/
     """
     # 1. Bundled inside package
-    pkg_frontend = Path(__file__).resolve().parent / "_frontend"
+    pkg_root = Path(__file__).resolve().parents[1]
+    pkg_frontend = pkg_root / "_frontend"
     if (pkg_frontend / "package.json").exists():
         return pkg_frontend
 
     # 2. Development repo: <repo>/frontend/terminal/
-    # __file__ = <repo>/javis/react_launcher.py
-    # parents[0] = javis/, parents[1] = <repo>/
-    repo_root = Path(__file__).resolve().parents[1]
+    # __file__ = <repo>/javis/host/react_launcher.py
+    # parents[0] = javis/host/, parents[1] = javis/, parents[2] = <repo>/
+    repo_root = Path(__file__).resolve().parents[2]
     dev_frontend = repo_root / "frontend" / "terminal"
     if (dev_frontend / "package.json").exists():
         return dev_frontend
@@ -103,7 +104,7 @@ async def launch_react_tui(
     engine: str | None = None,
 ) -> int:
     """Launch the React terminal frontend."""
-    frontend_dir = get_frontend_dir()
+    frontend_dir = _get_frontend_dir()
     package_json = frontend_dir / "package.json"
     if not package_json.exists():
         raise RuntimeError(f"React terminal frontend is missing: {package_json}")
@@ -148,4 +149,4 @@ async def launch_react_tui(
     return await process.wait()
 
 
-__all__ = ["build_backend_command", "get_frontend_dir", "launch_react_tui"]
+__all__ = ["build_backend_command", "launch_react_tui"]

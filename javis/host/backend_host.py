@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Coroutine
 from uuid import uuid4
 
-from javis.contracts.messages import ConversationMessage, ImageBlock, TextBlock
+from javis.contracts.messages import ContentBlock, ConversationMessage, ImageBlock, TextBlock
 from javis.host.wire import BackendEvent, FrontendImageAttachment, FrontendRequest, TranscriptItem
 from javis.host.runtime import RuntimeBundle, close_runtime, handle_line, start_runtime
 
@@ -491,7 +491,7 @@ def _build_user_message_with_images(
 ) -> ConversationMessage | None:
     if not images:
         return None
-    content = [TextBlock(text=line or "Please analyze the attached image.")]
+    content: list[ContentBlock] = [TextBlock(text=line or "Please analyze the attached image.")]
     content.extend(
         ImageBlock(
             media_type=image.media_type,
