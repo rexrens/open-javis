@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from tests.test_javis.fake_backend import FakeBackend
-from javis.core.query_engine import QueryEngine
-from javis.core.types import (
+from javis.host.query_engine import QueryEngine
+from javis.contracts.types import (
     AgentError,
     AgentStatus,
     AgentTextDelta,
@@ -14,8 +14,8 @@ from javis.core.types import (
     AgentToolCallStart,
     AgentTurnEnd,
 )
-from javis.core.messages import ConversationMessage
-from javis.core.usage import UsageSnapshot
+from javis.contracts.messages import ConversationMessage
+from javis.contracts.usage import UsageSnapshot
 
 
 def _engine(prompt: str = "") -> QueryEngine:

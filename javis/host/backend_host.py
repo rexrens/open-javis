@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Coroutine
 from uuid import uuid4
 
-from javis.core.messages import ConversationMessage, ImageBlock, TextBlock
+from javis.contracts.messages import ConversationMessage, ImageBlock, TextBlock
 from javis.host.wire import BackendEvent, FrontendImageAttachment, FrontendRequest, TranscriptItem
 from javis.host.runtime import RuntimeBundle, close_runtime, handle_line, start_runtime
 
@@ -549,7 +549,7 @@ async def run_javis_backend(
 
 
 # Late imports — keep these at the bottom to avoid circular dependencies.
-from javis.core.types import (  # noqa: E402
+from javis.contracts.types import (  # noqa: E402
     AgentError,
     AgentStatus,
     AgentTextDelta,

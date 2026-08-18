@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.test_javis.fake_backend import FakeBackend
-from javis.core.query_engine import QueryEngine
+from javis.host.query_engine import QueryEngine
 from javis.host.runtime import RuntimeBundle, build_javis_runtime
 from javis.session.session_storage import JavisSessionBackend
 

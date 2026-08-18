@@ -23,11 +23,11 @@ from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from javis.commands.registry import CommandContext, CommandRegistry, create_default_command_registry
-from javis.core.query_engine import QueryEngine
-from javis.core.protocol import AgentBackend
-from javis.core.types import AgentEvent, AgentTextDelta, AgentTurnEnd, AgentError, AgentStatus
-from javis.core.messages import ConversationMessage, sanitize_conversation_messages
-from javis.core.prompts import build_javis_system_prompt
+from javis.host.query_engine import QueryEngine
+from javis.contracts.protocol import AgentBackend
+from javis.contracts.types import AgentEvent, AgentTextDelta, AgentTurnEnd, AgentError, AgentStatus
+from javis.contracts.messages import ConversationMessage, sanitize_conversation_messages
+from javis.host.prompts import build_javis_system_prompt
 from javis.session.session_storage import JavisSessionBackend
 from javis.session.state import AppState, AppStateStore
 from javis.session.workspace import initialize_workspace

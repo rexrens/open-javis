@@ -15,8 +15,8 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-from javis.core.protocol import AgentBackend
-from javis.core.types import (
+from javis.contracts.protocol import AgentBackend
+from javis.contracts.types import (
     AgentContext,
     AgentError,
     AgentEvent,
@@ -25,8 +25,8 @@ from javis.core.types import (
     AgentToolCallStart,
     AgentTurnEnd,
 )
-from javis.core.messages import ConversationMessage, ImageBlock, TextBlock, ToolResultBlock
-from javis.core.usage import UsageSnapshot
+from javis.contracts.messages import ConversationMessage, ImageBlock, TextBlock, ToolResultBlock
+from javis.contracts.usage import UsageSnapshot
 
 _IMAGE_PLACEHOLDER = "[image omitted: engine does not process images]"
 

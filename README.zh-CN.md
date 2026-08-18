@@ -158,7 +158,7 @@ uv run mypy javis/
 ```
 corecoder/            智能体引擎：工具循环、LLM 层、工具、上下文管理
 javis/                宿主外壳：CLI、运行时、后端主机、线协议
-  core/               AgentBackend 协议、QueryEngine、事件/消息模型
+  contracts/          纯契约层：AgentBackend 协议、事件/消息模型
   host/               CLI、运行时、线协议、后端主机、前端启动器
   session/            会话持久化、应用状态、工作区布局
   commands/           斜杠命令注册表

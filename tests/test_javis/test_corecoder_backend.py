@@ -8,7 +8,7 @@ import pytest
 
 from corecoder.agent import Agent
 from corecoder.llm import AsyncScriptedLLM, LLMResponse, ToolCall
-from javis.core.types import (
+from javis.contracts.types import (
     AgentError,
     AgentTextDelta,
     AgentToolCallResult,
@@ -16,7 +16,7 @@ from javis.core.types import (
     AgentTurnEnd,
 )
 from javis.engines.corecoder.backend import CoreCoderBackend, _to_corecoder_messages
-from javis.core.messages import ConversationMessage, ImageBlock, TextBlock, ToolResultBlock
+from javis.contracts.messages import ConversationMessage, ImageBlock, TextBlock, ToolResultBlock
 
 
 def _backend(script, **kwargs) -> CoreCoderBackend:

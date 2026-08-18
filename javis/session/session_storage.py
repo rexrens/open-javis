@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from javis.core.messages import ConversationMessage, sanitize_conversation_messages
-from javis.core.usage import UsageSnapshot
+from javis.contracts.messages import ConversationMessage, sanitize_conversation_messages
+from javis.contracts.usage import UsageSnapshot
 from javis.session.workspace import get_sessions_dir
 
 

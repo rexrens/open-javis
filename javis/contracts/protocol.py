@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from typing import AsyncIterator, Protocol, runtime_checkable
 
-from javis.core.messages import ConversationMessage
+from javis.contracts.messages import ConversationMessage
 
-from javis.core.types import AgentContext, AgentEvent
+from javis.contracts.types import AgentContext, AgentEvent
 
 
 @runtime_checkable

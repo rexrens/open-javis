@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from javis.core.protocol import AgentBackend
+from javis.contracts.protocol import AgentBackend
 
 BackendFactory = Callable[..., AgentBackend]
 

@@ -158,7 +158,7 @@ uv run mypy javis/
 ```
 corecoder/            Agent engine: tool loop, LLM layer, tools, context manager
 javis/                Host shell: CLI, runtime, backend host, wire protocol
-  core/               AgentBackend protocol, QueryEngine, event/message models
+  contracts/          AgentBackend protocol, event/message models (pure contracts)
   host/               CLI, runtime, wire protocol, backend host, frontend launcher
   session/            Session persistence, app state, workspace layout
   commands/           Slash-command registry

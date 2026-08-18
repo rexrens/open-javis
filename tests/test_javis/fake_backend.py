@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 
-from javis.core.protocol import AgentBackend
-from javis.core.types import (
+from javis.contracts.protocol import AgentBackend
+from javis.contracts.types import (
     AgentContext,
     AgentError,
     AgentEvent,
@@ -20,7 +20,7 @@ from javis.core.types import (
     AgentToolCallStart,
     AgentTurnEnd,
 )
-from javis.core.messages import ConversationMessage
+from javis.contracts.messages import ConversationMessage
 
 
 def _prompt_text(prompt: str | ConversationMessage) -> str:
