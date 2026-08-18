@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import AsyncIterator, Protocol, runtime_checkable
 
-from javis.messages import ConversationMessage
+from javis.core.messages import ConversationMessage
 
 from javis.core.types import AgentContext, AgentEvent
 

@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from javis.state import AppState
+from javis.session.state import AppState
 
 
 class FrontendImageAttachment(BaseModel):

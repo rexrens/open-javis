@@ -18,9 +18,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from javis.messages import ConversationMessage, sanitize_conversation_messages
-from javis.usage import UsageSnapshot
-from javis.workspace import get_sessions_dir
+from javis.core.messages import ConversationMessage, sanitize_conversation_messages
+from javis.core.usage import UsageSnapshot
+from javis.session.workspace import get_sessions_dir
 
 
 def _session_dir(workspace: str | Path | None = None) -> Path:

@@ -16,7 +16,7 @@ from javis.core.types import (
     AgentTurnEnd,
 )
 from javis.engines.corecoder.backend import CoreCoderBackend, _to_corecoder_messages
-from javis.messages import ConversationMessage, ImageBlock, TextBlock, ToolResultBlock
+from javis.core.messages import ConversationMessage, ImageBlock, TextBlock, ToolResultBlock
 
 
 def _backend(script, **kwargs) -> CoreCoderBackend:

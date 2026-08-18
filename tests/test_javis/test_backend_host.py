@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import pytest
 
-from javis.backend_host import BackendHostConfig, JavisBackendHost
+from javis.host.backend_host import BackendHostConfig, JavisBackendHost
 from tests.test_javis.fake_backend import FakeBackend
-from javis.protocol import BackendEvent
-from javis.runtime import build_javis_runtime, close_runtime, start_runtime
+from javis.host.wire import BackendEvent
+from javis.host.runtime import build_javis_runtime, close_runtime, start_runtime
 
 
 @pytest.fixture

@@ -25,8 +25,8 @@ from javis.core.types import (
     AgentToolCallStart,
     AgentTurnEnd,
 )
-from javis.messages import ConversationMessage, ImageBlock, TextBlock, ToolResultBlock
-from javis.usage import UsageSnapshot
+from javis.core.messages import ConversationMessage, ImageBlock, TextBlock, ToolResultBlock
+from javis.core.usage import UsageSnapshot
 
 _IMAGE_PLACEHOLDER = "[image omitted: engine does not process images]"
 

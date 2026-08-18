@@ -11,8 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Union
 
-from javis.messages import ConversationMessage
-from javis.usage import UsageSnapshot
+from javis.core.messages import ConversationMessage
+from javis.core.usage import UsageSnapshot
 
 
 @dataclass(frozen=True)

@@ -17,8 +17,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from javis.messages import ConversationMessage, TextBlock
-from javis.usage import UsageSnapshot
+from javis.core.messages import ConversationMessage, TextBlock
+from javis.core.usage import UsageSnapshot
 
 from javis.core.protocol import AgentBackend
 from javis.core.types import (

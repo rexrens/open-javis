@@ -1,7 +1,7 @@
 """Engine registry — maps engine names to AgentBackend factories.
 
 Third-party engines register themselves with register_engine(); javis
-resolves the active engine via javis.config and builds the backend with
+resolves the active engine via javis.host.config and builds the backend with
 create_agent_backend(). The registry module itself never imports concrete
 engines (factories import lazily), so unused backends stay unloaded.
 """

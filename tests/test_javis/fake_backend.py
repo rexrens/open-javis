@@ -20,7 +20,7 @@ from javis.core.types import (
     AgentToolCallStart,
     AgentTurnEnd,
 )
-from javis.messages import ConversationMessage
+from javis.core.messages import ConversationMessage
 
 
 def _prompt_text(prompt: str | ConversationMessage) -> str:

@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import Mapping
 
-from javis.workspace import get_workspace_root
+from javis.session.workspace import get_workspace_root
 
 DEFAULT_ENGINE = "corecoder"
 

@@ -26,9 +26,9 @@ from pathlib import Path
 from typing import Any, Coroutine
 from uuid import uuid4
 
-from javis.messages import ConversationMessage, ImageBlock, TextBlock
-from javis.protocol import BackendEvent, FrontendImageAttachment, FrontendRequest, TranscriptItem
-from javis.runtime import RuntimeBundle, close_runtime, handle_line, start_runtime
+from javis.core.messages import ConversationMessage, ImageBlock, TextBlock
+from javis.host.wire import BackendEvent, FrontendImageAttachment, FrontendRequest, TranscriptItem
+from javis.host.runtime import RuntimeBundle, close_runtime, handle_line, start_runtime
 
 log = logging.getLogger(__name__)
 
@@ -557,7 +557,7 @@ from javis.core.types import (  # noqa: E402
     AgentToolCallStart,
     AgentTurnEnd,
 )
-from javis.runtime import build_javis_runtime  # noqa: E402
+from javis.host.runtime import build_javis_runtime  # noqa: E402
 
 
 __all__ = [

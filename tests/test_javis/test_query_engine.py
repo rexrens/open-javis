@@ -14,8 +14,8 @@ from javis.core.types import (
     AgentToolCallStart,
     AgentTurnEnd,
 )
-from javis.messages import ConversationMessage
-from javis.usage import UsageSnapshot
+from javis.core.messages import ConversationMessage
+from javis.core.usage import UsageSnapshot
 
 
 def _engine(prompt: str = "") -> QueryEngine:

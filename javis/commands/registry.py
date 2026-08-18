@@ -12,9 +12,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
-from javis.messages import ConversationMessage
-from javis.state import AppStateStore
-from javis.usage import UsageSnapshot
+from javis.core.messages import ConversationMessage
+from javis.session.state import AppStateStore
+from javis.core.usage import UsageSnapshot
 
 
 @dataclass

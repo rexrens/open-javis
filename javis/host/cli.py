@@ -14,8 +14,8 @@ from pathlib import Path
 
 import typer
 
-from javis.runtime import run_javis_print_mode
-from javis.workspace import initialize_workspace
+from javis.host.runtime import run_javis_print_mode
+from javis.session.workspace import initialize_workspace
 
 app = typer.Typer(
     name="javis",
@@ -52,7 +52,7 @@ def main(
     workspace_root = initialize_workspace(workspace)
 
     if backend_only:
-        from javis.backend_host import run_javis_backend
+        from javis.host.backend_host import run_javis_backend
 
         raise SystemExit(
             asyncio.run(
@@ -80,7 +80,7 @@ def main(
             )
         )
 
-    from javis.react_launcher import launch_react_tui
+    from javis.host.react_launcher import launch_react_tui
 
     raise SystemExit(
         asyncio.run(
@@ -101,8 +101,8 @@ def doctor(
     workspace: str | None = typer.Option(None, "--workspace", help=_WORKSPACE_HELP),
 ) -> None:
     """Check the javis workspace and frontend layout."""
-    from javis.react_launcher import get_frontend_dir
-    from javis.workspace import workspace_health
+    from javis.host.react_launcher import get_frontend_dir
+    from javis.session.workspace import workspace_health
 
     workspace_root = initialize_workspace(workspace)
     print(f"javis workspace: {workspace_root}")

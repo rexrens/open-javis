@@ -6,8 +6,8 @@ import pytest
 
 from tests.test_javis.fake_backend import FakeBackend
 from javis.core.query_engine import QueryEngine
-from javis.runtime import RuntimeBundle, build_javis_runtime
-from javis.session_storage import JavisSessionBackend
+from javis.host.runtime import RuntimeBundle, build_javis_runtime
+from javis.session.session_storage import JavisSessionBackend
 
 
 @pytest.fixture

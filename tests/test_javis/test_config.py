@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from javis.config import DEFAULT_ENGINE, load_config, resolve_engine_name
+from javis.host.config import DEFAULT_ENGINE, load_config, resolve_engine_name
 
 
 def test_default_engine_is_corecoder():
