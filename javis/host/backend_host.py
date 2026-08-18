@@ -21,14 +21,29 @@ import contextlib
 import json
 import logging
 import sys
+from collections.abc import Coroutine
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Coroutine
+from typing import Any
 from uuid import uuid4
 
 from javis.contracts.messages import ContentBlock, ConversationMessage, ImageBlock, TextBlock
+from javis.contracts.types import (
+    AgentError,
+    AgentStatus,
+    AgentTextDelta,
+    AgentToolCallResult,
+    AgentToolCallStart,
+    AgentTurnEnd,
+)
+from javis.host.runtime import (
+    RuntimeBundle,
+    build_javis_runtime,
+    close_runtime,
+    handle_line,
+    start_runtime,
+)
 from javis.host.wire import BackendEvent, FrontendImageAttachment, FrontendRequest, TranscriptItem
-from javis.host.runtime import RuntimeBundle, close_runtime, handle_line, start_runtime
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +51,7 @@ _PROTOCOL_PREFIX = "OHJSON:"
 
 
 @dataclass(frozen=True)
-class BackendHostConfig:
+class _BackendHostConfig:
     """Configuration for one backend host session."""
 
     model: str | None = None
@@ -45,10 +60,10 @@ class BackendHostConfig:
     workspace: str | Path | None = None
 
 
-class JavisBackendHost:
+class _JavisBackendHost:
     """Drive the javis runtime over a structured stdin/stdout protocol."""
 
-    def __init__(self, bundle: RuntimeBundle, config: BackendHostConfig) -> None:
+    def __init__(self, bundle: RuntimeBundle, config: _BackendHostConfig) -> None:
         self._bundle = bundle
         self._config = config
         self._write_lock = asyncio.Lock()
@@ -427,7 +442,7 @@ class JavisBackendHost:
             )
             try:
                 return await asyncio.wait_for(future, timeout=300)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 log.warning("Permission request %s timed out after 300s, denying", request_id)
                 return False
             finally:
@@ -448,7 +463,7 @@ class JavisBackendHost:
             )
             try:
                 reply = await asyncio.wait_for(future, timeout=300)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 log.warning("Edit approval request %s timed out after 300s, denying", request_id)
                 reply = "reject"
             finally:
@@ -541,27 +556,11 @@ async def run_javis_backend(
         restore_tool_metadata=restore_tool_metadata,
         workspace=workspace,
     )
-    host = JavisBackendHost(
+    host = _JavisBackendHost(
         bundle=bundle,
-        config=BackendHostConfig(model=model, max_turns=max_turns, cwd=cwd, workspace=workspace),
+        config=_BackendHostConfig(model=model, max_turns=max_turns, cwd=cwd, workspace=workspace),
     )
     return await host.run()
 
 
-# Late imports — keep these at the bottom to avoid circular dependencies.
-from javis.contracts.types import (  # noqa: E402
-    AgentError,
-    AgentStatus,
-    AgentTextDelta,
-    AgentToolCallResult,
-    AgentToolCallStart,
-    AgentTurnEnd,
-)
-from javis.host.runtime import build_javis_runtime  # noqa: E402
-
-
-__all__ = [
-    "BackendHostConfig",
-    "JavisBackendHost",
-    "run_javis_backend",
-]
+__all__ = ["run_javis_backend"]

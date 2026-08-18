@@ -72,7 +72,7 @@ def _get_frontend_dir() -> Path:
     return pkg_frontend  # will error with clear message downstream
 
 
-def build_backend_command(
+def _build_backend_command(
     *,
     cwd: str | None = None,
     workspace: str | Path | None = None,
@@ -125,7 +125,7 @@ async def launch_react_tui(
     env = os.environ.copy()
     env["OPENHARNESS_FRONTEND_CONFIG"] = json.dumps(
         {
-            "backend_command": build_backend_command(
+            "backend_command": _build_backend_command(
                 cwd=cwd_path,
                 workspace=workspace,
                 model=model,
@@ -149,4 +149,4 @@ async def launch_react_tui(
     return await process.wait()
 
 
-__all__ = ["build_backend_command", "launch_react_tui"]
+__all__ = ["launch_react_tui"]

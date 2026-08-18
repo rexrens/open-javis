@@ -1,4 +1,4 @@
-"""End-to-end tests for JavisBackendHost — drives the FakeBackend test double
+"""End-to-end tests for _JavisBackendHost — drives the FakeBackend test double
 through the full backend host pipeline (request dispatch, emit, modal
 futures).
 """
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from javis.host.backend_host import BackendHostConfig, JavisBackendHost
+from javis.host.backend_host import _BackendHostConfig, _JavisBackendHost
 from tests.test_javis.fake_backend import FakeBackend
 from javis.host.wire import BackendEvent
 from javis.host.runtime import build_javis_runtime, close_runtime, start_runtime
@@ -27,15 +27,15 @@ def isolated_env(tmp_path, monkeypatch):
 
 async def _make_host(
     isolated_env, model: str = "test-model"
-) -> tuple[JavisBackendHost, list]:
+) -> tuple[_JavisBackendHost, list]:
     bundle = await build_javis_runtime(
         cwd=str(isolated_env),
         agent_backend=FakeBackend(),
         model=model,
     )
-    host = JavisBackendHost(
+    host = _JavisBackendHost(
         bundle=bundle,
-        config=BackendHostConfig(cwd=str(isolated_env)),
+        config=_BackendHostConfig(cwd=str(isolated_env)),
     )
     events: list = []
 
