@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from javis.engines.mock.agent import MockAgent
-from javis.core.engine import MockEngine
+from javis.core.query_engine import QueryEngine
 from javis.runtime import RuntimeBundle, build_javis_runtime
 from javis.session_storage import JavisSessionBackend
 
@@ -29,9 +29,9 @@ async def test_build_javis_runtime_returns_bundle(isolated_env):
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_uses_mock_engine(isolated_env):
+async def test_build_javis_runtime_uses_query_engine(isolated_env):
     bundle = await build_javis_runtime(cwd=str(isolated_env), engine="mock")
-    assert isinstance(bundle.engine, MockEngine)
+    assert isinstance(bundle.engine, QueryEngine)
     assert isinstance(bundle.engine._agent, MockAgent)
     assert bundle.engine.model  # non-empty model resolved from env/config
 

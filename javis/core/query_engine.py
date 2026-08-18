@@ -1,7 +1,8 @@
-"""Mock engine: owns conversation history and delegates turns to an ``AgentBackend``.
+"""QueryEngine: owns conversation history and delegates turns to an ``AgentBackend``.
 
-This is the javis equivalent of ``QueryEngine`` — but without the tool loop,
-permissions, hooks, compaction or provider plumbing. It just:
+This is the javis engine shell (equivalent of openharness' ``QueryEngine``) —
+it does not implement a tool loop, permissions, hooks, compaction or provider
+plumbing itself; those live in the injected backend. It just:
 
 1. Appends the user message to history.
 2. Calls ``AgentBackend.run_turn`` and yields ``AgentEvent`` straight through.
@@ -32,7 +33,7 @@ from javis.core.types import (
 )
 
 
-class MockEngine:
+class QueryEngine:
     """Owns conversation history; delegates turn execution to an ``AgentBackend``."""
 
     def __init__(
@@ -159,4 +160,4 @@ class MockEngine:
         return
 
 
-__all__ = ["MockEngine"]
+__all__ = ["QueryEngine"]

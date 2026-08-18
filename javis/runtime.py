@@ -5,7 +5,7 @@ MCP, hooks, permissions, bridge, tasks, coordinator, auth, sandbox, plugins,
 themes and output-styles. What remains:
 
 - ``RuntimeBundle`` — engine + commands + app_state + session_backend
-- ``build_javis_runtime`` — assembles a bundle with a ``MockEngine``
+- ``build_javis_runtime`` — assembles a bundle with a ``QueryEngine``
 - ``handle_line`` — the single dispatch point (slash commands + agent turns)
 - ``start_runtime`` / ``close_runtime`` — lifecycle hooks (currently no-ops)
 - ``run_javis_print_mode`` — non-interactive single-prompt mode
@@ -23,7 +23,7 @@ from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from javis.commands import CommandContext, CommandRegistry, create_default_command_registry
-from javis.core.engine import MockEngine
+from javis.core.query_engine import QueryEngine
 from javis.core.protocol import AgentBackend
 from javis.core.types import AgentEvent, AgentTextDelta, AgentTurnEnd, AgentError, AgentStatus
 from javis.messages import ConversationMessage, sanitize_conversation_messages
@@ -41,7 +41,7 @@ ClearHandler = Callable[[], Awaitable[None]]
 class RuntimeBundle:
     """Everything the host needs to drive one interactive session."""
 
-    engine: MockEngine
+    engine: QueryEngine
     cwd: str
     app_state: AppStateStore
     commands: CommandRegistry
@@ -64,7 +64,7 @@ async def build_javis_runtime(
     session_backend: JavisSessionBackend | None = None,
     workspace: str | Path | None = None,
 ) -> RuntimeBundle:
-    """Assemble a ``RuntimeBundle`` backed by a ``MockEngine``.
+    """Assemble a ``RuntimeBundle`` backed by a ``QueryEngine``.
 
     The agent backend is resolved in one of two ways:
       - ``agent_backend=...`` — explicit backend (used by tests)
@@ -107,7 +107,7 @@ async def build_javis_runtime(
 
     model_name = model or getattr(agent_backend, "model", None) or "javis-mock"
 
-    engine_obj = MockEngine(
+    engine_obj = QueryEngine(
         agent_backend=agent_backend,
         model=model_name,
         system_prompt=system_prompt_text,

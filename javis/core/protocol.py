@@ -2,7 +2,7 @@
 
 Implement this ``Protocol`` to wire a custom agent into the javis TUI.
 ``MockAgent`` is the reference implementation; replace it with a real one
-without touching ``MockEngine`` or any TUI code.
+without touching ``QueryEngine`` or any TUI code.
 """
 
 from __future__ import annotations

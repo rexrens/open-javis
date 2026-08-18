@@ -5,14 +5,14 @@ agent backend:
 
 - ``types.py`` — the ``AgentEvent`` stream (text deltas, tool calls, errors…)
 - ``protocol.py`` — the ``AgentBackend`` interface (the only seam)
-- ``engine.py`` — ``MockEngine``, the reference engine shell that owns
+- ``query_engine.py`` — ``QueryEngine``, the reference engine shell that owns
   conversation history and delegates turns to any ``AgentBackend``
 
 Concrete backends (corecoder, mock) live in ``javis.engines.*`` and must not
 be imported from here — this package stays free of implementation details.
 """
 
-from javis.core.engine import MockEngine
+from javis.core.query_engine import QueryEngine
 from javis.core.protocol import AgentBackend
 from javis.core.types import (
     AgentContext,
@@ -35,5 +35,5 @@ __all__ = [
     "AgentToolCallResult",
     "AgentToolCallStart",
     "AgentTurnEnd",
-    "MockEngine",
+    "QueryEngine",
 ]

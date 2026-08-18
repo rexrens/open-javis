@@ -1,11 +1,11 @@
-"""Tests for the MockEngine adapter."""
+"""Tests for the QueryEngine adapter."""
 
 from __future__ import annotations
 
 import pytest
 
 from javis.engines.mock.agent import MockAgent
-from javis.core.engine import MockEngine
+from javis.core.query_engine import QueryEngine
 from javis.core.types import (
     AgentError,
     AgentStatus,
@@ -18,8 +18,8 @@ from javis.messages import ConversationMessage
 from javis.usage import UsageSnapshot
 
 
-def _engine(prompt: str = "") -> MockEngine:
-    return MockEngine(
+def _engine(prompt: str = "") -> QueryEngine:
+    return QueryEngine(
         MockAgent(),
         model="javis-mock",
         system_prompt="test",
@@ -134,7 +134,7 @@ class UsageBackend:
 
 @pytest.mark.asyncio
 async def test_submit_message_uses_backend_usage():
-    engine = MockEngine(UsageBackend(), model="m", system_prompt="s", cwd="/tmp")
+    engine = QueryEngine(UsageBackend(), model="m", system_prompt="s", cwd="/tmp")
     [e async for e in engine.submit_message("hello")]
     assert engine.total_usage.input_tokens == 5
     assert engine.total_usage.output_tokens == 7
@@ -151,6 +151,6 @@ class HookBackend(UsageBackend):
 @pytest.mark.asyncio
 async def test_clear_forwards_to_backend_hook():
     backend = HookBackend()
-    engine = MockEngine(backend, model="m", system_prompt="s", cwd="/tmp")
+    engine = QueryEngine(backend, model="m", system_prompt="s", cwd="/tmp")
     engine.clear()
     assert backend.cleared is True

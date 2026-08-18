@@ -21,7 +21,7 @@ from javis.usage import UsageSnapshot
 class CommandContext:
     """Context passed to a command handler."""
 
-    engine: object  # MockEngine-shaped; typed loosely to avoid a circular import
+    engine: object  # QueryEngine-shaped; typed loosely to avoid a circular import
     app_state: AppStateStore
     cwd: str
     session_id: str
