@@ -1,9 +1,7 @@
-"""Workspace helpers for javis.
+"""javis workspace layout.
 
 A javis workspace lives at ``~/.javis`` (overridable via ``JAVIS_WORKSPACE``
-env var or explicit argument) and holds sessions, memory, skills and plugins.
-The layout mirrors ohmo's but strips the gateway / soul / bootstrap scaffolding
-that javis does not need.
+env var or explicit argument) and holds sessions, memory, skills and logs.
 """
 
 from __future__ import annotations

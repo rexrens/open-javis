@@ -1,27 +1,25 @@
 """Session persistence for javis.
 
-Stores JSON snapshots under ``~/.javis/sessions/``:
+Stores JSON snapshots under ``<workspace>/sessions/``:
     - ``latest.json``         — most recent session
     - ``session-{sid}.json``  — one file per session
+
+Self-contained: no openharness utils依赖. ``atomic_write_text`` writes via a
+temp file + rename so a crash mid-write cannot corrupt the latest snapshot.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from openharness.api.usage import UsageSnapshot
-from openharness.engine.messages import ConversationMessage, sanitize_conversation_messages
-from openharness.services.session_storage import (
-    _persistable_tool_metadata,
-    _sanitize_snapshot_payload,
-)
-from openharness.utils.fs import atomic_write_text
-
+from javis.messages import ConversationMessage, sanitize_conversation_messages
+from javis.usage import UsageSnapshot
 from javis.workspace import get_sessions_dir
 
 
@@ -31,12 +29,41 @@ def _session_dir(workspace: str | Path | None = None) -> Path:
     return path
 
 
-def _session_key_token(session_key: str) -> str:
-    return hashlib.sha1(session_key.encode("utf-8")).hexdigest()[:12]
+def atomic_write_text(path: Path, data: str) -> None:
+    """Write ``data`` to ``path`` atomically (temp file + rename)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(data)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
-def _session_key_latest_path(workspace: str | Path | None, session_key: str) -> Path:
-    return _session_dir(workspace) / f"latest-{_session_key_token(session_key)}.json"
+def _persistable_tool_metadata(tool_metadata: dict[str, object] | None) -> dict[str, Any]:
+    """Filter tool metadata down to JSON-persistable values."""
+    if not tool_metadata:
+        return {}
+    persistable: dict[str, Any] = {}
+    for key, value in tool_metadata.items():
+        try:
+            json.dumps(value)
+            persistable[key] = value
+        except (TypeError, ValueError):
+            persistable[key] = str(value)
+    return persistable
+
+
+def _sanitize_snapshot_payload(payload: Any) -> dict[str, Any]:
+    """Validate and normalize a loaded snapshot payload."""
+    if not isinstance(payload, dict):
+        raise ValueError("snapshot payload is not a dict")
+    return payload
 
 
 def save_session_snapshot(
@@ -126,7 +153,7 @@ def export_session_markdown(
     workspace: str | Path | None = None,
     messages: list[ConversationMessage],
 ) -> Path:
-    del cwd  # unused — kept for parity with SessionBackend.export_markdown
+    del cwd
     path = _session_dir(workspace) / "transcript.md"
     parts = ["# javis Session Transcript"]
     for message in messages:
@@ -139,13 +166,13 @@ def export_session_markdown(
 
 
 class JavisSessionBackend:
-    """Session backend rooted in ``~/.javis/sessions``."""
+    """Session backend rooted in ``<workspace>/sessions``."""
 
     def __init__(self, workspace: str | Path | None = None) -> None:
         self._workspace = workspace
 
     def get_session_dir(self, cwd: str | Path) -> Path:
-        del cwd  # javis sessions are workspace-global, not per-cwd
+        del cwd
         return _session_dir(self._workspace)
 
     def save_snapshot(
@@ -193,6 +220,7 @@ class JavisSessionBackend:
 
 __all__ = [
     "JavisSessionBackend",
+    "atomic_write_text",
     "export_session_markdown",
     "list_snapshots",
     "load_by_id",

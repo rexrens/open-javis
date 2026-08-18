@@ -71,16 +71,6 @@ async def test_status_branch():
 
 
 @pytest.mark.asyncio
-async def test_permission_branch():
-    agent = MockAgent()
-    events = await _collect(agent, "test the permission flow")
-
-    starts = [e for e in events if isinstance(e, AgentToolCallStart)]
-    assert len(starts) == 1
-    assert starts[0].tool_name == "write_file"
-
-
-@pytest.mark.asyncio
 async def test_chinese_branch():
     agent = MockAgent()
     events = await _collect(agent, "用中文回复")

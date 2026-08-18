@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from corecoder.agent import Agent
@@ -76,6 +78,60 @@ async def test_llm_failure_yields_error_event():
     assert len(errors) == 1
     assert "out of turns" in errors[0].message
     assert not any(isinstance(e, AgentTurnEnd) for e in events)
+
+
+class _GatedLLM:
+    """Async LLM double: first call returns a tool call, second parks on a gate
+    until released, so the producer is provably mid-turn when cancelled."""
+
+    def __init__(self, first: LLMResponse, gate: asyncio.Event, final: LLMResponse):
+        self._first = first
+        self._gate = gate
+        self._final = final
+        self._used = False
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+
+    async def chat(self, *, messages, tools=None, on_token=None):
+        if not self._used:
+            self._used = True
+            return self._first
+        await self._gate.wait()
+        return self._final
+
+
+@pytest.mark.asyncio
+async def test_cancellation_ends_without_turn_end_and_history_stays_valid(tmp_path):
+    target = tmp_path / "f.txt"
+    target.write_text("content", encoding="utf-8")
+    gate = asyncio.Event()
+    llm = _GatedLLM(
+        first=LLMResponse(tool_calls=[ToolCall(id="c1", name="read_file", arguments={"file_path": str(target)})]),
+        gate=gate,
+        final=LLMResponse(content="done"),
+    )
+    backend = CoreCoderBackend(Agent(llm=llm), model="test-model", system_prompt="test system")
+
+    seen: list = []
+
+    async def consume():
+        async for event in backend.run_turn("read the file", context=None):
+            seen.append(event)
+
+    task = asyncio.create_task(consume())
+    while not any(isinstance(e, AgentToolCallResult) for e in seen):
+        await asyncio.sleep(0)  # producer is now parked on the gate
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert not any(isinstance(e, (AgentTurnEnd, AgentError)) for e in seen)
+    tool_replies = {m["tool_call_id"] for m in backend.agent.messages if m.get("role") == "tool"}
+    tool_call_ids = [
+        tc["id"] for m in backend.agent.messages if m.get("tool_calls") for tc in m["tool_calls"]
+    ]
+    assert tool_call_ids
+    assert set(tool_call_ids) <= tool_replies
 
 
 def test_load_history_converts_messages():

@@ -21,7 +21,7 @@ javis 是自包含的 TUI 壳：React 前端（`frontend/terminal/`）+ JSON-lin
 | 交付范围 | 设计确认后直接实现（本 spec 的 8-11 节） |
 | corecoder 异步化 | **B：同步异步双接口**。新增 `AsyncLLM` + `Agent.achat()`，同步 `chat()`/CLI/demo 不动；adapter 原生 async，**无线程桥** |
 | 图片 | 不增补多模态，adapter 用 `[image omitted]` 占位 |
-| usage | `AgentTurnEnd` 增补可选 `usage` 字段，引擎上报真实 token（不填则由 MockEngine 按词数估算） |
+| usage | `AgentTurnEnd` 增补可选 `usage` 字段，引擎上报真实 token；消费与估算由 javis 引擎层统一处理 |
 
 ## 3. 架构总览
 
@@ -51,7 +51,7 @@ class AgentBackend(Protocol):
         context: AgentContext,
     ) -> AsyncIterator[AgentEvent]: ...
 
-    # 可选钩子（MockEngine 用 hasattr 检测；没有则跳过）
+    # 可选钩子（javis 引擎层用 hasattr 检测；没有则跳过）
     def load_history(self, messages: list[ConversationMessage]) -> None: ...
     def clear_history(self) -> None: ...
 ```
@@ -69,9 +69,9 @@ class AgentTurnEnd:
 
 1. **终止语义**：`run_turn` 必须以恰好一个 `AgentTurnEnd` 或 `AgentError` 结束；不允许空流（没有结束事件视为违约）。
 2. **工具在引擎内部**：javis 只渲染 `AgentToolCallStart` / `AgentToolCallResult`，不执行工具、不做权限。`AgentToolCallStart` 必须在工具执行**前**发出，`AgentToolCallResult` 在执行**后**发出；`is_error=True` 表示执行失败（LLM 会在下一轮看到错误内容）。
-3. **镜像历史 = user/assistant 文本流**：`MockEngine` 维护 javis 侧镜像（UI 可见的文本消息，工具轮不镜像），用于 `/status`、会话存储与恢复。**引擎内部历史是权威**（LLM 上下文以它为准）。`load_history`/`clear_history` 是同步点：恢复会话与 `/clear` 时调用，引擎负责转换为自己的格式。
+3. **镜像历史 = user/assistant 文本流**：javis 引擎层维护 javis 侧镜像（UI 可见的文本消息，工具轮不镜像），用于 `/status`、会话存储与恢复。**引擎内部历史是权威**（LLM 上下文以它为准）。`load_history`/`clear_history` 是同步点：恢复会话与 `/clear` 时调用，引擎负责转换为自己的格式。
 4. **中断语义**：host cancel 后 `run_turn` 的事件被丢弃。引擎应尽快停止；若引擎内部状态可能因中断而不完整（如已有 assistant tool_calls 未回复），必须自行修复（corecoder 的 `_answer_pending_tool_calls` 模式），保证下次调用历史合法。异步引擎直接传播 `CancelledError`；同步引擎靠检查点（如 `threading.Event`）在下一轮停止；进程引擎靠杀子进程或发信号。
-5. **usage**：`AgentTurnEnd.usage` 若非空 = 本次 turn 消耗的 token（输入+输出），由 `MockEngine` 累加进 `engine.total_usage`；为空则由 `MockEngine` 按词数估算（现状保留）。
+5. **usage**：`AgentTurnEnd.usage` 若非空 = 本次 turn 消耗的 token（输入+输出）。该字段的消费与具体引擎无关，由 **javis 引擎层**统一处理（`javis/engine/mock_engine.py` 是当前唯一的引擎层实现）：非空则累加进 `engine.total_usage`，为空则按词数估算（现状保留）。
 6. **图片**：`ConversationMessage` 可含 `ImageBlock`。不支持多模态的引擎用 `[image omitted]` 占位文本替代，不报错。
 7. **系统提示词**：`context.system_prompt` 由 `MockEngine` 在构建时提供；引擎应将其作为本会话的系统提示词（corecoder 通过 `set_system_prompt` 注入）。
 

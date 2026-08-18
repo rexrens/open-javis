@@ -31,6 +31,17 @@ from javis.usage import UsageSnapshot
 _IMAGE_PLACEHOLDER = "[image omitted: engine does not process images]"
 
 
+def _user_text(content: list[Any]) -> str:
+    """Join a user message's text blocks, substituting images with a placeholder."""
+    parts = []
+    for block in content:
+        if isinstance(block, TextBlock):
+            parts.append(block.text)
+        elif isinstance(block, ImageBlock):
+            parts.append(_IMAGE_PLACEHOLDER)
+    return "".join(parts).strip()
+
+
 def _to_corecoder_messages(messages: list[ConversationMessage]) -> list[dict]:
     """Convert javis conversation history into OpenAI-style message dicts.
 
@@ -41,13 +52,7 @@ def _to_corecoder_messages(messages: list[ConversationMessage]) -> list[dict]:
     for msg in messages:
         if msg.role == "user":
             tool_results = [b for b in msg.content if isinstance(b, ToolResultBlock)]
-            text_parts = []
-            for block in msg.content:
-                if isinstance(block, TextBlock):
-                    text_parts.append(block.text)
-                elif isinstance(block, ImageBlock):
-                    text_parts.append(_IMAGE_PLACEHOLDER)
-            text = "".join(text_parts).strip()
+            text = _user_text(msg.content)
             if text:
                 out.append({"role": "user", "content": text})
             for tr in tool_results:
@@ -103,7 +108,10 @@ class CoreCoderBackend(AgentBackend):
         context: AgentContext,
     ) -> AsyncIterator[AgentEvent]:
         del context  # the agent owns its history; context is informational
-        prompt_text = prompt.text if isinstance(prompt, ConversationMessage) else prompt
+        if isinstance(prompt, ConversationMessage):
+            prompt_text = _user_text(prompt.content)
+        else:
+            prompt_text = prompt
         llm = self._agent.llm
         prompt_before = getattr(llm, "total_prompt_tokens", 0)
         completion_before = getattr(llm, "total_completion_tokens", 0)

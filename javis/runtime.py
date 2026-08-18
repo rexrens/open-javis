@@ -51,26 +51,6 @@ class RuntimeBundle:
     settings_overrides: dict[str, Any] = field(default_factory=dict)
 
 
-def build_javis_backend_command(
-    *,
-    cwd: str | None = None,
-    workspace: str | Path | None = None,
-    model: str | None = None,
-    max_turns: int | None = None,
-) -> list[str]:
-    """Return the command the React frontend will spawn to start the backend."""
-    command = [sys.executable, "-m", "javis", "--backend-only"]
-    if cwd:
-        command.extend(["--cwd", cwd])
-    if workspace:
-        command.extend(["--workspace", str(workspace)])
-    if model:
-        command.extend(["--model", model])
-    if max_turns is not None:
-        command.extend(["--max-turns", str(max_turns)])
-    return command
-
-
 async def build_javis_runtime(
     *,
     cwd: str | None = None,
@@ -310,7 +290,6 @@ async def run_javis_print_mode(
 
 __all__ = [
     "RuntimeBundle",
-    "build_javis_backend_command",
     "build_javis_runtime",
     "close_runtime",
     "handle_line",
