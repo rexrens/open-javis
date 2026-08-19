@@ -38,10 +38,21 @@ def main(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
     """Launch javis or run a subcommand."""
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    if verbose:
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+    else:
+        # Quiet by default: the TUI inherits stderr, so library noise (httpx
+        # prints an INFO line per HTTP request) would smear across the screen.
+        logging.basicConfig(
+            level=logging.WARNING,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+        # Keep javis' own INFO visible (config creation, lifecycle, …).
+        logging.getLogger("javis").setLevel(logging.INFO)
+        logging.getLogger("corecoder").setLevel(logging.INFO)
 
     if ctx.invoked_subcommand is not None:
         return
