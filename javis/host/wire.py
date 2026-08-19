@@ -80,6 +80,7 @@ class BackendEvent(BaseModel):
         "transcript_item",
         "compact_progress",
         "assistant_delta",
+        "reasoning_delta",
         "assistant_complete",
         "line_complete",
         "tool_started",

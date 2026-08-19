@@ -24,6 +24,7 @@ const stableStringify = (value: unknown): string => JSON.stringify(value);
 export function useBackendSession(config: FrontendConfig, onExit: (code?: number | null) => void) {
 	const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
 	const [assistantBuffer, setAssistantBuffer] = useState('');
+	const [reasoningBuffer, setReasoningBuffer] = useState('');
 	const [status, setStatus] = useState<Record<string, unknown>>({});
 	const [tasks, setTasks] = useState<TaskSnapshot[]>([]);
 	const [commands, setCommands] = useState<string[]>([]);
@@ -294,6 +295,16 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			}
 			return;
 		}
+		if (event.type === 'reasoning_delta') {
+			const delta = event.message ?? '';
+			if (!delta) {
+				return;
+			}
+			startTransition(() => {
+				setReasoningBuffer((prev) => prev + delta);
+			});
+			return;
+		}
 		if (event.type === 'assistant_delta') {
 			const delta = event.message ?? '';
 			if (!delta) {
@@ -339,6 +350,14 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 				setTranscript((items) => [...items, {role: 'assistant', text}]);
 			});
 			clearAssistantDelta();
+			// Persist the completed reasoning block as a transcript row.
+			setReasoningBuffer((prev) => {
+				const reasoning = prev.trim();
+				if (reasoning) {
+					queueTranscriptItem({role: 'system', text: `🧠 ${reasoning}`});
+				}
+				return '';
+			});
 			// Do NOT reset busy here: tool calls may follow this event.
 			// busy is reset by line_complete (the true end-of-turn signal).
 			setBusyLabel(undefined);
@@ -347,6 +366,7 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 		if (event.type === 'line_complete') {
 			// Final end-of-turn: clear everything, stop spinner.
 			clearAssistantDelta();
+			setReasoningBuffer('');
 			setBusy(false);
 			setBusyLabel(undefined);
 			return;
@@ -372,6 +392,7 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			clearPendingTranscriptItems();
 			setTranscript([]);
 			clearAssistantDelta();
+			setReasoningBuffer('');
 			setBusyLabel(undefined);
 			return;
 		}
@@ -438,6 +459,7 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 		() => ({
 			transcript,
 			assistantBuffer,
+			reasoningBuffer,
 			status,
 			tasks,
 			commands,
@@ -457,6 +479,6 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			setBusyLabel,
 			sendRequest,
 		}),
-		[assistantBuffer, bridgeSessions, busy, busyLabel, commands, mcpServers, modal, ready, selectRequest, status, swarmNotifications, swarmTeammates, tasks, todoMarkdown, transcript]
+		[assistantBuffer, bridgeSessions, busy, busyLabel, commands, mcpServers, modal, ready, reasoningBuffer, selectRequest, status, swarmNotifications, swarmTeammates, tasks, todoMarkdown, transcript]
 	);
 }

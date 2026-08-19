@@ -56,7 +56,7 @@ class Agent:
     def _tool_schemas(self) -> list[dict]:
         return [t.schema() for t in self.tools]
 
-    def chat(self, user_input: str, on_token=None, on_tool=None, on_tool_result=None) -> str:
+    def chat(self, user_input: str, on_token=None, on_tool=None, on_tool_result=None, on_reasoning=None) -> str:
         """Process one user message. May involve multiple LLM/tool rounds."""
         self.messages.append({"role": "user", "content": user_input})
         self.context.maybe_compress(self.messages, self.llm)
@@ -66,6 +66,7 @@ class Agent:
                 messages=self._full_messages(),
                 tools=self._tool_schemas(),
                 on_token=on_token,
+                on_reasoning=on_reasoning,
             )
 
             # no tool calls -> LLM is done, return text
@@ -112,7 +113,7 @@ class Agent:
 
         return "(reached maximum tool-call rounds)"
 
-    async def achat(self, user_input: str, on_token=None, on_tool=None, on_tool_result=None) -> str:
+    async def achat(self, user_input: str, on_token=None, on_tool=None, on_tool_result=None, on_reasoning=None) -> str:
         """Async counterpart of chat(): same loop over awaitable LLM.chat().
 
         Requires an async provider (LLMProvider.achat); building the Agent
@@ -137,6 +138,7 @@ class Agent:
                     messages=self._full_messages(),
                     tools=self._tool_schemas(),
                     on_token=on_token,
+                    on_reasoning=on_reasoning,
                 )
 
                 # no tool calls -> LLM is done, return text

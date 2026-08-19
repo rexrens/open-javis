@@ -30,11 +30,13 @@ function groupToolPairs(items: TranscriptItem[]): GroupedItem[] {
 function ConversationViewInner({
 	items,
 	assistantBuffer,
+	reasoningBuffer,
 	showWelcome,
 	outputStyle,
 }: {
 	items: TranscriptItem[];
 	assistantBuffer: string;
+	reasoningBuffer?: string;
 	showWelcome: boolean;
 	outputStyle: string;
 }): React.JSX.Element {
@@ -68,6 +70,15 @@ function ConversationViewInner({
 					/>
 				);
 			})}
+
+			{reasoningBuffer ? (
+				<Box marginTop={1} flexDirection="column">
+					<Text dimColor bold>{'🧠 '}Thinking</Text>
+					<Box marginLeft={2} flexDirection="column">
+						<Text dimColor italic>{reasoningBuffer}</Text>
+					</Box>
+				</Box>
+			) : null}
 
 			{assistantBuffer ? (
 				isCodexStyle ? (

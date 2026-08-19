@@ -192,9 +192,14 @@ class LLMProvider(ABC):
         tools: list[dict] | None = None,
         *,
         on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[LLMResponse]:
-        """Async streaming: yield one delta ``LLMResponse`` per chunk."""
+        """Async streaming: yield one delta ``LLMResponse`` per chunk.
+
+        ``on_token`` fires for content deltas; ``on_reasoning`` fires for
+        reasoning/thinking deltas (DeepSeek-R1, Qwen3 thinking, …).
+        """
 
     # -- derived: async non-streaming --------------------------------------
 
@@ -204,6 +209,7 @@ class LLMProvider(ABC):
         tools: list[dict] | None = None,
         *,
         on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Async non-streaming. Base default: aggregate ``achat_stream``."""
@@ -212,7 +218,9 @@ class LLMProvider(ABC):
         if cached is not None:
             return cached
         merged = LLMResponse()
-        async for delta in self.achat_stream(messages, tools, on_token=on_token, **kwargs):
+        async for delta in self.achat_stream(
+            messages, tools, on_token=on_token, on_reasoning=on_reasoning, **kwargs
+        ):
             merged = merged.merge(delta)
         self._track_usage(merged)
         self._save_cached(cache_key, merged)
@@ -226,6 +234,7 @@ class LLMProvider(ABC):
         tools: list[dict] | None = None,
         *,
         on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> Iterator[LLMResponse]:
         """Sync streaming. Not implemented in the base — override in subclass."""
@@ -240,6 +249,7 @@ class LLMProvider(ABC):
         tools: list[dict] | None = None,
         *,
         on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Sync non-streaming. Not implemented in the base — override in subclass."""
@@ -351,6 +361,7 @@ class ScriptedProvider(LLMProvider):
         tools: list[dict] | None = None,
         *,
         on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[LLMResponse]:
         del messages, tools, kwargs
@@ -359,10 +370,12 @@ class ScriptedProvider(LLMProvider):
         resp = self._turns.pop(0)
         if on_token and resp.content:
             on_token(resp.content)
+        if on_reasoning and resp.reasoning_content:
+            on_reasoning(resp.reasoning_content)
         self.total_completion_tokens += len(resp.content.split())
         yield resp
 
-    def chat(self, messages, tools=None, *, on_token=None, **kwargs) -> LLMResponse:
+    def chat(self, messages, tools=None, *, on_token=None, on_reasoning=None, **kwargs) -> LLMResponse:
         """Scripted sync: pop the next turn and deliver it whole."""
         del messages, tools, kwargs
         if not self._turns:
@@ -370,6 +383,8 @@ class ScriptedProvider(LLMProvider):
         resp = self._turns.pop(0)
         if on_token and resp.content:
             on_token(resp.content)
+        if on_reasoning and resp.reasoning_content:
+            on_reasoning(resp.reasoning_content)
         self.total_completion_tokens += len(resp.content.split())
         return resp
 
@@ -447,6 +462,7 @@ class OpenAICompatProvider(LLMProvider):
         tools: list[dict] | None = None,
         *,
         on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[LLMResponse]:
         params = self._base_params(messages, tools)
@@ -457,7 +473,7 @@ class OpenAICompatProvider(LLMProvider):
             params.pop("stream_options", None)
             stream = await self._ensure_aclient().chat.completions.create(**params, stream=True)
         async for chunk in stream:
-            yield _parse_delta(chunk, on_token)
+            yield _parse_delta(chunk, on_token, on_reasoning)
 
     def chat_stream(
         self,
@@ -465,6 +481,7 @@ class OpenAICompatProvider(LLMProvider):
         tools: list[dict] | None = None,
         *,
         on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> Iterator[LLMResponse]:
         params = self._base_params(messages, tools)
@@ -483,6 +500,7 @@ class OpenAICompatProvider(LLMProvider):
         tools: list[dict] | None = None,
         *,
         on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Non-streaming override: one JSON request is faster than SSE."""
@@ -500,6 +518,8 @@ class OpenAICompatProvider(LLMProvider):
         result = _parse_completion(response)
         if on_token and result.content:
             on_token(result.content)
+        if on_reasoning and result.reasoning_content:
+            on_reasoning(result.reasoning_content)
         self._track_usage(result)
         self._save_cached(cache_key, result)
         return result
@@ -510,6 +530,7 @@ class OpenAICompatProvider(LLMProvider):
         tools: list[dict] | None = None,
         *,
         on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Sync non-streaming."""
@@ -523,6 +544,8 @@ class OpenAICompatProvider(LLMProvider):
         result = _parse_completion(response)
         if on_token and result.content:
             on_token(result.content)
+        if on_reasoning and result.reasoning_content:
+            on_reasoning(result.reasoning_content)
         self._track_usage(result)
         return result
 
@@ -532,7 +555,11 @@ class OpenAICompatProvider(LLMProvider):
 # ---------------------------------------------------------------------------
 
 
-def _parse_delta(chunk: Any, on_token: Callable[[str], None] | None = None) -> LLMResponse:
+def _parse_delta(
+    chunk: Any,
+    on_token: Callable[[str], None] | None = None,
+    on_reasoning: Callable[[str], None] | None = None,
+) -> LLMResponse:
     """Parse one streaming chunk into a delta LLMResponse."""
     prompt_tok = 0
     completion_tok = 0
@@ -573,6 +600,8 @@ def _parse_delta(chunk: Any, on_token: Callable[[str], None] | None = None) -> L
 
     if on_token and content:
         on_token(content)
+    if on_reasoning and reasoning:
+        on_reasoning(reasoning)
 
     return LLMResponse(
         content=content,

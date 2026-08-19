@@ -21,6 +21,7 @@ from javis.contracts.types import (
     AgentContext,
     AgentError,
     AgentEvent,
+    AgentReasoningDelta,
     AgentTextDelta,
     AgentToolCallResult,
     AgentToolCallStart,
@@ -126,6 +127,7 @@ class CoreCoderBackend(AgentBackend):
                 final = await self._agent.achat(
                     prompt_text,
                     on_token=lambda t: emit(("delta", t)),
+                    on_reasoning=lambda t: emit(("reasoning", t)),
                     on_tool=lambda name, args: emit(("tool_start", name, args)),
                     on_tool_result=lambda n, a, out, err: emit(("tool_result", n, a, out, err)),
                 )
@@ -146,6 +148,8 @@ class CoreCoderBackend(AgentBackend):
                     return
                 if kind == "delta":
                     yield AgentTextDelta(text=payload[0])
+                elif kind == "reasoning":
+                    yield AgentReasoningDelta(text=payload[0])
                 elif kind == "tool_start":
                     yield AgentToolCallStart(tool_name=payload[0], tool_input=payload[1])
                 elif kind == "tool_result":

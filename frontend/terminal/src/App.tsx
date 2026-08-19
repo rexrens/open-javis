@@ -75,6 +75,7 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 	const session = useBackendSession(config, () => exit());
 	const deferredTranscript = useDeferredValue(session.transcript);
 	const deferredAssistantBuffer = useDeferredValue(session.assistantBuffer);
+	const deferredReasoningBuffer = useDeferredValue(session.reasoningBuffer);
 	const deferredStatus = useDeferredValue(session.status);
 	const deferredTasks = useDeferredValue(session.tasks);
 	const deferredTodoMarkdown = useDeferredValue(session.todoMarkdown);
@@ -507,6 +508,7 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 				<ConversationView
 					items={deferredTranscript}
 					assistantBuffer={deferredAssistantBuffer}
+					reasoningBuffer={deferredReasoningBuffer}
 					showWelcome={session.ready && outputStyle !== 'codex'}
 					outputStyle={outputStyle}
 				/>

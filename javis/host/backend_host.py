@@ -30,6 +30,7 @@ from uuid import uuid4
 from javis.contracts.messages import ContentBlock, ConversationMessage, ImageBlock, TextBlock
 from javis.contracts.types import (
     AgentError,
+    AgentReasoningDelta,
     AgentStatus,
     AgentTextDelta,
     AgentToolCallResult,
@@ -255,6 +256,9 @@ class _JavisBackendHost:
         async def _render_event(event) -> None:
             if isinstance(event, AgentTextDelta):
                 await self._emit(BackendEvent(type="assistant_delta", message=event.text))
+                return
+            if isinstance(event, AgentReasoningDelta):
+                await self._emit(BackendEvent(type="reasoning_delta", message=event.text))
                 return
             if isinstance(event, AgentToolCallStart):
                 self._last_tool_inputs[event.tool_name] = event.tool_input or {}

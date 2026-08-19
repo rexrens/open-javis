@@ -34,6 +34,13 @@ class AgentTextDelta:
 
 
 @dataclass(frozen=True)
+class AgentReasoningDelta:
+    """Incremental reasoning/thinking text (DeepSeek-R1, Qwen3 thinking)."""
+
+    text: str
+
+
+@dataclass(frozen=True)
 class AgentToolCallStart:
     """The agent is about to execute a named tool."""
 
@@ -83,6 +90,7 @@ class AgentStatus:
 
 
 AgentEvent = Union[
+    AgentReasoningDelta,
     AgentTextDelta,
     AgentToolCallStart,
     AgentToolCallResult,
@@ -97,6 +105,7 @@ __all__ = [
     "AgentError",
     "AgentEvent",
     "AgentStatus",
+    "AgentReasoningDelta",
     "AgentTextDelta",
     "AgentToolCallResult",
     "AgentToolCallStart",
