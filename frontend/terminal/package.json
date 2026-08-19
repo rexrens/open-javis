@@ -6,15 +6,16 @@
     "start": "tsx src/index.tsx"
   },
   "dependencies": {
-    "ink": "^5.1.0",
+    "ink": "^7.1.1",
     "ink-text-input": "^6.0.0",
     "marked": "^18.0.0",
-    "react": "^18.3.1",
+    "react": "^19.2.8",
     "string-width": "^7.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
-    "@types/react": "^18.3.12",
+    "@types/react": "^19.2.18",
+    "react-devtools-core": "^6.1.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }

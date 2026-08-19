@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {Box, Text, useInput, useStdin} from 'ink';
+import type {EventEmitter} from 'node:events';
 import chalk from 'chalk';
 
 import {useTheme} from '../theme/ThemeContext.js';
@@ -32,7 +33,10 @@ function MultilineTextInput({
 	promptColor: string;
 }): React.JSX.Element {
 	const [cursorOffset, setCursorOffset] = useState(value.length);
-	const {internal_eventEmitter} = useStdin();
+	// Ink 7 hides internal_eventEmitter from the public useStdin() type, but the
+	// runtime context value still carries it (used to distinguish backspace vs
+	// forward-delete raw sequences).
+	const {internal_eventEmitter} = useStdin() as unknown as {internal_eventEmitter: EventEmitter};
 	const lastSequenceRef = useRef('');
 	// Tracks the last value this component produced via onChange. If the
 	// incoming `value` prop diverges from this, the change came from outside
