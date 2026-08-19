@@ -25,6 +25,7 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 	const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
 	const [assistantBuffer, setAssistantBuffer] = useState('');
 	const [reasoningBuffer, setReasoningBuffer] = useState('');
+	const reasoningBufferRef = useRef('');
 	const [status, setStatus] = useState<Record<string, unknown>>({});
 	const [tasks, setTasks] = useState<TaskSnapshot[]>([]);
 	const [commands, setCommands] = useState<string[]>([]);
@@ -103,6 +104,11 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			clearTimeout(transcriptFlushTimerRef.current);
 			transcriptFlushTimerRef.current = null;
 		}
+	};
+
+	const clearReasoning = (): void => {
+		reasoningBufferRef.current = '';
+		setReasoningBuffer('');
 	};
 
 	const sendRequest = (payload: Record<string, unknown>): void => {
@@ -300,8 +306,9 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			if (!delta) {
 				return;
 			}
+			reasoningBufferRef.current += delta;
 			startTransition(() => {
-				setReasoningBuffer((prev) => prev + delta);
+				setReasoningBuffer(reasoningBufferRef.current);
 			});
 			return;
 		}
@@ -346,12 +353,19 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 				flushAssistantDelta();
 			}
 			const text = event.message ?? assistantBufferRef.current;
+			// Freeze the reasoning block into the transcript BEFORE the answer,
+			// so multi-turn history keeps each round's thinking.
+			const reasoning = reasoningBufferRef.current.trim();
+			reasoningBufferRef.current = '';
 			startTransition(() => {
-				setTranscript((items) => [...items, {role: 'assistant', text}]);
+				setTranscript((items) => [
+					...items,
+					...(reasoning ? [{role: 'system' as const, text: `🧠 ${reasoning}`}] : []),
+					{role: 'assistant', text},
+				]);
 			});
+			setReasoningBuffer('');
 			clearAssistantDelta();
-			// Keep the reasoning block visible above the finalized answer;
-			// it is cleared when the user submits the next message.
 			// Do NOT reset busy here: tool calls may follow this event.
 			// busy is reset by line_complete (the true end-of-turn signal).
 			setBusyLabel(undefined);
@@ -360,6 +374,7 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 		if (event.type === 'line_complete') {
 			// Final end-of-turn: clear everything, stop spinner.
 			clearAssistantDelta();
+			reasoningBufferRef.current = '';
 			setReasoningBuffer('');
 			setBusy(false);
 			setBusyLabel(undefined);
@@ -386,6 +401,7 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			clearPendingTranscriptItems();
 			setTranscript([]);
 			clearAssistantDelta();
+			reasoningBufferRef.current = '';
 			setReasoningBuffer('');
 			setBusyLabel(undefined);
 			return;
@@ -471,7 +487,7 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			setSelectRequest,
 			setBusy,
 			setBusyLabel,
-			setReasoningBuffer,
+			clearReasoning,
 			sendRequest,
 		}),
 		[assistantBuffer, bridgeSessions, busy, busyLabel, commands, mcpServers, modal, ready, reasoningBuffer, selectRequest, status, swarmNotifications, swarmTeammates, tasks, todoMarkdown, transcript]
