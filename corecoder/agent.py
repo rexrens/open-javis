@@ -13,18 +13,19 @@ import asyncio
 import concurrent.futures
 import inspect
 from collections.abc import Awaitable, Callable
-from .llm import LLM, ToolCall
-from .tools import ALL_TOOLS
-from .tools.base import Tool
-from .tools.agent import AgentTool
-from .prompt import system_prompt
+
 from .context import ContextManager
+from .llm import LLMProvider, ToolCall
+from .prompt import system_prompt
+from .tools import ALL_TOOLS
+from .tools.agent import AgentTool
+from .tools.base import Tool
 
 
 class Agent:
     def __init__(
         self,
-        llm: LLM,
+        llm: LLMProvider,
         tools: list[Tool] | None = None,
         max_context_tokens: int = 128_000,
         max_rounds: int = 50,
@@ -114,9 +115,9 @@ class Agent:
     async def achat(self, user_input: str, on_token=None, on_tool=None, on_tool_result=None) -> str:
         """Async counterpart of chat(): same loop over awaitable LLM.chat().
 
-        Requires an async LLM (AsyncLLM/AsyncScriptedLLM); building the Agent
-        with a sync LLM (LLM/ScriptedLLM/LiteLLM) raises TypeError on the
-        first call because llm.chat() is not awaitable.  on_tool and
+        Requires an async provider (LLMProvider.achat); building the Agent
+        with a sync-only provider raises TypeError on the first call because
+        llm.achat is not awaitable.  on_tool and
         on_tool_result fire on the event-loop thread (never from a worker
         thread), so they may safely use put_nowait-style asyncio APIs.
 
@@ -132,7 +133,7 @@ class Agent:
 
         try:
             for _ in range(self.max_rounds):
-                resp = await self.llm.chat(
+                resp = await self.llm.achat(
                     messages=self._full_messages(),
                     tools=self._tool_schemas(),
                     on_token=on_token,

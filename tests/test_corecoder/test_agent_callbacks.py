@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 
 from corecoder.agent import Agent
-from corecoder.llm import LLMResponse, ScriptedLLM, ToolCall
+from corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
 
 
 def _agent(script, **kwargs) -> Agent:
-    return Agent(llm=ScriptedLLM(script=script), **kwargs)
+    return Agent(llm=ScriptedProvider(script=script), **kwargs)
 
 
 def test_on_tool_result_single_call(tmp_path):

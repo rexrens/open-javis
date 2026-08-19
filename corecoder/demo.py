@@ -1,6 +1,6 @@
 """Offline scripted demo: watch the full agent loop with no API key.
 
-Runs one scripted task through the real Agent loop with a ScriptedLLM, so the
+Runs one scripted task through the real Agent loop with a ScriptedProvider, so the
 thought -> tool call -> observation cycle renders exactly as it would against
 a live model. Useful for demos, screenshots, and as a smoke test of the loop.
 """
@@ -13,7 +13,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 
 from .agent import Agent
-from .llm import LLMResponse, ScriptedLLM, ToolCall
+from .llm import LLMResponse, ScriptedProvider, ToolCall
 
 console = Console()
 
@@ -72,7 +72,7 @@ def _summarize(args: dict) -> str:
 
 def run_demo() -> int:
     workdir = Path(tempfile.mkdtemp(prefix="corecoder-demo-"))
-    agent = Agent(llm=ScriptedLLM(_script(workdir)))
+    agent = Agent(llm=ScriptedProvider(_script(workdir)))
 
     console.print(Panel.fit(f"[bold]{_TASK}[/]", title="corecoder demo (offline)"))
     result = agent.chat(

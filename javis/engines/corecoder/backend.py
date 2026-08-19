@@ -15,6 +15,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
+from javis.contracts.messages import ConversationMessage, ImageBlock, TextBlock, ToolResultBlock
 from javis.contracts.protocol import AgentBackend
 from javis.contracts.types import (
     AgentContext,
@@ -25,7 +26,6 @@ from javis.contracts.types import (
     AgentToolCallStart,
     AgentTurnEnd,
 )
-from javis.contracts.messages import ConversationMessage, ImageBlock, TextBlock, ToolResultBlock
 from javis.contracts.usage import UsageSnapshot
 
 _IMAGE_PLACEHOLDER = "[image omitted: engine does not process images]"
@@ -187,7 +187,7 @@ def build_corecoder_backend(
     del cwd, tool_metadata
     from corecoder.agent import Agent
     from corecoder.config import Config
-    from corecoder.llm import AsyncLLM
+    from corecoder.llm import OpenAICompatProvider
 
     cfg = Config.from_env()
     if engine_config:
@@ -202,7 +202,7 @@ def build_corecoder_backend(
         )
 
     resolved_model = model or cfg.model
-    llm = AsyncLLM(
+    llm = OpenAICompatProvider(
         model=resolved_model,
         api_key=cfg.api_key,
         base_url=cfg.base_url,

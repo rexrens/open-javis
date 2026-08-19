@@ -9,12 +9,12 @@ from __future__ import annotations
 import pytest
 
 from corecoder.agent import Agent
-from corecoder.llm import LLMResponse, ScriptedLLM, ToolCall
+from corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
 from corecoder.tools import ALL_TOOLS
 
 
 def _make_agent(script: list[LLMResponse], *, max_rounds: int = 10, tools=None) -> Agent:
-    llm = ScriptedLLM(script=script)
+    llm = ScriptedProvider(script=script)
     return Agent(llm=llm, tools=tools, max_rounds=max_rounds)
 
 

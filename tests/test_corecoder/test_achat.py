@@ -7,11 +7,11 @@ import asyncio
 import pytest
 
 from corecoder.agent import Agent
-from corecoder.llm import AsyncScriptedLLM, LLMResponse, ToolCall
+from corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
 
 
 def _agent(script, **kwargs) -> Agent:
-    return Agent(llm=AsyncScriptedLLM(script=script), **kwargs)
+    return Agent(llm=ScriptedProvider(script=script), **kwargs)
 
 
 @pytest.mark.asyncio

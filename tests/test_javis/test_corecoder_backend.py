@@ -7,7 +7,7 @@ import asyncio
 import pytest
 
 from corecoder.agent import Agent
-from corecoder.llm import AsyncScriptedLLM, LLMResponse, ToolCall
+from corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
 from javis.contracts.types import (
     AgentError,
     AgentTextDelta,
@@ -20,7 +20,7 @@ from javis.contracts.messages import ConversationMessage, ImageBlock, TextBlock,
 
 
 def _backend(script, **kwargs) -> CoreCoderBackend:
-    llm = AsyncScriptedLLM(script=script)
+    llm = ScriptedProvider(script=script)
     agent = Agent(llm=llm)
     return CoreCoderBackend(agent, model="test-model", system_prompt="test system", **kwargs)
 
@@ -92,7 +92,7 @@ class _GatedLLM:
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
 
-    async def chat(self, *, messages, tools=None, on_token=None):
+    async def achat(self, *, messages, tools=None, on_token=None):
         if not self._used:
             self._used = True
             return self._first
@@ -147,11 +147,11 @@ def test_load_history_converts_messages():
 
 
 def test_clear_history_resets_agent():
-    # The sync chat() path requires a sync LLM (AsyncScriptedLLM.chat returns
+    # The sync chat() path requires a sync provider (ScriptedProvider.chat returns
     # a coroutine, so agent.chat would raise AttributeError).
-    from corecoder.llm import ScriptedLLM
+    from corecoder.llm import ScriptedProvider
 
-    llm = ScriptedLLM(script=[LLMResponse(content="hi")])
+    llm = ScriptedProvider(script=[LLMResponse(content="hi")])
     agent = Agent(llm=llm)
     backend = CoreCoderBackend(agent, model="test-model", system_prompt="test system")
     backend.agent.chat("hello")  # sync path still works
@@ -203,5 +203,5 @@ def test_build_corecoder_backend_applies_config(monkeypatch):
     assert backend.agent.max_rounds == 12
     assert backend.agent._system == "sp"
     llm = backend.agent.llm
-    assert llm.extra["max_tokens"] == 2048
-    assert llm.extra["temperature"] == 0.2
+    assert llm.max_tokens == 2048
+    assert llm.temperature == 0.2

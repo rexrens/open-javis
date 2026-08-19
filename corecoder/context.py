@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .llm import LLM
+    from .llm import LLMProvider
 
 
 def _approx_tokens(text: str) -> int:
