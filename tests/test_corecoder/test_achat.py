@@ -102,3 +102,82 @@ async def test_achat_cancel_fixes_history(tmp_path):
     for m in agent.messages:
         for tc in m.get("tool_calls", []):
             assert tc["id"] in answered
+
+
+@pytest.mark.asyncio
+async def test_achat_permission_denied_skips_execution(tmp_path):
+    """A denying permission_checker must skip the tool and record the denial."""
+    target = tmp_path / "f.txt"
+    target.write_text("secret", encoding="utf-8")
+    denied = []
+
+    async def checker(name, args):
+        denied.append((name, args))
+        return "deny: not allowed"
+
+    agent = _agent(
+        [
+            LLMResponse(tool_calls=[ToolCall(id="c1", name="read_file", arguments={"file_path": str(target)})]),
+            LLMResponse(content="ok"),
+        ],
+        permission_checker=checker,
+    )
+    reply = await agent.achat("read")
+
+    assert reply == "ok"
+    assert len(denied) == 1
+    assert denied[0][0] == "read_file"
+    assert "[permission denied: deny: not allowed]" in agent.messages[2]["content"]
+
+
+@pytest.mark.asyncio
+async def test_achat_permission_allow_executes_tool(tmp_path):
+    """An allowing permission_checker must not block execution."""
+    target = tmp_path / "f.txt"
+    target.write_text("line one", encoding="utf-8")
+
+    async def checker(name, args):
+        return "allow"
+
+    agent = _agent(
+        [
+            LLMResponse(tool_calls=[ToolCall(id="c1", name="read_file", arguments={"file_path": str(target)})]),
+            LLMResponse(content="ok"),
+        ],
+        permission_checker=checker,
+    )
+    reply = await agent.achat("read")
+
+    assert reply == "ok"
+    assert "line one" in agent.messages[2]["content"]
+
+
+@pytest.mark.asyncio
+async def test_achat_permission_denied_parallel(tmp_path):
+    """Denial applies per-tool in the parallel path too."""
+    a = tmp_path / "a.txt"
+    a.write_text("AAA", encoding="utf-8")
+
+    async def checker(name, args):
+        return "allow" if name == "read_file" else "deny"
+
+    agent = _agent(
+        [
+            LLMResponse(tool_calls=[
+                ToolCall(id="c1", name="read_file", arguments={"file_path": str(a)}),
+                ToolCall(id="c2", name="write_file", arguments={"file_path": str(tmp_path / "b.txt"), "content": "x"}),
+            ]),
+            LLMResponse(content="ok"),
+        ],
+        permission_checker=checker,
+    )
+    reply = await agent.achat("multi")
+
+    assert reply == "ok"
+    # write_file denied, read_file executed
+    tool_msgs = [m for m in agent.messages if m["role"] == "tool"]
+    assert len(tool_msgs) == 2
+    denied = [m for m in tool_msgs if "permission denied" in m["content"]]
+    assert len(denied) == 1
+    assert denied[0]["tool_call_id"] == "c2"
+    assert not (tmp_path / "b.txt").exists()

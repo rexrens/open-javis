@@ -12,6 +12,7 @@ which means it's done working and ready to report back.
 import asyncio
 import concurrent.futures
 import inspect
+from collections.abc import Awaitable, Callable
 from .llm import LLM, ToolCall
 from .tools import ALL_TOOLS
 from .tools.base import Tool
@@ -27,13 +28,20 @@ class Agent:
         tools: list[Tool] | None = None,
         max_context_tokens: int = 128_000,
         max_rounds: int = 50,
+        permission_checker: Callable[[str, dict], Awaitable[str]] | None = None,
     ):
+        """``permission_checker`` is an async hook called before each tool
+        execution (event-loop thread): receives ``(tool_name, arguments)`` and
+        returns ``"allow"`` or a deny reason. When denied the tool is not
+        executed and the reason is recorded in the conversation.
+        """
         self.llm = llm
         self.tools = tools if tools is not None else ALL_TOOLS
         self._tool_by_name = {t.name: t for t in self.tools}
         self.messages: list[dict] = []
         self.context = ContextManager(max_tokens=max_context_tokens)
         self.max_rounds = max_rounds
+        self.permission_checker = permission_checker
         self._system = system_prompt(self.tools)
 
         # wire up sub-agent capability
@@ -143,7 +151,11 @@ class Agent:
                     tc = resp.tool_calls[0]
                     if on_tool:
                         on_tool(tc.name, tc.arguments)
-                    result, is_error = await asyncio.to_thread(self._exec_tool_with_status, tc)
+                    denied = await self._check_permission(tc)
+                    if denied is not None:
+                        result, is_error = denied
+                    else:
+                        result, is_error = await asyncio.to_thread(self._exec_tool_with_status, tc)
                     if on_tool_result:
                         on_tool_result(tc.name, tc.arguments, result, is_error)
                     self.messages.append({
@@ -158,8 +170,24 @@ class Agent:
                     if on_tool:
                         for tc in resp.tool_calls:
                             on_tool(tc.name, tc.arguments)
-                    results = await asyncio.to_thread(self._exec_tools_parallel, resp.tool_calls)
-                    for tc, (result, is_error) in zip(resp.tool_calls, results):
+                    results: dict[int, tuple[str, bool]] = {}
+                    to_execute: list[tuple[int, ToolCall]] = []
+                    for i, tc in enumerate(resp.tool_calls):
+                        denied = await self._check_permission(tc)
+                        if denied is not None:
+                            results[i] = denied
+                        else:
+                            to_execute.append((i, tc))
+                    if to_execute:
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                            futures = {
+                                i: pool.submit(self._exec_tool_with_status, tc)
+                                for i, tc in to_execute
+                            }
+                            for i, future in futures.items():
+                                results[i] = future.result()
+                    for i, tc in enumerate(resp.tool_calls):
+                        result, is_error = results[i]
                         if on_tool_result:
                             on_tool_result(tc.name, tc.arguments, result, is_error)
                         self.messages.append({
@@ -176,6 +204,15 @@ class Agent:
         except asyncio.CancelledError:
             self._answer_pending_tool_calls(pending_tool_calls)
             raise
+
+    async def _check_permission(self, tc: ToolCall) -> tuple[str, bool] | None:
+        """Run the permission hook; return ``(result, is_error)`` when denied."""
+        if self.permission_checker is None:
+            return None
+        decision = await self.permission_checker(tc.name, tc.arguments)
+        if decision == "allow":
+            return None
+        return (f"[permission denied: {decision}]", True)
 
     def _exec_tool_with_status(self, tc) -> tuple[str, bool]:
         """Execute a single tool call, returning (result_text, is_error).

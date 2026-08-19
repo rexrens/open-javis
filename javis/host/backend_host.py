@@ -49,6 +49,23 @@ log = logging.getLogger(__name__)
 
 _PROTOCOL_PREFIX = "OHJSON:"
 
+# Tools that mutate state — gated by permission mode.
+_WRITE_TOOLS = frozenset({"write_file", "edit_file", "bash"})
+
+
+def decide_permission(mode: str, tool_name: str) -> str:
+    """Pure permission decision: ``allow`` | ``deny`` | ``ask``.
+
+    - ``full_auto`` — allow everything
+    - ``plan``      — deny write/execute tools, allow reads
+    - ``default``   — ask for write/execute tools, allow reads
+    """
+    if mode == "full_auto":
+        return "allow"
+    if mode == "plan":
+        return "deny" if tool_name in _WRITE_TOOLS else "allow"
+    return "ask" if tool_name in _WRITE_TOOLS else "allow"
+
 
 @dataclass(frozen=True)
 class _BackendHostConfig:
@@ -81,6 +98,7 @@ class _JavisBackendHost:
     async def run(self) -> int:
         """Main loop: emit ready, then read requests and dispatch."""
         await start_runtime(self._bundle)
+        self._inject_permission_checker()
         await self._emit(
             BackendEvent.ready(
                 self._bundle.app_state.get(),
@@ -429,6 +447,27 @@ class _JavisBackendHost:
 
         await self._emit(BackendEvent(type="error", message=f"No selector available for /{command}"))
 
+    async def _check_permission(self, tool_name: str, tool_input: dict) -> str:
+        """Permission hook for the agent loop: decide allow/deny, ask via modal."""
+        mode = self._bundle.app_state.get().permission_mode
+        decision = decide_permission(mode, tool_name)
+        if decision != "ask":
+            return decision
+        reason = f"{tool_name} {json.dumps(tool_input, ensure_ascii=True)[:200]}"
+        allowed = await self._ask_permission(tool_name, reason)
+        return "allow" if allowed else "deny"
+
+    def _inject_permission_checker(self) -> None:
+        """Wire the modal permission channel into the agent's tool loop.
+
+        Only corecoder-backed agents expose a ``permission_checker``; other
+        backends (test doubles) simply skip injection.
+        """
+        agent = getattr(self._bundle.engine, "_agent", None)
+        core_agent = getattr(agent, "agent", None)
+        if core_agent is not None and hasattr(core_agent, "permission_checker"):
+            core_agent.permission_checker = self._check_permission
+
     async def _ask_permission(self, tool_name: str, reason: str) -> bool:
         async with self._permission_lock:
             request_id = uuid4().hex
@@ -563,4 +602,4 @@ async def run_javis_backend(
     return await host.run()
 
 
-__all__ = ["run_javis_backend"]
+__all__ = ["decide_permission", "run_javis_backend"]
