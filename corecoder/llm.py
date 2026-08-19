@@ -97,10 +97,14 @@ class LLMResponse:
         return msg
 
     def merge(self, other: LLMResponse) -> LLMResponse:
-        """Aggregate a streaming delta into this response."""
+        """Aggregate a streaming delta into this response.
+
+        ``content`` / ``reasoning_content`` are per-chunk increments (concatenate);
+        ``tool_calls`` are cumulative snapshots per chunk (last non-empty wins).
+        """
         return LLMResponse(
             content=self.content + other.content,
-            tool_calls=self.tool_calls + other.tool_calls,
+            tool_calls=other.tool_calls or self.tool_calls,
             reasoning_content=(self.reasoning_content or "")
             + (other.reasoning_content or "")
             or None,
@@ -472,8 +476,9 @@ class OpenAICompatProvider(LLMProvider):
         except BadRequestError:
             params.pop("stream_options", None)
             stream = await self._ensure_aclient().chat.completions.create(**params, stream=True)
+        tc_map: dict[int, dict] = {}
         async for chunk in stream:
-            yield _parse_delta(chunk, on_token, on_reasoning)
+            yield _parse_delta(chunk, on_token, on_reasoning, tc_map)
 
     def chat_stream(
         self,
@@ -529,7 +534,15 @@ def _parse_delta(
     chunk: Any,
     on_token: Callable[[str], None] | None = None,
     on_reasoning: Callable[[str], None] | None = None,
+    tc_map: dict[int, dict] | None = None,
 ) -> LLMResponse:
+    """Parse one streaming chunk into a delta LLMResponse.
+
+    ``tc_map`` carries tool-call accumulation across chunks (streaming tool
+    calls span multiple chunks); pass a fresh dict per stream to keep the
+    id/name/arguments assembled correctly. When None, a per-call dict is
+    used (stateless single-chunk parsing).
+    """
     """Parse one streaming chunk into a delta LLMResponse."""
     prompt_tok = 0
     completion_tok = 0
@@ -540,7 +553,8 @@ def _parse_delta(
 
     content = ""
     reasoning: str | None = None
-    tc_map: dict[int, dict] = {}
+    if tc_map is None:
+        tc_map = {}
 
     if chunk.choices:
         delta = chunk.choices[0].delta
@@ -552,12 +566,18 @@ def _parse_delta(
         if delta.tool_calls:
             for tc_delta in delta.tool_calls:
                 idx = tc_delta.index
-                tc_map[idx] = {"id": tc_delta.id or "", "name": "", "args": ""}
+                # Streaming tool calls span multiple chunks: initialize only on
+                # first appearance, then accumulate across chunks. Resetting here
+                # would wipe the id/name from earlier chunks (400 on the API).
+                if idx not in tc_map:
+                    tc_map[idx] = {"id": "", "name": "", "args": ""}
+                if tc_delta.id:
+                    tc_map[idx]["id"] = tc_delta.id
                 if tc_delta.function:
                     if tc_delta.function.name:
                         tc_map[idx]["name"] = tc_delta.function.name
                     if tc_delta.function.arguments:
-                        tc_map[idx]["args"] = tc_delta.function.arguments
+                        tc_map[idx]["args"] += tc_delta.function.arguments
 
     parsed: list[ToolCall] = []
     for idx in sorted(tc_map):

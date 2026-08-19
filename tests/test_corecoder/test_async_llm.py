@@ -103,3 +103,48 @@ def test_estimated_cost():
 
     assert estimated_cost("deepseek-chat", 1_000_000, 0) == 0.27
     assert estimated_cost("no-such-model", 1, 1) is None
+
+
+# --- streaming tool-call accumulation regression ---
+
+
+def test_streaming_tool_call_accumulates_across_chunks():
+    """Streaming tool calls span multiple chunks; id/name/args must survive."""
+    import types
+
+    from corecoder.llm import LLMResponse, _parse_delta
+
+    def make_chunk(idx, tc_id=None, name=None, args=None):
+        fn = None
+        if name is not None or args is not None:
+            fn = types.SimpleNamespace(name=name, arguments=args)
+        return types.SimpleNamespace(
+            usage=None,
+            choices=[
+                types.SimpleNamespace(
+                    finish_reason=None,
+                    delta=types.SimpleNamespace(
+                        content=None,
+                        reasoning_content=None,
+                        tool_calls=[
+                            types.SimpleNamespace(index=idx, id=tc_id, function=fn)
+                        ],
+                    ),
+                )
+            ],
+        )
+
+    tc_map: dict = {}
+    merged = LLMResponse()
+    for chunk in [
+        make_chunk(0, tc_id="call_1", name="read_file"),
+        make_chunk(0, args='{"file_path": "'),
+        make_chunk(0, args='pyproject.toml"}'),
+    ]:
+        merged = merged.merge(_parse_delta(chunk, None, None, tc_map))
+
+    assert len(merged.tool_calls) == 1
+    tc = merged.tool_calls[0]
+    assert tc.id == "call_1"
+    assert tc.name == "read_file"
+    assert tc.arguments == {"file_path": "pyproject.toml"}
