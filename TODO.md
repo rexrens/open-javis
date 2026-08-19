@@ -86,6 +86,8 @@ uv run javis -p "hi"       # 验证 DeepSeek 连通（读 ~/.javis/config.json�
 ## 🔧 杂项
 
 - [ ] 决定 `.vscode/` 是否提交（当前被 .gitignore 忽略）
+- [ ] 实现 `fallback_provider` / `fallback_model`（spec/config.md 已定义字段，功能未实现：provider 不可用时自动切换）
+- [ ] 迁移 `~/.javis/config.json` 到 v2 格式（v1 `engines` 节 → `providers`；api_key 移入 `~/.javis/.env`；不自动迁移，手动调整）
 - [ ] README 架构图检查（host 精简后可能有模块路径过时）
 - [ ] pyproject.toml 是否加 uv 阿里云镜像源（装包慢）
 

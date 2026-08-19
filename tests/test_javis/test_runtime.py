@@ -92,6 +92,7 @@ async def test_build_javis_runtime_includes_commands(isolated_env):
     assert "clear" in command_names
     assert "theme" in command_names
     assert "turns" in command_names
+    assert "permissions" in command_names
 
 
 @pytest.mark.asyncio

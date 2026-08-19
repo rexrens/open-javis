@@ -10,9 +10,8 @@ themes and output-styles. What remains:
 - ``start_runtime`` / ``close_runtime`` — lifecycle hooks (currently no-ops)
 - ``run_javis_print_mode`` — non-interactive single-prompt mode
 
-Configuration (``load_config`` / ``resolve_engine_name``) and the system-prompt
-builder (``build_javis_system_prompt``) live here too — they only feed
-``build_javis_runtime``.
+Configuration lives in ``javis.session.config`` (spec/config.md v2); the
+system-prompt builder (``build_javis_system_prompt``) lives here.
 
 ``handle_line`` yields ``AgentEvent`` straight through to the host's
 ``render_event`` callback — no ``StreamEvent`` translation layer.
@@ -20,64 +19,26 @@ builder (``build_javis_system_prompt``) live here too — they only feed
 
 from __future__ import annotations
 
-import json
 import os
 import sys
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Any
 from uuid import uuid4
 
 from javis.commands.registry import CommandContext, CommandRegistry, create_default_command_registry
-from javis.host.query_engine import QueryEngine
-from javis.contracts.protocol import AgentBackend
-from javis.contracts.types import AgentEvent, AgentTextDelta, AgentTurnEnd, AgentError, AgentStatus
 from javis.contracts.messages import ConversationMessage, sanitize_conversation_messages
+from javis.contracts.protocol import AgentBackend
+from javis.contracts.types import AgentError, AgentEvent, AgentStatus, AgentTextDelta, AgentTurnEnd
+from javis.host.query_engine import QueryEngine
 from javis.session.session_storage import JavisSessionBackend
 from javis.session.state import AppState, AppStateStore
-from javis.session.workspace import get_workspace_root, initialize_workspace
+from javis.session.workspace import initialize_workspace
 
 SystemPrinter = Callable[[str], Awaitable[None]]
 StreamRenderer = Callable[[AgentEvent], Awaitable[None]]
 ClearHandler = Callable[[], Awaitable[None]]
-
-
-# ---------------------------------------------------------------------------
-# Configuration — engine selection from config.json, env and CLI.
-# Priority: CLI --engine > env JAVIS_ENGINE > config.json "engine" > default.
-# ---------------------------------------------------------------------------
-
-DEFAULT_ENGINE = "corecoder"
-CONFIG_FILENAME = "config.json"
-
-
-def load_config(workspace: str | Path | None = None) -> dict:
-    """Read <workspace>/config.json. Missing or corrupt file -> {}."""
-    config_path = get_workspace_root(workspace) / CONFIG_FILENAME
-    if not config_path.exists():
-        return {}
-    try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (json.JSONDecodeError, OSError):
-        return {}
-
-
-def resolve_engine_name(
-    cli: str | None = None,
-    config: dict | None = None,
-    env: Mapping[str, str] | None = None,
-) -> str:
-    """Resolve the active engine name by priority: CLI > env > config > default."""
-    env = env if env is not None else os.environ
-    config = config or {}
-    if cli:
-        return cli
-    if env.get("JAVIS_ENGINE"):
-        return env["JAVIS_ENGINE"]
-    if config.get("engine"):
-        return str(config["engine"])
-    return DEFAULT_ENGINE
 
 
 # ---------------------------------------------------------------------------
@@ -147,19 +108,47 @@ async def build_javis_runtime(
     session_id = uuid4().hex[:12]
     tool_metadata["session_id"] = session_id
 
+    cfg: Any = None
+    engine_max_turns = max_turns
     if agent_backend is None:
-        from javis.engines import create_agent_backend, get_engine_config
+        from javis.engines import create_agent_backend
+        from javis.session.config import (
+            load_config,
+            resolve_engine_name,
+            resolve_provider_and_model,
+        )
+        from javis.session.credentials import resolve_api_key
 
-        config_data = load_config(workspace_root)
-        engine_name = resolve_engine_name(engine, config_data)
+        cfg = load_config(cwd=cwd_resolved, workspace=workspace_root)
+        engine_name = resolve_engine_name(engine, cfg)
+        provider_name, model_id = resolve_provider_and_model(cfg, cli_model=model)
+        provider_cfg = cfg.providers[provider_name]
+        api_key = resolve_api_key(
+            provider_name,
+            provider_cfg.api_key_env,
+            provider_cfg.api_key,
+            workspace=workspace_root,
+            cwd=cwd_resolved,
+        )
+        engine_config: dict[str, Any] = {
+            "model": model_id,
+            "base_url": provider_cfg.base_url,
+            "api_key": api_key or "",
+        }
+        for m in provider_cfg.models:
+            if m.id == model_id:
+                engine_config["max_tokens"] = m.max_tokens
+                break
+        if engine_max_turns is None and cfg.session.max_turns is not None:
+            engine_max_turns = cfg.session.max_turns
         agent_backend = create_agent_backend(
             engine_name,
-            model=model,
+            model=model_id,
             system_prompt=system_prompt_text,
             cwd=cwd_resolved,
-            max_turns=max_turns,
+            max_turns=engine_max_turns,
             tool_metadata=tool_metadata,
-            engine_config=get_engine_config(engine_name, config_data),
+            engine_config=engine_config,
         )
 
     model_name = model or getattr(agent_backend, "model", None) or "unknown"
@@ -169,7 +158,7 @@ async def build_javis_runtime(
         model=model_name,
         system_prompt=system_prompt_text,
         cwd=cwd_resolved,
-        max_turns=max_turns,
+        max_turns=engine_max_turns,
         tool_metadata=tool_metadata,
     )
 
@@ -185,13 +174,13 @@ async def build_javis_runtime(
         AppState(
             model=model_name,
             cwd=cwd_resolved,
-            permission_mode="default",
-            theme="default",
+            permission_mode=cfg.session.permission_mode if cfg else "default",
+            theme=cfg.appearance.theme if cfg else "default",
             provider="javis",
             auth_status="ok",
-            effort="medium",
-            passes=1,
-            output_style="default",
+            fast_mode=cfg.session.fast_mode if cfg else False,
+            vim_enabled=cfg.editor.vim_enabled if cfg else False,
+            output_style=cfg.appearance.output_style if cfg else "default",
         )
     )
 
@@ -208,12 +197,12 @@ async def build_javis_runtime(
 
 async def start_runtime(bundle: RuntimeBundle) -> None:
     """Lifecycle hook — currently a no-op (no hooks/MCP/sandbox to start)."""
-    return None
+    return
 
 
 async def close_runtime(bundle: RuntimeBundle) -> None:
     """Lifecycle hook — currently a no-op (no resources to close)."""
-    return None
+    return
 
 
 def _save_session(bundle: RuntimeBundle) -> None:
@@ -297,7 +286,6 @@ async def run_javis_print_mode(
     """Run a single prompt and print the assistant output to stdout."""
     cwd_path = str(Path(cwd or Path.cwd()).resolve())
     previous_cwd = Path.cwd()
-    import os
     os.chdir(cwd_path)
     try:
         bundle = await build_javis_runtime(
@@ -346,15 +334,11 @@ async def run_javis_print_mode(
 
 
 __all__ = [
-    "CONFIG_FILENAME",
-    "DEFAULT_ENGINE",
     "RuntimeBundle",
     "build_javis_runtime",
     "build_javis_system_prompt",
     "close_runtime",
     "handle_line",
-    "load_config",
-    "resolve_engine_name",
     "run_javis_print_mode",
     "start_runtime",
 ]

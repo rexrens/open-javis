@@ -46,6 +46,26 @@ def get_logs_dir(workspace: str | Path | None = None) -> Path:
     return get_workspace_root(workspace) / "logs"
 
 
+def find_project_javis_dir(cwd: str | Path | None = None) -> Path | None:
+    """Walk up from ``cwd`` to the nearest ``.javis/`` directory (project-level).
+
+    Stops at ``$HOME``; returns ``None`` when no project ``.javis/`` exists.
+    Note: this may find the global workspace itself when running under ``$HOME``;
+    callers that need only project-level config must exclude the global root.
+    """
+    start = Path(cwd or Path.cwd()).expanduser().resolve()
+    home = Path.home().resolve()
+    cur = start
+    while True:
+        candidate = cur / ".javis"
+        if candidate.is_dir():
+            return candidate
+        if cur == home or cur == cur.parent:
+            break
+        cur = cur.parent
+    return None
+
+
 def ensure_workspace(workspace: str | Path | None = None) -> Path:
     """Create the workspace directory tree if needed and return its root."""
     root = get_workspace_root(workspace)
@@ -76,6 +96,7 @@ def workspace_health(workspace: str | Path | None = None) -> dict[str, bool]:
 __all__ = [
     "WORKSPACE_DIRNAME",
     "ensure_workspace",
+    "find_project_javis_dir",
     "get_logs_dir",
     "get_memory_dir",
     "get_plugins_dir",

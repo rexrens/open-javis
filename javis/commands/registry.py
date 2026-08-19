@@ -139,6 +139,19 @@ def create_default_command_registry() -> CommandRegistry:
         context.engine.set_max_turns(turns)
         return CommandResult(message=f"Max turns set to {turns}.")
 
+    async def _permissions_handler(args: str, context: CommandContext) -> CommandResult:
+        value = args.strip().lower()
+        if not value:
+            return CommandResult(message="Usage: /permissions <default|full_auto|plan>")
+        if value not in ("default", "full_auto", "plan"):
+            return CommandResult(
+                message=f"Invalid permission mode: {value!r}. Use 'default', 'full_auto' or 'plan'."
+            )
+        context.app_state.set(permission_mode=value)
+        context.engine.tool_metadata["permission_mode"] = value
+        labels = {"default": "Default", "full_auto": "Auto", "plan": "Plan Mode"}
+        return CommandResult(message=f"Permission mode set to {labels[value]}.")
+
     registry.register(Command("help", "Show this help", _help_handler))
     registry.register(Command("exit", "Exit javis", _exit_handler))
     registry.register(Command("quit", "Exit javis", _exit_handler))
@@ -147,6 +160,7 @@ def create_default_command_registry() -> CommandRegistry:
     registry.register(Command("status", "Show session status", _status_handler))
     registry.register(Command("theme", "Set UI theme", _theme_handler))
     registry.register(Command("turns", "Set max turns", _turns_handler))
+    registry.register(Command("permissions", "Set permission mode", _permissions_handler))
     return registry
 
 

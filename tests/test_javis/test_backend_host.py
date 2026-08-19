@@ -213,3 +213,30 @@ async def test_apply_select_turns_rejects_non_numeric(isolated_env):
         await close_runtime(host._bundle)
 
     assert host._bundle.engine.max_turns == 64
+
+
+@pytest.mark.asyncio
+async def test_apply_select_permissions_updates_state(isolated_env):
+    """P0: /permissions selector must update the permission mode, not fall through to the LLM."""
+    host, _ = await _make_host(isolated_env)
+    try:
+        await host._apply_select_command("permissions", "plan")
+    finally:
+        await close_runtime(host._bundle)
+
+    assert host._bundle.app_state.get().permission_mode == "plan"
+    assert host._bundle.engine.tool_metadata["permission_mode"] == "plan"
+
+
+@pytest.mark.asyncio
+async def test_apply_select_permissions_rejects_unknown_mode(isolated_env):
+    """An unknown /permissions value must leave the existing mode unchanged."""
+    host, _ = await _make_host(isolated_env)
+    try:
+        await host._apply_select_command("permissions", "default")
+        await host._apply_select_command("permissions", "turbo")
+    finally:
+        await close_runtime(host._bundle)
+
+    assert host._bundle.app_state.get().permission_mode == "default"
+    assert host._bundle.engine.tool_metadata["permission_mode"] == "default"
