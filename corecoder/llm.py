@@ -368,10 +368,10 @@ class ScriptedProvider(LLMProvider):
         if not self._turns:
             raise RuntimeError("ScriptedProvider ran out of turns")
         resp = self._turns.pop(0)
-        if on_token and resp.content:
-            on_token(resp.content)
         if on_reasoning and resp.reasoning_content:
             on_reasoning(resp.reasoning_content)
+        if on_token and resp.content:
+            on_token(resp.content)
         self.total_completion_tokens += len(resp.content.split())
         yield resp
 
@@ -381,10 +381,10 @@ class ScriptedProvider(LLMProvider):
         if not self._turns:
             raise RuntimeError("ScriptedProvider ran out of turns")
         resp = self._turns.pop(0)
-        if on_token and resp.content:
-            on_token(resp.content)
         if on_reasoning and resp.reasoning_content:
             on_reasoning(resp.reasoning_content)
+        if on_token and resp.content:
+            on_token(resp.content)
         self.total_completion_tokens += len(resp.content.split())
         return resp
 
@@ -516,10 +516,11 @@ class OpenAICompatProvider(LLMProvider):
             params.pop("stream_options", None)
             response = await self._ensure_aclient().chat.completions.create(**params)
         result = _parse_completion(response)
-        if on_token and result.content:
-            on_token(result.content)
+        # Thinking comes before the answer in the model's output — fire it first.
         if on_reasoning and result.reasoning_content:
             on_reasoning(result.reasoning_content)
+        if on_token and result.content:
+            on_token(result.content)
         self._track_usage(result)
         self._save_cached(cache_key, result)
         return result
@@ -542,10 +543,10 @@ class OpenAICompatProvider(LLMProvider):
             params.pop("stream_options", None)
             response = self._ensure_client().chat.completions.create(**params)
         result = _parse_completion(response)
-        if on_token and result.content:
-            on_token(result.content)
         if on_reasoning and result.reasoning_content:
             on_reasoning(result.reasoning_content)
+        if on_token and result.content:
+            on_token(result.content)
         self._track_usage(result)
         return result
 
@@ -598,10 +599,10 @@ def _parse_delta(
             args = {}
         parsed.append(ToolCall(id=raw["id"], name=raw["name"], arguments=args))
 
-    if on_token and content:
-        on_token(content)
     if on_reasoning and reasoning:
         on_reasoning(reasoning)
+    if on_token and content:
+        on_token(content)
 
     return LLMResponse(
         content=content,
