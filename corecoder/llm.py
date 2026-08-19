@@ -494,37 +494,6 @@ class OpenAICompatProvider(LLMProvider):
         for chunk in stream:
             yield _parse_delta(chunk, on_token)
 
-    async def achat(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-        *,
-        on_token: Callable[[str], None] | None = None,
-        on_reasoning: Callable[[str], None] | None = None,
-        **kwargs: Any,
-    ) -> LLMResponse:
-        """Non-streaming override: one JSON request is faster than SSE."""
-        cache_key = self._cache_key(messages, tools, **kwargs)
-        cached = self._get_cached(cache_key)
-        if cached is not None:
-            return cached
-        params = self._base_params(messages, tools)
-        params.update(kwargs)
-        try:
-            response = await self._ensure_aclient().chat.completions.create(**params)
-        except BadRequestError:
-            params.pop("stream_options", None)
-            response = await self._ensure_aclient().chat.completions.create(**params)
-        result = _parse_completion(response)
-        # Thinking comes before the answer in the model's output — fire it first.
-        if on_reasoning and result.reasoning_content:
-            on_reasoning(result.reasoning_content)
-        if on_token and result.content:
-            on_token(result.content)
-        self._track_usage(result)
-        self._save_cached(cache_key, result)
-        return result
-
     def chat(
         self,
         messages: list[dict],

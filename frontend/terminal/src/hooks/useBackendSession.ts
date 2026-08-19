@@ -350,14 +350,8 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 				setTranscript((items) => [...items, {role: 'assistant', text}]);
 			});
 			clearAssistantDelta();
-			// Persist the completed reasoning block as a transcript row.
-			setReasoningBuffer((prev) => {
-				const reasoning = prev.trim();
-				if (reasoning) {
-					queueTranscriptItem({role: 'system', text: `🧠 ${reasoning}`});
-				}
-				return '';
-			});
+			// Keep the reasoning block visible above the finalized answer;
+			// it is cleared when the user submits the next message.
 			// Do NOT reset busy here: tool calls may follow this event.
 			// busy is reset by line_complete (the true end-of-turn signal).
 			setBusyLabel(undefined);
@@ -477,6 +471,7 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			setSelectRequest,
 			setBusy,
 			setBusyLabel,
+			setReasoningBuffer,
 			sendRequest,
 		}),
 		[assistantBuffer, bridgeSessions, busy, busyLabel, commands, mcpServers, modal, ready, reasoningBuffer, selectRequest, status, swarmNotifications, swarmTeammates, tasks, todoMarkdown, transcript]

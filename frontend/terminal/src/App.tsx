@@ -476,6 +476,7 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 			return;
 		}
 		session.sendRequest({type: 'submit_line', line: value, images: imagePayloads()});
+		session.setReasoningBuffer('');
 		if (value.trim()) {
 			setHistory((items) => [...items, value]);
 		}
