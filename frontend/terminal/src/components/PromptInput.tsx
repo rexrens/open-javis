@@ -222,10 +222,10 @@ export function PromptInput({
 
 	return (
 		<Box flexDirection="column">
-			{busy ? (
+			{busy && (statusLabel ?? toolName) ? (
 				<Box flexDirection="column" marginBottom={0}>
 					<Box>
-						<Spinner label={statusLabel ?? (toolName ? `Running ${toolName}...` : 'Running...')} />
+						<Spinner label={statusLabel ?? `Running ${toolName}...`} />
 					</Box>
 				</Box>
 			) : null}

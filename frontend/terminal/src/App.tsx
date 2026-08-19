@@ -75,6 +75,7 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 	const session = useBackendSession(config, () => exit());
 	const deferredTranscript = useDeferredValue(session.transcript);
 	const deferredAssistantBuffer = useDeferredValue(session.assistantBuffer);
+	const deferredReasoningBuffer = useDeferredValue(session.reasoningBuffer);
 	const deferredStatus = useDeferredValue(session.status);
 	const deferredTasks = useDeferredValue(session.tasks);
 	const deferredTodoMarkdown = useDeferredValue(session.todoMarkdown);
@@ -475,6 +476,7 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 			return;
 		}
 		session.sendRequest({type: 'submit_line', line: value, images: imagePayloads()});
+		session.clearReasoning();
 		if (value.trim()) {
 			setHistory((items) => [...items, value]);
 		}
@@ -507,6 +509,7 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 				<ConversationView
 					items={deferredTranscript}
 					assistantBuffer={deferredAssistantBuffer}
+					reasoningBuffer={deferredReasoningBuffer}
 					showWelcome={session.ready && outputStyle !== 'codex'}
 					outputStyle={outputStyle}
 				/>
@@ -563,7 +566,7 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 					setInput={setInput}
 					onSubmit={onSubmit}
 					toolName={session.busy ? currentToolName : undefined}
-					statusLabel={session.busy ? (session.busyLabel ?? (currentToolName ? `Running ${currentToolName}...` : 'Running agent loop...')) : undefined}
+					statusLabel={session.busy ? (session.busyLabel ?? (currentToolName ? `Running ${currentToolName}...` : undefined)) : undefined}
 					suppressSubmit={showPicker}
 					imageAttachmentLabels={imageAttachments.map((image) => image.label)}
 					clipboardStatus={clipboardStatus}

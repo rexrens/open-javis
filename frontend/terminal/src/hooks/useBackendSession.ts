@@ -17,6 +17,8 @@ import type {
 const PROTOCOL_PREFIX = 'OHJSON:';
 const ASSISTANT_DELTA_FLUSH_MS = 50;
 const ASSISTANT_DELTA_FLUSH_CHARS = 384;
+const REASONING_DELTA_FLUSH_MS = 50;
+const REASONING_DELTA_FLUSH_CHARS = 384;
 const TRANSCRIPT_EVENT_FLUSH_MS = 50;
 
 const stableStringify = (value: unknown): string => JSON.stringify(value);
@@ -24,6 +26,8 @@ const stableStringify = (value: unknown): string => JSON.stringify(value);
 export function useBackendSession(config: FrontendConfig, onExit: (code?: number | null) => void) {
 	const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
 	const [assistantBuffer, setAssistantBuffer] = useState('');
+	const [reasoningBuffer, setReasoningBuffer] = useState('');
+	const reasoningBufferRef = useRef('');
 	const [status, setStatus] = useState<Record<string, unknown>>({});
 	const [tasks, setTasks] = useState<TaskSnapshot[]>([]);
 	const [commands, setCommands] = useState<string[]>([]);
@@ -50,6 +54,8 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 	const assistantBufferRef = useRef('');
 	const pendingAssistantDeltaRef = useRef('');
 	const assistantFlushTimerRef = useRef<NodeJS.Timeout | null>(null);
+	const pendingReasoningDeltaRef = useRef('');
+	const reasoningFlushTimerRef = useRef<NodeJS.Timeout | null>(null);
 	const pendingTranscriptItemsRef = useRef<TranscriptItem[]>([]);
 	const transcriptFlushTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -62,6 +68,18 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 		assistantBufferRef.current += pending;
 		startTransition(() => {
 			setAssistantBuffer(assistantBufferRef.current);
+		});
+	};
+
+	const flushReasoningDelta = (): void => {
+		const pending = pendingReasoningDeltaRef.current;
+		if (!pending) {
+			return;
+		}
+		pendingReasoningDeltaRef.current = '';
+		reasoningBufferRef.current += pending;
+		startTransition(() => {
+			setReasoningBuffer(reasoningBufferRef.current);
 		});
 	};
 
@@ -102,6 +120,16 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			clearTimeout(transcriptFlushTimerRef.current);
 			transcriptFlushTimerRef.current = null;
 		}
+	};
+
+	const clearReasoning = (): void => {
+		pendingReasoningDeltaRef.current = '';
+		if (reasoningFlushTimerRef.current) {
+			clearTimeout(reasoningFlushTimerRef.current);
+			reasoningFlushTimerRef.current = null;
+		}
+		reasoningBufferRef.current = '';
+		setReasoningBuffer('');
 	};
 
 	const sendRequest = (payload: Record<string, unknown>): void => {
@@ -160,6 +188,10 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			if (assistantFlushTimerRef.current) {
 				clearTimeout(assistantFlushTimerRef.current);
 				assistantFlushTimerRef.current = null;
+			}
+			if (reasoningFlushTimerRef.current) {
+				clearTimeout(reasoningFlushTimerRef.current);
+				reasoningFlushTimerRef.current = null;
 			}
 			clearPendingTranscriptItems();
 		};
@@ -294,6 +326,24 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			}
 			return;
 		}
+		if (event.type === 'reasoning_delta') {
+			const delta = event.message ?? '';
+			if (!delta) {
+				return;
+			}
+			pendingReasoningDeltaRef.current += delta;
+			if (pendingReasoningDeltaRef.current.length >= REASONING_DELTA_FLUSH_CHARS) {
+				flushReasoningDelta();
+				return;
+			}
+			if (!reasoningFlushTimerRef.current) {
+				reasoningFlushTimerRef.current = setTimeout(() => {
+					reasoningFlushTimerRef.current = null;
+					flushReasoningDelta();
+				}, REASONING_DELTA_FLUSH_MS);
+			}
+			return;
+		}
 		if (event.type === 'assistant_delta') {
 			const delta = event.message ?? '';
 			if (!delta) {
@@ -335,9 +385,24 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 				flushAssistantDelta();
 			}
 			const text = event.message ?? assistantBufferRef.current;
+			// Flush any buffered reasoning, then freeze it into the transcript
+			// BEFORE the answer, so multi-turn history keeps each round's thinking.
+			if (reasoningFlushTimerRef.current) {
+				clearTimeout(reasoningFlushTimerRef.current);
+				reasoningFlushTimerRef.current = null;
+			}
+			flushReasoningDelta();
+			const reasoning = reasoningBufferRef.current.trim();
+			reasoningBufferRef.current = '';
+			pendingReasoningDeltaRef.current = '';
 			startTransition(() => {
-				setTranscript((items) => [...items, {role: 'assistant', text}]);
+				setTranscript((items) => [
+					...items,
+					...(reasoning ? [{role: 'reasoning' as const, text: reasoning}] : []),
+					{role: 'assistant', text},
+				]);
 			});
+			setReasoningBuffer('');
 			clearAssistantDelta();
 			// Do NOT reset busy here: tool calls may follow this event.
 			// busy is reset by line_complete (the true end-of-turn signal).
@@ -347,6 +412,13 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 		if (event.type === 'line_complete') {
 			// Final end-of-turn: clear everything, stop spinner.
 			clearAssistantDelta();
+			pendingReasoningDeltaRef.current = '';
+			if (reasoningFlushTimerRef.current) {
+				clearTimeout(reasoningFlushTimerRef.current);
+				reasoningFlushTimerRef.current = null;
+			}
+			reasoningBufferRef.current = '';
+			setReasoningBuffer('');
 			setBusy(false);
 			setBusyLabel(undefined);
 			return;
@@ -372,6 +444,13 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			clearPendingTranscriptItems();
 			setTranscript([]);
 			clearAssistantDelta();
+			pendingReasoningDeltaRef.current = '';
+			if (reasoningFlushTimerRef.current) {
+				clearTimeout(reasoningFlushTimerRef.current);
+				reasoningFlushTimerRef.current = null;
+			}
+			reasoningBufferRef.current = '';
+			setReasoningBuffer('');
 			setBusyLabel(undefined);
 			return;
 		}
@@ -438,6 +517,7 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 		() => ({
 			transcript,
 			assistantBuffer,
+			reasoningBuffer,
 			status,
 			tasks,
 			commands,
@@ -455,8 +535,9 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			setSelectRequest,
 			setBusy,
 			setBusyLabel,
+			clearReasoning,
 			sendRequest,
 		}),
-		[assistantBuffer, bridgeSessions, busy, busyLabel, commands, mcpServers, modal, ready, selectRequest, status, swarmNotifications, swarmTeammates, tasks, todoMarkdown, transcript]
+		[assistantBuffer, bridgeSessions, busy, busyLabel, commands, mcpServers, modal, ready, reasoningBuffer, selectRequest, status, swarmNotifications, swarmTeammates, tasks, todoMarkdown, transcript]
 	);
 }
