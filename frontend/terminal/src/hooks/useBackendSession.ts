@@ -360,7 +360,7 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			startTransition(() => {
 				setTranscript((items) => [
 					...items,
-					...(reasoning ? [{role: 'system' as const, text: `🧠 ${reasoning}`}] : []),
+					...(reasoning ? [{role: 'reasoning' as const, text: reasoning}] : []),
 					{role: 'assistant', text},
 				]);
 			});

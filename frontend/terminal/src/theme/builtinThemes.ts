@@ -40,7 +40,7 @@ export const defaultTheme: ThemeConfig = {
 	icons: {
 		spinner: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
 		tool: '  ⏵ ',
-		assistant: '⏺ ',
+		assistant: '🤖 ',
 		user: '> ',
 		system: 'ℹ ',
 		success: '✓ ',
@@ -65,7 +65,7 @@ export const darkTheme: ThemeConfig = {
 	icons: {
 		spinner: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
 		tool: '  ⏵ ',
-		assistant: '⏺ ',
+		assistant: '🤖 ',
 		user: '> ',
 		system: 'ℹ ',
 		success: '✓ ',
@@ -90,7 +90,7 @@ export const minimalTheme: ThemeConfig = {
 	icons: {
 		spinner: ['-', '\\', '|', '/'],
 		tool: '  > ',
-		assistant: ': ',
+		assistant: '🤖 ',
 		user: '> ',
 		system: '# ',
 		success: '+ ',
@@ -115,7 +115,7 @@ export const cyberpunkTheme: ThemeConfig = {
 	icons: {
 		spinner: ['◐', '◓', '◑', '◒'],
 		tool: '  ▶ ',
-		assistant: '◆ ',
+		assistant: '🤖 ',
 		user: '▸ ',
 		system: '⚡ ',
 		success: '✦ ',
@@ -140,7 +140,7 @@ export const solarizedTheme: ThemeConfig = {
 	icons: {
 		spinner: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
 		tool: '  ⏵ ',
-		assistant: '⏺ ',
+		assistant: '🤖 ',
 		user: '> ',
 		system: 'ℹ ',
 		success: '✓ ',
