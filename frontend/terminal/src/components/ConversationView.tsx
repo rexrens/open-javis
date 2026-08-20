@@ -27,44 +27,6 @@ function groupToolPairs(items: TranscriptItem[]): GroupedItem[] {
 	return result;
 }
 
-// Keep the visible transcript small enough that Ink's full-screen redraw
-// (log-update erases and rewrites every line each render) stays imperceptible.
-// slice(-N) by message count is wrong: 40 messages render to 100+ terminal
-// lines, and every assistant flush then rewrites all 100 lines -> flicker.
-const MAX_VISIBLE_LINES = 20;
-
-function estimateItemLines(item: TranscriptItem): number {
-	const base = Math.max(1, (item.text ?? '').split('\n').length);
-	switch (item.role) {
-		case 'assistant':
-		case 'reasoning':
-			return base + 1; // icon row + body (markdown can expand further)
-		case 'tool':
-		case 'tool_result':
-			return Math.min(base, 4) + 1; // collapse long tool output
-		case 'system':
-		case 'status':
-		case 'log':
-			return 1;
-		default:
-			return base;
-	}
-}
-
-function sliceToLineLimit(items: TranscriptItem[], maxLines: number): TranscriptItem[] {
-	let lines = 0;
-	let start = items.length;
-	for (let i = items.length - 1; i >= 0; i--) {
-		const estimated = estimateItemLines(items[i]!);
-		if (lines + estimated > maxLines) {
-			break;
-		}
-		lines += estimated;
-		start = i;
-	}
-	return items.slice(start);
-}
-
 function ConversationViewInner({
 	items,
 	assistantBuffer,
@@ -80,7 +42,7 @@ function ConversationViewInner({
 }): React.JSX.Element {
 	const {theme} = useTheme();
 	const isCodexStyle = outputStyle === 'codex';
-	const visible = sliceToLineLimit(items, MAX_VISIBLE_LINES);
+	const visible = items.slice(-40);
 	const grouped = groupToolPairs(visible);
 
 	return (
