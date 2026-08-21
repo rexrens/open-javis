@@ -57,7 +57,9 @@ class ServiceRegistry:
         try:
             async with self._cond:
                 await asyncio.wait_for(self._cond.wait_for(_ready), timeout)
-        except TimeoutError:
+        # asyncio.TimeoutError is a distinct type on Python 3.10, so it must be
+        # caught explicitly; UP041 (py311-targeted) wrongly treats it as an alias.
+        except asyncio.TimeoutError:  # noqa: UP041
             pass
         return [n for n in names if n not in self._services]
 
