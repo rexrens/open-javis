@@ -192,6 +192,7 @@ def build_corecoder_backend(
     from corecoder.agent import Agent
     from corecoder.config import Config
     from corecoder.llm import OpenAICompatProvider
+    from corecoder.tools import all_tools
 
     cfg = Config.from_env()
     if engine_config:
@@ -213,7 +214,7 @@ def build_corecoder_backend(
         max_tokens=cfg.max_tokens,
         temperature=cfg.temperature,
     )
-    agent = Agent(llm=llm, max_context_tokens=cfg.max_context_tokens)
+    agent = Agent(llm=llm, max_context_tokens=cfg.max_context_tokens, tools=all_tools())
     return CoreCoderBackend(
         agent,
         model=resolved_model,

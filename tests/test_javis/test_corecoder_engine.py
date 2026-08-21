@@ -10,7 +10,7 @@ import pytest
 
 from corecoder.agent import Agent
 from corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
-from corecoder.tools import ALL_TOOLS
+from corecoder.tools import all_tools
 
 
 def _make_agent(script: list[LLMResponse], *, max_rounds: int = 10, tools=None) -> Agent:
@@ -135,4 +135,4 @@ def test_default_tools_include_core_set():
     agent = _make_agent([LLMResponse(content="ok")])
     names = {t.name for t in agent.tools}
     assert {"read_file", "write_file", "edit_file", "bash", "glob", "grep"} <= names
-    assert names == {t.name for t in ALL_TOOLS}
+    assert names == {t.name for t in all_tools()}

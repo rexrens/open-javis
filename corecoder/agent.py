@@ -17,7 +17,7 @@ from collections.abc import Awaitable, Callable
 from .context import ContextManager
 from .llm import LLMProvider, ToolCall
 from .prompt import system_prompt
-from .tools import ALL_TOOLS
+from .tools import all_tools
 from .tools.agent import AgentTool
 from .tools.base import Tool
 
@@ -37,7 +37,7 @@ class Agent:
         executed and the reason is recorded in the conversation.
         """
         self.llm = llm
-        self.tools = tools if tools is not None else ALL_TOOLS
+        self.tools = tools if tools is not None else all_tools()
         self._tool_by_name = {t.name: t for t in self.tools}
         self.messages: list[dict] = []
         self.context = ContextManager(max_tokens=max_context_tokens)
