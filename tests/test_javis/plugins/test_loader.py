@@ -102,7 +102,7 @@ async def test_load_plugins_injects_config_and_activates(reg):
 
     plugins_cfg = {
         "decl-plugin": {"enabled": True, "config": {"greeting": "from-cfg"}},
-        "object_form": {"enabled": True, "config": {"n": 7}},
+        "obj-plugin": {"enabled": True, "config": {"n": 7}},
     }
     await load_plugins(reg, [FIXTURES], plugins_cfg)
     await reg.activate_all()

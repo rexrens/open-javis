@@ -128,10 +128,6 @@ async def load_plugins(
     """
     report = LoadReport()
     for path, name in discover_plugin_files(dirs):
-        entry = plugins_cfg.get(name, {})
-        if not entry.get("enabled", True):
-            report.skipped.append(name)
-            continue
         try:
             module = _load_module(path, f"javis_plugin_{name}")
             specs = extract_plugins(module, name)
@@ -143,8 +139,11 @@ async def load_plugins(
             report.errors[name] = str(exc)
             continue
         for spec in specs:
-            # Config may be keyed by declared name or by the discovered file name.
-            entry_cfg = plugins_cfg.get(spec.name, plugins_cfg.get(name, {}))
+            # All config keys are the declared plugin name (spec.name).
+            entry_cfg = plugins_cfg.get(spec.name, {})
+            if not entry_cfg.get("enabled", True):
+                report.skipped.append(spec.name)
+                continue
             raw_config = dict(entry_cfg.get("config", {}))
             instance = PluginInstance(
                 name=spec.name,
