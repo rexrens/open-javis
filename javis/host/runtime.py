@@ -24,6 +24,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 from uuid import uuid4
 
@@ -32,6 +33,13 @@ from javis.contracts.messages import ConversationMessage, sanitize_conversation_
 from javis.contracts.protocol import AgentBackend
 from javis.contracts.types import AgentError, AgentEvent, AgentStatus, AgentTextDelta, AgentTurnEnd
 from javis.host.query_engine import QueryEngine
+from javis.plugins import (
+    PluginContext,
+    PluginRegistry,
+    load_plugins,
+    plugin_dirs,
+)
+from javis.plugins.context import EventBus, ServiceRegistry
 from javis.session.session_storage import JavisSessionBackend
 from javis.session.state import AppState, AppStateStore
 from javis.session.workspace import initialize_workspace
@@ -68,6 +76,23 @@ class RuntimeBundle:
     session_id: str
     system_prompt: str = ""
     settings_overrides: dict[str, Any] = field(default_factory=dict)
+    plugins: PluginRegistry | None = None
+
+
+def _build_plugin_dirs(*, cwd: str | None = None, workspace: str | Path | None = None) -> list[Path]:
+    return plugin_dirs(cwd=cwd, workspace=workspace)
+
+
+def _tool_module() -> ModuleType:
+    import corecoder.tools
+
+    return corecoder.tools
+
+
+def _engine_module() -> ModuleType:
+    import javis.engines
+
+    return javis.engines
 
 
 async def build_javis_runtime(
@@ -108,18 +133,50 @@ async def build_javis_runtime(
     session_id = uuid4().hex[:12]
     tool_metadata["session_id"] = session_id
 
-    cfg: Any = None
+    from javis.session.config import load_config
+
+    cfg = load_config(cwd=cwd_resolved, workspace=workspace_root)  # always non-None
+    plugins: PluginRegistry | None = None
+
+    # --- plugin system: activate before the backend is built so plugin
+    # tools reach the engine via corecoder.tools.all_tools() ---
+    services = ServiceRegistry()
+    bus = EventBus()
+    commands = create_default_command_registry()
+
+    def _make_ctx(name: str, config: Any) -> PluginContext:
+        return PluginContext(
+            name=name, config=config, services=services, bus=bus,
+            javis_config=cfg,
+        )
+
+    registry = PluginRegistry(
+        services=services, bus=bus, ctx_builder=_make_ctx,
+    )
+    # built-in services (owner=None, never revoked)
+    services.provide("tools", _tool_module())
+    services.provide("commands", commands)
+    services.provide("engines", _engine_module())
+    services.provide("config", cfg)
+
+    plugins_cfg = dict(getattr(cfg, "plugins", {}) or {})
+    await load_plugins(
+        registry,
+        _build_plugin_dirs(cwd=cwd_resolved, workspace=workspace_root),
+        plugins_cfg,
+    )
+    await registry.activate_all()
+    plugins = registry
+
     engine_max_turns = max_turns
     if agent_backend is None:
         from javis.engines import create_agent_backend
         from javis.session.config import (
-            load_config,
             resolve_engine_name,
             resolve_provider_and_model,
         )
         from javis.session.credentials import resolve_api_key
 
-        cfg = load_config(cwd=cwd_resolved, workspace=workspace_root)
         engine_name = resolve_engine_name(engine, cfg)
         provider_name, model_id = resolve_provider_and_model(cfg, cli_model=model)
         provider_cfg = cfg.providers[provider_name]
@@ -188,21 +245,24 @@ async def build_javis_runtime(
         engine=engine_obj,
         cwd=cwd_resolved,
         app_state=app_state,
-        commands=create_default_command_registry(),
+        commands=commands if cfg is not None else create_default_command_registry(),
         session_backend=session_backend or JavisSessionBackend(workspace_root),
         session_id=session_id,
         system_prompt=system_prompt_text,
+        plugins=plugins,
     )
 
 
 async def start_runtime(bundle: RuntimeBundle) -> None:
-    """Lifecycle hook — currently a no-op (no hooks/MCP/sandbox to start)."""
-    return
+    """Run plugin on_start hooks (application-level startup)."""
+    if bundle.plugins is not None:
+        await bundle.plugins.run_start_hooks()
 
 
 async def close_runtime(bundle: RuntimeBundle) -> None:
-    """Lifecycle hook — currently a no-op (no resources to close)."""
-    return
+    """Stop all plugins: disposers reverse-order, services revoked."""
+    if bundle.plugins is not None:
+        await bundle.plugins.close_all()
 
 
 def _save_session(bundle: RuntimeBundle) -> None:
