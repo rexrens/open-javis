@@ -1715,6 +1715,13 @@ async def test_plugin_tool_registered_into_corecoder(isolated_env, monkeypatch):
 
 - [ ] **步骤 3：接入 runtime.py**
 
+**先加 ruff exclude**（任务 5 的 `tests/test_javis/plugins/fixtures/bad_syntax.py` 故意含语法错误，`ruff check` 会报 invalid-syntax 失败）：
+
+```toml
+# pyproject.toml [tool.ruff] 段，line-length 下方新增：
+exclude = ["tests/**/fixtures/**"]
+```
+
 在 `javis/host/runtime.py` 顶部 import 增加：
 
 ```python
