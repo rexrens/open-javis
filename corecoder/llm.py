@@ -70,6 +70,25 @@ class ToolCall:
 
 
 @dataclass
+class LLMRequest:
+    """一次 LLM 调用的请求内容（模型输入 = 内容 + 采样参数）。
+
+    采样参数字段为 None 表示"不覆盖"，使用 provider 构造时的默认值
+    （如 OpenAICompatProvider(temperature=0.0, max_tokens=4096)）。
+    非 None 则本次调用覆盖。
+    """
+
+    messages: list[dict]  # 对话历史（OpenAI Chat 格式）
+    tools: list[dict] | None = None  # 工具 schema
+    max_tokens: int | None = None
+    temperature: float | None = None
+    stop: list[str] | None = None
+    top_p: float | None = None
+    seed: int | None = None
+    response_format: dict | None = None
+
+
+@dataclass
 class LLMResponse:
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
@@ -192,38 +211,38 @@ class LLMProvider(ABC):
     @abstractmethod
     async def achat_stream(
         self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
+        request: LLMRequest,
         *,
+        extra_body: dict[str, Any] | None = None,
         on_token: Callable[[str], None] | None = None,
         on_reasoning: Callable[[str], None] | None = None,
-        **kwargs: Any,
     ) -> AsyncIterator[LLMResponse]:
         """Async streaming: yield one delta ``LLMResponse`` per chunk.
 
         ``on_token`` fires for content deltas; ``on_reasoning`` fires for
         reasoning/thinking deltas (DeepSeek-R1, Qwen3 thinking, …).
+        ``extra_body`` is a provider-specific passthrough (never part of the
+        cache key) for vendor-only request fields not covered by LLMRequest.
         """
 
     # -- derived: async non-streaming --------------------------------------
 
     async def achat(
         self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
+        request: LLMRequest,
         *,
+        extra_body: dict[str, Any] | None = None,
         on_token: Callable[[str], None] | None = None,
         on_reasoning: Callable[[str], None] | None = None,
-        **kwargs: Any,
     ) -> LLMResponse:
         """Async non-streaming. Base default: aggregate ``achat_stream``."""
-        cache_key = self._cache_key(messages, tools, **kwargs)
+        cache_key = self._cache_key(request)
         cached = self._get_cached(cache_key)
         if cached is not None:
             return cached
         merged = LLMResponse()
         async for delta in self.achat_stream(
-            messages, tools, on_token=on_token, on_reasoning=on_reasoning, **kwargs
+            request, extra_body=extra_body, on_token=on_token, on_reasoning=on_reasoning
         ):
             merged = merged.merge(delta)
         self._track_usage(merged)
@@ -234,12 +253,11 @@ class LLMProvider(ABC):
 
     def chat_stream(
         self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
+        request: LLMRequest,
         *,
+        extra_body: dict[str, Any] | None = None,
         on_token: Callable[[str], None] | None = None,
         on_reasoning: Callable[[str], None] | None = None,
-        **kwargs: Any,
     ) -> Iterator[LLMResponse]:
         """Sync streaming. Not implemented in the base — override in subclass."""
         raise NotImplementedError(
@@ -249,12 +267,11 @@ class LLMProvider(ABC):
 
     def chat(
         self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
+        request: LLMRequest,
         *,
+        extra_body: dict[str, Any] | None = None,
         on_token: Callable[[str], None] | None = None,
         on_reasoning: Callable[[str], None] | None = None,
-        **kwargs: Any,
     ) -> LLMResponse:
         """Sync non-streaming. Not implemented in the base — override in subclass."""
         raise NotImplementedError(
@@ -284,14 +301,24 @@ class LLMProvider(ABC):
 
     # -- optional disk cache -----------------------------------------------
 
-    def _cache_key(self, messages: list[dict], tools: list[dict] | None, **kwargs: Any) -> str:
+    def _cache_key(self, request: LLMRequest) -> str:
+        """Cache key = hash of everything that can change the model output.
+
+        ``extra_body`` is deliberately excluded: it is a transport-level
+        passthrough (vendor-only fields), not model input. If a passthrough
+        field ever affects output, promote it to an explicit LLMRequest field.
+        """
         payload = json.dumps(
             {
                 "model": self.model,
-                "messages": messages,
-                "tools": tools,
-                "max_tokens": kwargs.get("max_tokens"),
-                "temperature": kwargs.get("temperature"),
+                "messages": request.messages,
+                "tools": request.tools,
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature,
+                "stop": request.stop,
+                "top_p": request.top_p,
+                "seed": request.seed,
+                "response_format": request.response_format,
             },
             sort_keys=True,
             default=str,
@@ -361,14 +388,15 @@ class ScriptedProvider(LLMProvider):
 
     async def achat_stream(
         self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
+        request: LLMRequest,
         *,
+        extra_body: dict[str, Any] | None = None,
         on_token: Callable[[str], None] | None = None,
         on_reasoning: Callable[[str], None] | None = None,
-        **kwargs: Any,
     ) -> AsyncIterator[LLMResponse]:
-        del messages, tools, kwargs
+        """Play back the next scripted turn; request content and sampling
+        params are ignored (a scripted model doesn't respond to them)."""
+        del request, extra_body
         if not self._turns:
             raise RuntimeError("ScriptedProvider ran out of turns")
         resp = self._turns.pop(0)
@@ -379,9 +407,16 @@ class ScriptedProvider(LLMProvider):
         self.total_completion_tokens += len(resp.content.split())
         yield resp
 
-    def chat(self, messages, tools=None, *, on_token=None, on_reasoning=None, **kwargs) -> LLMResponse:
+    def chat(
+        self,
+        request: LLMRequest,
+        *,
+        extra_body: dict[str, Any] | None = None,
+        on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
+    ) -> LLMResponse:
         """Scripted sync: pop the next turn and deliver it whole."""
-        del messages, tools, kwargs
+        del request, extra_body
         if not self._turns:
             raise RuntimeError("ScriptedProvider ran out of turns")
         resp = self._turns.pop(0)
@@ -448,29 +483,45 @@ class OpenAICompatProvider(LLMProvider):
             )
         return self._aclient
 
-    def _base_params(self, messages: list[dict], tools: list[dict] | None) -> dict:
+    def _base_params(self, request: LLMRequest, extra_body: dict[str, Any] | None = None) -> dict:
+        """Build SDK params from a request.
+
+        LLMRequest fields with a value override the constructor defaults
+        (None keeps the default); ``extra_body`` is merged last so
+        vendor-only passthrough fields win.
+        """
         params: dict = {
             "model": self.model,
-            "messages": messages,
+            "messages": request.messages,
             "stream_options": {"include_usage": True},
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
+            "temperature": (
+                request.temperature if request.temperature is not None else self.temperature
+            ),
+            "max_tokens": request.max_tokens if request.max_tokens is not None else self.max_tokens,
         }
-        if tools:
-            params["tools"] = self._format_tools(tools)
+        if request.tools:
+            params["tools"] = self._format_tools(request.tools)
+        if request.stop is not None:
+            params["stop"] = request.stop
+        if request.top_p is not None:
+            params["top_p"] = request.top_p
+        if request.seed is not None:
+            params["seed"] = request.seed
+        if request.response_format is not None:
+            params["response_format"] = request.response_format
+        if extra_body:
+            params.update(extra_body)
         return params
 
     async def achat_stream(
         self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
+        request: LLMRequest,
         *,
+        extra_body: dict[str, Any] | None = None,
         on_token: Callable[[str], None] | None = None,
         on_reasoning: Callable[[str], None] | None = None,
-        **kwargs: Any,
     ) -> AsyncIterator[LLMResponse]:
-        params = self._base_params(messages, tools)
-        params.update(kwargs)
+        params = self._base_params(request, extra_body)
         try:
             stream = await self._ensure_aclient().chat.completions.create(**params, stream=True)
         except BadRequestError:
@@ -482,15 +533,13 @@ class OpenAICompatProvider(LLMProvider):
 
     def chat_stream(
         self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
+        request: LLMRequest,
         *,
+        extra_body: dict[str, Any] | None = None,
         on_token: Callable[[str], None] | None = None,
         on_reasoning: Callable[[str], None] | None = None,
-        **kwargs: Any,
     ) -> Iterator[LLMResponse]:
-        params = self._base_params(messages, tools)
-        params.update(kwargs)
+        params = self._base_params(request, extra_body)
         try:
             stream = self._ensure_client().chat.completions.create(**params, stream=True)
         except BadRequestError:
@@ -501,16 +550,14 @@ class OpenAICompatProvider(LLMProvider):
 
     def chat(
         self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
+        request: LLMRequest,
         *,
+        extra_body: dict[str, Any] | None = None,
         on_token: Callable[[str], None] | None = None,
         on_reasoning: Callable[[str], None] | None = None,
-        **kwargs: Any,
     ) -> LLMResponse:
         """Sync non-streaming."""
-        params = self._base_params(messages, tools)
-        params.update(kwargs)
+        params = self._base_params(request, extra_body)
         try:
             response = self._ensure_client().chat.completions.create(**params)
         except BadRequestError:
@@ -650,6 +697,7 @@ def _parse_completion(response: Any) -> LLMResponse:
 
 __all__ = [
     "LLMProvider",
+    "LLMRequest",
     "LLMResponse",
     "OpenAICompatProvider",
     "ScriptedProvider",

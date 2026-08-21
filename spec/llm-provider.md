@@ -23,6 +23,24 @@
 
 ```python
 # corecoder/llm.py
+@dataclass
+class LLMRequest:
+    """一次 LLM 调用的请求内容（模型输入 = 内容 + 采样参数）。
+
+    采样参数字段为 None 表示"不覆盖"，使用 provider 构造时的默认值
+    （如 OpenAICompatProvider(temperature=0.0, max_tokens=4096)）。
+    非 None 则本次调用覆盖。
+    """
+
+    messages: list[dict]                # 对话历史（OpenAI Chat 格式）
+    tools: list[dict] | None = None     # 工具 schema
+    max_tokens: int | None = None
+    temperature: float | None = None
+    stop: list[str] | None = None
+    top_p: float | None = None
+    seed: int | None = None
+    response_format: dict | None = None
+
 class LLMProvider(ABC):
     """统一 LLM 接口：sync/async × 非流式/流式 四方法。"""
 
@@ -30,38 +48,43 @@ class LLMProvider(ABC):
     @abstractmethod
     async def achat_stream(
         self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
+        request: LLMRequest,
         *,
+        extra_body: dict[str, Any] | None = None,
         on_token: Callable[[str], None] | None = None,
-        **kwargs,
+        on_reasoning: Callable[[str], None] | None = None,
     ) -> AsyncIterator[LLMResponse]:
         """异步流式：逐 chunk yield 增量 LLMResponse（delta 语义）。"""
 
     # ---- 派生 1：异步非流式 = 聚合 achat_stream（子类可覆盖优化）----
     async def achat(
         self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
+        request: LLMRequest,
         *,
+        extra_body: dict[str, Any] | None = None,
         on_token: Callable[[str], None] | None = None,
-        **kwargs,
+        on_reasoning: Callable[[str], None] | None = None,
     ) -> LLMResponse:
+        cache_key = self._cache_key(request)   # 命中直接返回
         merged = LLMResponse()
-        async for delta in self.achat_stream(messages, tools, on_token=on_token, **kwargs):
+        async for delta in self.achat_stream(
+            request, extra_body=extra_body, on_token=on_token, on_reasoning=on_reasoning
+        ):
             merged = merged.merge(delta)
         return merged
 
     # ---- 派生 2：同步流式（javis 主链路不用，接口完整）----
     def chat_stream(
-        self, messages, tools=None, *, on_token=None, **kwargs
+        self, request: LLMRequest, *, extra_body=None, on_token=None, on_reasoning=None
     ) -> Iterator[LLMResponse]:
         raise NotImplementedError(
             "同步流式未实现；javis 主链路走 achat_stream。需要时在子类覆盖。"
         )
 
     # ---- 派生 3：同步非流式（同上）----
-    def chat(self, messages, tools=None, *, on_token=None, **kwargs) -> LLMResponse:
+    def chat(
+        self, request: LLMRequest, *, extra_body=None, on_token=None, on_reasoning=None
+    ) -> LLMResponse:
         raise NotImplementedError(
             "同步非流式未实现；javis 主链路走 achat。需要时在子类覆盖。"
         )
@@ -72,6 +95,7 @@ class LLMProvider(ABC):
 - **D2**：`on_token` 回调保留（TUI 渲染依赖，在 yield 前调用）
 - **D3**：流式 yield 增量 delta；`LLMResponse.merge()` 聚合
 - **D5**：`Agent(llm=...)` 参数名不改，`Agent.chat` 调 `llm.chat`、`Agent.achat` 调 `await llm.achat`
+- **D11（2026-08-20）**：请求参数收敛为 `LLMRequest` dataclass（内容 + 采样参数），消除 `**kwargs` 透传黑洞；`extra_body` 作为命名透传口承载厂商特有参数（传输层，不进缓存 key）；LLMRequest 字段 None = 用 provider 构造默认，非 None = 本次覆盖；回调（on_token/on_reasoning）是观察者，留在方法签名不进 request
 
 ### 1.2 数据模型
 
@@ -141,7 +165,8 @@ cache_dir: str | None = None   # 默认 ~/.javis/cache/llm/
 cache_ttl: int | None = None   # 秒；None = 不过期
 
 # 只缓存非流式完整响应（chat/achat）
-# key = hash(messages + tools + model + max_tokens)
+# key = hash(model + LLMRequest 全部字段：messages/tools/max_tokens/temperature/stop/top_p/seed/response_format)
+# extra_body 不进 key：它是传输层透传，不是模型输入；若某透传字段影响输出，应收编为 LLMRequest 显式字段
 # 原子写（复用 session_storage.atomic_write 思路）
 ```
 
@@ -161,15 +186,15 @@ class OpenAICompatProvider(LLMProvider):
         self._client: OpenAI | None = None
         self._aclient: AsyncOpenAI | None = None
 
-    async def achat_stream(self, messages, tools=None, *, on_token=None, **kwargs):
+    async def achat_stream(
+        self, request: LLMRequest, *, extra_body=None, on_token=None, on_reasoning=None
+    ):
         aclient = self._aclient or AsyncOpenAI(api_key=self.api_key,
                                                base_url=self.base_url,
                                                max_retries=self.max_retries)
-        stream = await aclient.chat.completions.create(
-            model=self.model, messages=messages, tools=self._format_tools(tools),
-            stream=True, stream_options={"include_usage": True},
-            temperature=self.temperature, max_tokens=self.max_tokens,
-        )   # BadRequestError → 去掉 stream_options 重试一次（现有逻辑保留）
+        params = self._base_params(request, extra_body)  # request 非 None 字段覆盖构造默认
+        stream = await aclient.chat.completions.create(**params, stream=True)
+        # BadRequestError → 去掉 stream_options 重试一次（现有逻辑保留）
         async for chunk in stream:
             yield self._parse_delta(chunk)
 

@@ -15,6 +15,8 @@ CoreCoder implements the same idea in 3 layers:
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
+from .llm import LLMRequest
+
 if TYPE_CHECKING:
     from .llm import LLMProvider
 
@@ -154,19 +156,21 @@ class ContextManager:
         if llm:
             try:
                 resp = llm.chat(
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "Compress this conversation into a brief summary. "
-                                "Preserve: file paths edited, key decisions made, "
-                                "errors encountered, current task state. "
-                                "Drop: verbose command output, code listings, "
-                                "redundant back-and-forth."
-                            ),
-                        },
-                        {"role": "user", "content": flat[:15000]},
-                    ],
+                    LLMRequest(
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "Compress this conversation into a brief summary. "
+                                    "Preserve: file paths edited, key decisions made, "
+                                    "errors encountered, current task state. "
+                                    "Drop: verbose command output, code listings, "
+                                    "redundant back-and-forth."
+                                ),
+                            },
+                            {"role": "user", "content": flat[:15000]},
+                        ]
+                    )
                 )
                 return resp.content
             except Exception:

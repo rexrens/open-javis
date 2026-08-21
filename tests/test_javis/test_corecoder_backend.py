@@ -92,7 +92,8 @@ class _GatedLLM:
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
 
-    async def achat(self, *, messages, tools=None, on_token=None, on_reasoning=None):
+    async def achat(self, request, *, extra_body=None, on_token=None, on_reasoning=None):
+        del extra_body, on_token, on_reasoning
         if not self._used:
             self._used = True
             return self._first
