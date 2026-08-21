@@ -1,13 +1,14 @@
 # javis TODO
 
-> 交接清单 — 在家里继续工作用。当前状态：**77 tests passed，DeepSeek 连通，远端 main 已同步**。
+> 交接清单 — 在家里继续工作用。当前状态：**129 tests passed，DeepSeek 连通，远端 main 已同步**。
+> 最近完成：LLMProvider 接口改造（LLMRequest + extra_body 替换 **kwargs 透传黑洞，commit 35823b5）。
 
 ## 快速恢复环境（回家后第一步）
 
 ```bash
 cd open-javis
 uv sync --extra dev        # 装依赖（pytest/ruff/debugpy 在 dev 组）
-uv run pytest tests/ -q    # 应 77 passed
+uv run pytest tests/ -q    # 应 129 passed
 uv run javis -p "hi"       # 验证 DeepSeek 连通（读 ~/.javis/config.json）
 ```
 
@@ -64,7 +65,7 @@ uv run javis -p "hi"       # 验证 DeepSeek 连通（读 ~/.javis/config.json�
 ## 📦 阶段 2：corecoder 工具注册表化（对齐 dsh tools 组）
 
 - [ ] `corecoder/tools/` 静态 `ALL_TOOLS` → `register_tool()` 注册表（可插拔、可覆盖）
-- [ ] llm 拆 provider 概念（对齐 dsh llm 组：服务定义 + 多个 provider）
+- [x] llm 拆 provider 概念（已落地：LLMProvider 基类 + LLMRequest/extra_body 请求封装 + OpenAICompatProvider/ScriptedProvider；剩余：FallbackProvider 落地、Anthropic/Responses/Gemini 二期）
 - [ ] 参考：dsh 的 `packages/core/tools`（ToolDefinition + schema + 注册）
 
 ## 🧩 阶段 3：插件系统（核心诉求，借鉴 DeepSeek Harness）
@@ -76,17 +77,17 @@ uv run javis -p "hi"       # 验证 DeepSeek 连通（读 ~/.javis/config.json�
 
 ## 📈 测试与质量
 
-- 总覆盖率 51%，重点补：
-  - `corecoder/llm.py` 26%（流式解析/重试/超时，用 mock httpx 传输层）
-  - `javis/host/backend_host.py` 36%（端到端协议测试）
+- 总覆盖率 61%，重点补：
+  - `corecoder/llm.py` 65%（缺口在流式解析/重试/超时错误路径，用 mock httpx 传输层）
+  - `javis/host/backend_host.py` 44%（端到端协议测试，选择器/P4 权限钩子落地后自然覆盖）
   - `javis/session/session_storage.py` 54%
-- 目标：51% → 70%+
-- 维护：`uv run ruff check javis/ corecoder/`、`uv run mypy javis/`
+- 目标：61% → 70%+
+- 维护：`uv run ruff check javis/ corecoder/`（历史遗留 10 个错误：F821 LLM 未定义 / I001 import 排序 / F401 / S110，可顺手清）、`uv run mypy javis/`
 
 ## 🔧 杂项
 
 - [ ] 决定 `.vscode/` 是否提交（当前被 .gitignore 忽略）
-- [ ] 实现 `fallback_provider` / `fallback_model`（spec/config.md 已定义字段，功能未实现：provider 不可用时自动切换）
+- [ ] 实现 `fallback_provider` / `fallback_model`（spec/config.md 已定义字段，功能未实现：provider 不可用时自动切换；LLMProvider 签名已为 FallbackProvider 就绪——request/extra_body/回调转发即可）
 - [ ] 迁移 `~/.javis/config.json` 到 v2 格式（v1 `engines` 节 → `providers`；api_key 移入 `~/.javis/.env`；不自动迁移，手动调整）
 - [ ] README 架构图检查（host 精简后可能有模块路径过时）
 - [ ] pyproject.toml 是否加 uv 阿里云镜像源（装包慢）
