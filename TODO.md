@@ -1,100 +1,97 @@
 # javis TODO
 
-> 交接清单 — 在家里继续工作用。当前状态：**129 tests passed，DeepSeek 连通，远端 main 已同步**。
-> 最近完成：LLMProvider 接口改造（LLMRequest + extra_body 替换 **kwargs 透传黑洞，commit 35823b5）。
+> 交接清单 — 当前状态：**129 tests passed，DeepSeek 连通，远端 main 已同步**。
+>
+> **Roadmap v2（2026-08-20 定稿）**：插件系统优先。插件是 javis 唯一的扩展机制——一切能力（工具/命令/provider/skill/记忆/MCP…）都以插件形态提供；核心注册表留在宿主层，插件只做"注册自己的贡献"。对齐 dsh 的 Cordis 简化版（插件 = Python 包 + manifest，ctx 注册，profile 组合）。
 
 ## 快速恢复环境（回家后第一步）
 
 ```bash
 cd open-javis
 uv sync --extra dev        # 装依赖（pytest/ruff/debugpy 在 dev 组）
-uv run pytest tests/ -q    # 应 129 passed
+.venv/bin/pytest -q        # 应 129 passed（uv run pytest 可能卡网络 sync，用 .venv 直跑）
 uv run javis -p "hi"       # 验证 DeepSeek 连通（读 ~/.javis/config.json）
 ```
 
 注意事项：
-- PyPI 官方源很慢（debugpy 5.1MiB 下载超时），装包慢就加 `--index-url https://mirrors.aliyun.com/pypi/simple/`，或考虑在 pyproject.toml 加 `[tool.uv] index-url`
-- VSCode 调试配置在 `.vscode/launch.json`（被 .gitignore 忽略，本机已有；6 个配置：print 模式 / backend-only / pytest / corecoder）
+- PyPI 官方源很慢，装包慢就加 `--index-url https://mirrors.aliyun.com/pypi/simple/`
+- VSCode 调试配置在 `.vscode/launch.json`（被 .gitignore 忽略，本机已有）
 
 ---
 
-## 🔴 P0：选择器流程断裂（核心 bug）
+## Roadmap v2 总览
 
-`_build_select_command_line`（`javis/host/backend_host.py`）生成的 `/permissions xxx`、`/theme xxx`、`/turns xxx`、`/fast xxx`、`/vim xxx`、`/voice xxx`、`/model xxx` 在 `commands/registry.py` **都不存在** → 被 `handle_line` 当作普通用户消息发给 LLM。
+| 阶段 | 主题 | 状态 |
+|---|---|---|
+| **Phase 0** | 插件系统 + 核心注册表 | ⬜ 未开始（优先） |
+| **Phase 1** | 现有能力插件化 + 修复（迁移期） | ⬜ 未开始 |
+| **Phase 2** | 知识层插件（skill/记忆/plan/subagent） | ⬜ 未开始 |
+| **Phase 3** | 生态插件（MCP/web/LSP/sandbox/teams） | ⬜ 未开始 |
 
-**后果**：TUI 里 Tab/命令选择器切换权限模式、主题、轮次等全部不生效。
-**修法**：在 `commands/registry.py` 注册这 7 个设置命令（handler 更新 `AppStateStore` + QueryEngine setter）。
-
-## 🔴 P1：斜杠命令缺失
-
-- `/plan on` / `/plan off`（前端 App.tsx 已实现切换逻辑，后端无 `/plan` 命令）→ 需补命令 + 发 `plan_mode_change` 事件
-- `/resume`：前端发 `select_command resume`，后端会话列表逻辑却挂在 `list_sessions` 请求上 → **协议不匹配**，需对齐（`_handle_select_command` 加 resume 分支）
-- selector 缺分支：`/provider`、`/output-style`、`/effort`、`/passes`
-
-## 🟡 P2：事件类型定义了但从不发送（protocol 僵尸事件）
-
-`javis/host/wire.py` 定义了这些类型但后端从不发送：
-
-| 事件 | 前端效果 |
-|---|---|
-| `todo_update` | TodoPanel 永远空白（组件已写好） |
-| `plan_mode_change` | 状态栏不跟随 /plan |
-| `compact_progress` | 压缩进度不显示（corecoder 有压缩但没转发） |
-| `status` | protocol 里**根本没有**这个类型，但前端 useBackendSession 有处理分支 |
-
-## 🟡 P3：状态栏缺字段
-
-`StatusBar.tsx` 显示 `input_tokens`/`output_tokens`，但 `_state_payload`（wire.py）不提供 → token 计数永不显示。需要把 QueryEngine 的 `total_usage` 放进状态快照。
-
-## 🟠 P4：权限弹窗死代码
-
-`_ask_permission` / `_ask_edit_approval` / `_ask_question`（backend_host.py）定义了但**从未被调用**（引擎无权限钩子）→ 前端 ModalHost 的 permission/edit_diff 弹窗永远不会出现。需要给 QueryEngine/corecoder 加权限钩子。
-
-## ⚪ P5：前端死代码
-
-`frontend/terminal/src/components/` 下 4 个未引用的旧组件（三栏布局遗留）：
-- `Composer.tsx`（被 PromptInput 替代）
-- `Footer.tsx`（被 StatusBar 替代）
-- `SidePanel.tsx`（被 StatusBar + TodoPanel/SwarmPanel 替代）
-- `TranscriptPane.tsx`（被 ConversationView 替代）
-
-删除或保留二选一（之前讨论过，未定）。
+参考：dsh（本机 `/home/rensu/workspace/deepseek-harness`）`packages/extensions`、`packages/preset`、`packages/bundle`；Cordis 组合模型。
 
 ---
 
-## 📦 阶段 2：corecoder 工具注册表化（对齐 dsh tools 组）
+## 🟦 Phase 0：插件系统 + 核心注册表（最先做）
 
-- [ ] `corecoder/tools/` 静态 `ALL_TOOLS` → `register_tool()` 注册表（可插拔、可覆盖）
-- [ ] **skill 支持（最小版）**：借鉴 dsh `packages/skill/`——发现规则 `dir/SKILL.md`（目录 bundle）或扁平 `dir.md`；注册 `load_skill(name)` 工具把 skill 内容注入上下文（`<skill_content>` 渲染块）；调用策略 `modelInvocable`/`userInvocable` 分开控制
-- [x] llm 拆 provider 概念（已落地：LLMProvider 基类 + LLMRequest/extra_body 请求封装 + OpenAICompatProvider/ScriptedProvider；剩余：FallbackProvider 落地、Anthropic/Responses/Gemini 二期）
-- [ ] 参考：dsh 的 `packages/core/tools`（ToolDefinition + schema + 注册）
+> 交付物 = 可用的插件基础设施 + 第一个验证插件。插件系统设计定稿后，其余阶段都只是"写插件"。
 
-## 🧩 阶段 3：插件系统（核心诉求，借鉴 DeepSeek Harness）
+- [ ] **F0.1 核心注册表建立**：corecoder 工具静态 `ALL_TOOLS` → `register_tool()` 注册表（可插拔/可覆盖/名称排序稳定）；插件系统的注册落点
+- [ ] **F0.2 插件规范与发现**：manifest（name/version/deps/钩子声明）+ 三层目录发现（内置 `javis/plugins/` < 用户 `~/.javis/plugins/` < 项目 `<project>/.javis/plugins/`，对齐配置分层）+ 加载 + 命名冲突检测
+- [ ] **F0.3 PluginContext**：注册 API（`register_tool` / `register_command` / `register_llm_provider` / `register_engine` / `register_config_namespace`）+ 事件总线（`subscribe`/`publish`，打通 wire 前端协议）
+- [ ] **F0.4 生命周期**：`activate`/`deactivate` 钩子、依赖顺序、错误隔离（单插件崩溃不影响宿主，异常只记日志）
+- [ ] **F0.5 Profile**：profile = 插件组合清单（`~/.javis/profiles/<name>.yaml`），支持 CLI 指定；默认 profile 启用内置插件
+- [ ] **F0.6 配置命名空间**：插件声明自己的配置节（config.json 顶层键，deep-merge；未知键已容忍）
+- [ ] **F0.7 示例插件 + 测试**：一个演示插件（如 `/hello` 命令 + 一个工具）验证全链路；单测覆盖发现/加载/冲突/生命周期/错误隔离
 
-- [ ] `javis/plugins/`：loader（扫描/加载/卸载）+ 生命周期钩子 + 注册表
-- [ ] skill 作为插件形态：dsh `packages/skill/` 家族（`skill/` 注册表 + `skill-filesystem/` 发现 + `tool-skill/` 模型面工具）对齐进插件系统
-- [ ] bundle/profile 概念：一组插件 = 一个 profile（dsh 的 `bundle/base`）
-- [ ] 顺带解决 `start_runtime`/`close_runtime` no-op（用插件钩子实现）
-- [ ] 参考：本机 `/home/rensu/workspace/deepseek-harness` 的 `packages/bundle/`、`packages/core/agent-loop/`、Cordis 插件模型（ctx 服务 + inject + effect）
+验收：`javis/plugins/` 结构定型；示例插件注册命令+工具全链路可用；tests 覆盖核心路径。
 
-## 📈 测试与质量
+---
 
-- 总覆盖率 61%，重点补：
-  - `corecoder/llm.py` 65%（缺口在流式解析/重试/超时错误路径，用 mock httpx 传输层）
-  - `javis/host/backend_host.py` 44%（端到端协议测试，选择器/P4 权限钩子落地后自然覆盖）
+## 🟩 Phase 1：现有能力插件化 + 修复（迁移期）
+
+> 验证插件机制成色：把已承诺但断裂的功能用插件机制补上（一举两得），把已有能力迁到插件形态。
+
+- [ ] **F1.1 内置工具迁移**：read/write/bash/grep/glob/edit/agent 7 个工具 → 内置插件注册（验证注册表，删除静态 ALL_TOOLS）
+- [ ] **F1.2 命令插件化 + 补全**：命令注册走 ctx；补缺失命令（选择器生成的 /fast /vim /voice /model + 斜杠 /plan /resume /provider /output-style /effort /passes）
+- [ ] **F1.3 事件总线打通前端**：僵尸事件激活（todo_update / plan_mode_change / compact_progress / status）经插件事件总线实现并转发 wire
+- [ ] **F1.4 LLM provider 插件化**：provider 注册走 ctx；**FallbackProvider** 作为首个 provider 插件（主 provider 失败自动切换，LLMProvider 签名已就绪）
+- [ ] **F1.5 权限策略插件化**：permission_checker 策略（default/full_auto/plan）可被插件替换；确认 ModalHost 弹窗全链路（已部分接通）
+- [ ] **F1.6 状态栏 token 修复**：total_usage 进状态快照（wire `_state_payload`），StatusBar 显示 input/output tokens
+
+## 🟨 Phase 2：知识层插件
+
+- [ ] **F2.1 Skill 插件**：`dir/SKILL.md` / 扁平 `.md` 发现 → `load_skill` 工具注入 `<skill_content>`；modelInvocable/userInvocable 策略；dsh `packages/skill` 家族模式
+- [ ] **F2.2 记忆插件**：跨会话记忆（会话结束写摘要 → 新会话启动注入，MEMORY.md/scratchpad 模式；参考 pi 记忆、dsh session-query）
+- [ ] **F2.3 Plan Mode 插件**：复杂任务先出计划 → 用户审阅/批准 → 执行（对齐 Claude Code plan 模式；注册 plan 命令 + 事件）
+- [ ] **F2.4 Subagent 完善**：AgentTool（现有雏形）异步化、独立 LLM 参数（model/temperature）、可配置工具集（allow/deny）、context fork 隔离
+
+## 🟧 Phase 3：生态插件
+
+- [ ] **F3.1 MCP 插件**：MCP 客户端（stdio）注册为工具集（MCP-friendly：内置工具 + MCP 并存）
+- [ ] **F3.2 Web 插件**：搜索/抓取工具（dsh web 家族）
+- [ ] **F3.3 LSP 插件**：补全/诊断/引用（dsh lsp 家族）
+- [ ] **F3.4 Sandbox 插件**：bash 执行隔离（bwrap/Docker，匹配监督强度）
+- [ ] **F3.5 Agent Teams 插件**：多会话协调（前端 SwarmPanel 已存在，补后端；实验性）
+
+---
+
+## 测试与质量
+
+- 当前 129 passed，总覆盖率 61%：
+  - `corecoder/llm.py` 65%（缺口在流式错误路径）
+  - `javis/host/backend_host.py` 44%（端到端协议测试，Phase 1 事件打通后自然覆盖）
   - `javis/session/session_storage.py` 54%
-- 目标：61% → 70%+
-- 维护：`uv run ruff check javis/ corecoder/`（历史遗留 10 个错误：F821 LLM 未定义 / I001 import 排序 / F401 / S110，可顺手清）、`uv run mypy javis/`
+- 目标：61% → 70%+（Phase 0 插件系统单测 + Phase 1 事件链路测试贡献主要增量）
+- 维护：`ruff check javis/ corecoder/`（历史遗留 10 个错误：F821 `LLM` 未定义（context.py）/ I001 import 排序 ×4 / F401 / S110，可顺手清）、`mypy javis/`
 
-## 🔧 杂项
+## 杂项
 
+- [ ] 前端死代码清理（Composer/Footer/SidePanel/TranscriptPane 4 个旧组件，删除或保留二选一）
 - [ ] 决定 `.vscode/` 是否提交（当前被 .gitignore 忽略）
-- [ ] 实现 `fallback_provider` / `fallback_model`（spec/config.md 已定义字段，功能未实现：provider 不可用时自动切换；LLMProvider 签名已为 FallbackProvider 就绪——request/extra_body/回调转发即可）
 - [ ] 迁移 `~/.javis/config.json` 到 v2 格式（v1 `engines` 节 → `providers`；api_key 移入 `~/.javis/.env`；不自动迁移，手动调整）
 - [ ] README 架构图检查（host 精简后可能有模块路径过时）
 - [ ] pyproject.toml 是否加 uv 阿里云镜像源（装包慢）
-
----
 
 ## 当前目录结构速览
 
@@ -103,8 +100,9 @@ javis/
   contracts/   纯契约：protocol(AgentBackend), types(AgentEvent), messages, usage
   host/        cli, runtime(含config/prompts), query_engine, backend_host, wire, react_launcher
   session/     session_storage, state, workspace
-  commands/    registry（斜杠命令）
+  commands/    registry（斜杠命令，Phase 1 插件化）
   engines/     registry + corecoder/backend
-corecoder/     智能体引擎：agent, llm, tools/, context
+  plugins/     ← Phase 0 新建：插件系统（plugin/manifest/loader/context/profile）
+corecoder/     智能体引擎：agent, llm(LLMProvider+LLMRequest), tools/(Phase 0 注册表化), context
 frontend/terminal/  React/Ink TUI（TS）
 ```
