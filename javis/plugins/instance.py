@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from javis.plugins.context import Disposer, PluginContext
+from javis.plugins.context import Disposer, PluginContext, ServiceRegistry
 from javis.plugins.errors import PluginConfigError, PluginDependencyError
 
 ApplyFn = Callable[[PluginContext, Any], Awaitable[Disposer | None] | Disposer | None]
@@ -43,6 +43,7 @@ class PluginInstance:
         inject: list[str],
         raw_config: dict[str, Any],
         ctx_builder: CtxBuilder,
+        services: ServiceRegistry,
         start_timeout: float = 10.0,
     ) -> None:
         self.name = name
@@ -55,6 +56,7 @@ class PluginInstance:
         self._inject = list(inject)
         self._raw_config = raw_config
         self._ctx_builder = ctx_builder
+        self._services = services
         self._start_timeout = start_timeout
 
     async def start(self) -> None:
@@ -71,15 +73,14 @@ class PluginInstance:
             self._fail(err)
             return
 
-        # The context is built before dependency waiting: it carries the
-        # ServiceRegistry that inject-waiting must query. State stays
-        # PENDING until every inject dependency is available.
-        self.ctx = self._ctx_builder(self.name, self.config)
+        # Dependencies must be satisfied before the context is built: the
+        # registry is a constructor parameter (no private access into ctx),
+        # and building ctx registers `logger` in the shared registry — that
+        # should only happen once the plugin is about to load, so a failed
+        # dependency wait cannot leak an owner-less logger.
         if self._inject:
-            services = self.ctx._services
-            missing = await services.wait_for(self._inject, self._start_timeout)
+            missing = await self._services.wait_for(self._inject, self._start_timeout)
             if missing:
-                await self.ctx.close()
                 self._fail(
                     PluginDependencyError(
                         f"plugin {self.name!r} missing injected services: {sorted(missing)}"
@@ -88,6 +89,7 @@ class PluginInstance:
                 return
 
         self.state = PluginState.LOADING
+        self.ctx = self._ctx_builder(self.name, self.config)
         ctx = self.ctx
         try:
             result = self._apply_fn(ctx, self.config)

@@ -50,6 +50,7 @@ async def test_sync_apply_reaches_active(env):
         inject=[],
         raw_config={},
         ctx_builder=make_ctx(services, bus),
+        services=services,
         start_timeout=0.5,
     )
     await inst.start()
@@ -71,6 +72,7 @@ async def test_async_apply_supported(env):
         inject=[],
         raw_config={},
         ctx_builder=make_ctx(services, bus),
+        services=services,
         start_timeout=0.5,
     )
     await inst.start()
@@ -92,6 +94,7 @@ async def test_config_validation_failure_fails_plugin(env):
         inject=[],
         raw_config={"greeting": 123},
         ctx_builder=make_ctx(services, bus),
+        services=services,
         start_timeout=0.5,
     )
     await inst.start()
@@ -114,6 +117,7 @@ async def test_apply_exception_fails_plugin(env):
         inject=[],
         raw_config={},
         ctx_builder=make_ctx(services, bus),
+        services=services,
         start_timeout=0.5,
     )
     await inst.start()
@@ -135,6 +139,7 @@ async def test_missing_dependency_fails_after_timeout(env):
         inject=["never-provided"],
         raw_config={},
         ctx_builder=make_ctx(services, bus),
+        services=services,
         start_timeout=0.1,
     )
     await inst.start()
@@ -158,6 +163,7 @@ async def test_dependency_provided_later_wakes_instance(env):
         inject=["late-svc"],
         raw_config={},
         ctx_builder=make_ctx(services, bus),
+        services=services,
         start_timeout=2.0,
     )
     start_task = asyncio.create_task(inst.start())
@@ -185,6 +191,7 @@ async def test_stop_runs_disposers_in_reverse_order(env):
         inject=[],
         raw_config={},
         ctx_builder=make_ctx(services, bus),
+        services=services,
         start_timeout=0.5,
     )
     await inst.start()
@@ -211,6 +218,7 @@ async def test_apply_return_value_is_used_as_disposer(env):
         inject=[],
         raw_config={},
         ctx_builder=make_ctx(services, bus),
+        services=services,
         start_timeout=0.5,
     )
     await inst.start()
@@ -232,6 +240,7 @@ async def test_stop_revokes_owned_service(env):
         inject=[],
         raw_config={},
         ctx_builder=make_ctx(services, bus),
+        services=services,
         start_timeout=0.5,
     )
     await inst.start()
