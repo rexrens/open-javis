@@ -65,12 +65,14 @@ uv run javis -p "hi"       # 验证 DeepSeek 连通（读 ~/.javis/config.json�
 ## 📦 阶段 2：corecoder 工具注册表化（对齐 dsh tools 组）
 
 - [ ] `corecoder/tools/` 静态 `ALL_TOOLS` → `register_tool()` 注册表（可插拔、可覆盖）
+- [ ] **skill 支持（最小版）**：借鉴 dsh `packages/skill/`——发现规则 `dir/SKILL.md`（目录 bundle）或扁平 `dir.md`；注册 `load_skill(name)` 工具把 skill 内容注入上下文（`<skill_content>` 渲染块）；调用策略 `modelInvocable`/`userInvocable` 分开控制
 - [x] llm 拆 provider 概念（已落地：LLMProvider 基类 + LLMRequest/extra_body 请求封装 + OpenAICompatProvider/ScriptedProvider；剩余：FallbackProvider 落地、Anthropic/Responses/Gemini 二期）
 - [ ] 参考：dsh 的 `packages/core/tools`（ToolDefinition + schema + 注册）
 
 ## 🧩 阶段 3：插件系统（核心诉求，借鉴 DeepSeek Harness）
 
 - [ ] `javis/plugins/`：loader（扫描/加载/卸载）+ 生命周期钩子 + 注册表
+- [ ] skill 作为插件形态：dsh `packages/skill/` 家族（`skill/` 注册表 + `skill-filesystem/` 发现 + `tool-skill/` 模型面工具）对齐进插件系统
 - [ ] bundle/profile 概念：一组插件 = 一个 profile（dsh 的 `bundle/base`）
 - [ ] 顺带解决 `start_runtime`/`close_runtime` no-op（用插件钩子实现）
 - [ ] 参考：本机 `/home/rensu/workspace/deepseek-harness` 的 `packages/bundle/`、`packages/core/agent-loop/`、Cordis 插件模型（ctx 服务 + inject + effect）
