@@ -104,21 +104,8 @@ async def test_build_javis_runtime_default_engine_is_corecoder(isolated_env, mon
     # stripped proxy vars; supply a dummy key so AsyncOpenAI can build.
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
-    bundle = await build_javis_runtime(cwd=str(isolated_env), engine="corecoder")
+    bundle = await build_javis_runtime(cwd=str(isolated_env))
     assert isinstance(bundle.engine._agent, CoreCoderBackend)
-
-
-
-@pytest.mark.asyncio
-async def test_build_javis_runtime_engine_and_backend_mutually_exclusive(isolated_env):
-    with pytest.raises(ValueError, match="either engine= or agent_backend="):
-        await build_javis_runtime(cwd=str(isolated_env), engine="corecoder", agent_backend=FakeBackend())
-
-
-@pytest.mark.asyncio
-async def test_build_javis_runtime_unknown_engine_raises(isolated_env):
-    with pytest.raises(ValueError, match="Unknown engine 'nope'"):
-        await build_javis_runtime(cwd=str(isolated_env), engine="nope")
 
 
 @pytest.mark.asyncio

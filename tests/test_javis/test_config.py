@@ -13,7 +13,6 @@ from javis.session.config import (
     deep_merge,
     ensure_default_config,
     load_config,
-    resolve_engine_name,
     resolve_provider_and_model,
 )
 from javis.session.workspace import get_workspace_root
@@ -38,7 +37,7 @@ def test_ensure_default_config_creates_template(isolated_env):
     path = ensure_default_config()
     assert path.exists()
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["engine"] == "corecoder"
+    assert "engine" not in data  # engine selector removed; fixed to builtin corecoder
     assert "providers" in data
     assert "appearance" in data
     assert "session" in data
@@ -50,7 +49,7 @@ def test_ensure_default_config_idempotent(isolated_env):
     ensure_default_config()
     path = ensure_default_config()
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["engine"] == "corecoder"
+    assert "engine" not in data
 
 
 # --- load & validate ---
@@ -58,7 +57,6 @@ def test_ensure_default_config_idempotent(isolated_env):
 
 def test_load_config_empty_workspace_creates_default(isolated_env):
     cfg = load_config()
-    assert cfg.engine == "corecoder"
     assert cfg.providers  # template ships a deepseek provider
     assert cfg.session.max_turns == 32
 
@@ -103,10 +101,9 @@ def test_load_config_non_object_root_raises(isolated_env):
 
 def test_unknown_keys_tolerated(isolated_env):
     (get_workspace_root() / "config.json").write_text(
-        json.dumps({"engine": "corecoder", "my-plugin": {"x": 1}}), encoding="utf-8"
+        json.dumps({"my-plugin": {"x": 1}}), encoding="utf-8"
     )
     cfg = load_config()
-    assert cfg.engine == "corecoder"
     assert cfg.model_extra == {"my-plugin": {"x": 1}}
 
 
@@ -156,15 +153,6 @@ def test_project_config_overrides_global(isolated_env, tmp_path):
 
 
 # --- resolution ---
-
-
-def test_resolve_engine_priority():
-    config = JavisConfig(engine="from-config")
-    env = {"JAVIS_ENGINE": "from-env"}
-    assert resolve_engine_name(None, config, env) == "from-env"
-    assert resolve_engine_name("from-cli", config, env) == "from-cli"
-    assert resolve_engine_name(None, config, {}) == "from-config"
-    assert resolve_engine_name(None, None, {}) == "corecoder"
 
 
 def test_resolve_provider_defaults_to_first():

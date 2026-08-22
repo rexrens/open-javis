@@ -583,7 +583,6 @@ async def run_javis_backend(
     workspace: str | Path | None = None,
     model: str | None = None,
     max_turns: int | None = None,
-    engine: str | None = None,
     restore_messages: list[dict[str, Any]] | None = None,
     restore_tool_metadata: dict[str, object] | None = None,
 ) -> int:
@@ -595,7 +594,6 @@ async def run_javis_backend(
         cwd=cwd,
         model=model,
         max_turns=max_turns,
-        engine=engine,
         restore_messages=restore_messages,
         restore_tool_metadata=restore_tool_metadata,
         workspace=workspace,

@@ -30,7 +30,6 @@ def main(
     ctx: typer.Context,
     print_mode: str | None = typer.Option(None, "--print", "-p", help="Run a single prompt and exit"),
     model: str | None = typer.Option(None, "--model", help="Model override for this session"),
-    engine: str | None = typer.Option(None, "--engine", help="Agent engine (default: config.json, JAVIS_ENGINE, or corecoder)"),
     workspace: str | None = typer.Option(None, "--workspace", help="Path to the javis workspace (defaults to ~/.javis)"),
     max_turns: int | None = typer.Option(None, "--max-turns", help="Override max turns"),
     cwd: str = typer.Option(str(Path.cwd()), "--cwd", help="Working directory"),
@@ -60,6 +59,7 @@ def main(
     cwd_path = str(Path(cwd).resolve())
     workspace_root = initialize_workspace(workspace)
 
+
     if backend_only:
         from javis.host.backend_host import run_javis_backend
 
@@ -70,7 +70,6 @@ def main(
                     workspace=workspace_root,
                     model=model,
                     max_turns=max_turns,
-                    engine=engine,
                 )
             )
         )
@@ -84,7 +83,6 @@ def main(
                     workspace=workspace_root,
                     model=model,
                     max_turns=max_turns,
-                    engine=engine,
                 )
             )
         )
@@ -98,7 +96,6 @@ def main(
                 workspace=workspace_root,
                 model=model,
                 max_turns=max_turns,
-                engine=engine,
             )
         )
     )

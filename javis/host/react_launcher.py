@@ -78,7 +78,6 @@ def _build_backend_command(
     workspace: str | Path | None = None,
     model: str | None = None,
     max_turns: int | None = None,
-    engine: str | None = None,
 ) -> list[str]:
     """Return the command the React frontend will spawn to start the backend."""
     command = [sys.executable, "-m", "javis", "--backend-only"]
@@ -90,8 +89,6 @@ def _build_backend_command(
         command.extend(["--model", model])
     if max_turns is not None:
         command.extend(["--max-turns", str(max_turns)])
-    if engine:
-        command.extend(["--engine", engine])
     return command
 
 
@@ -101,7 +98,6 @@ async def launch_react_tui(
     workspace: str | Path | None = None,
     model: str | None = None,
     max_turns: int | None = None,
-    engine: str | None = None,
 ) -> int:
     """Launch the React terminal frontend."""
     frontend_dir = _get_frontend_dir()
@@ -130,7 +126,6 @@ async def launch_react_tui(
                 workspace=workspace,
                 model=model,
                 max_turns=max_turns,
-                engine=engine,
             ),
             "initial_prompt": None,
             "theme": _resolve_theme(),

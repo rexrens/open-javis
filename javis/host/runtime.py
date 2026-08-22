@@ -102,7 +102,6 @@ async def build_javis_runtime(
     max_turns: int | None = None,
     system_prompt: str | None = None,
     agent_backend: AgentBackend | None = None,
-    engine: str | None = None,
     restore_messages: list[dict[str, Any]] | None = None,
     restore_tool_metadata: dict[str, object] | None = None,
     session_backend: JavisSessionBackend | None = None,
@@ -110,15 +109,10 @@ async def build_javis_runtime(
 ) -> RuntimeBundle:
     """Assemble a ``RuntimeBundle`` backed by a ``QueryEngine``.
 
-    The agent backend is resolved in one of two ways:
-      - ``agent_backend=...`` — explicit backend (used by tests)
-      - ``engine=...`` — named engine via the registry (config.json / env
-        fall back to the default engine when omitted)
-    Passing both raises ``ValueError``.
+    The agent backend is built from the built-in engine registry (default
+    ``corecoder``) unless ``agent_backend=...`` is passed explicitly (used by
+    tests to inject a fake backend).
     """
-    if engine is not None and agent_backend is not None:
-        raise ValueError("Pass either engine= or agent_backend=, not both")
-
     cwd_resolved = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd())
     workspace_root = initialize_workspace(workspace)
     system_prompt_text = system_prompt or build_javis_system_prompt(cwd_resolved, workspace=workspace_root)
@@ -175,12 +169,11 @@ async def build_javis_runtime(
     if agent_backend is None:
         from javis.engines import create_agent_backend
         from javis.session.config import (
-            resolve_engine_name,
+            DEFAULT_ENGINE,
             resolve_provider_and_model,
         )
         from javis.session.credentials import resolve_api_key
 
-        engine_name = resolve_engine_name(engine, cfg)
         provider_name, model_id = resolve_provider_and_model(cfg, cli_model=model)
         provider_cfg = cfg.providers[provider_name]
         api_key = resolve_api_key(
@@ -202,7 +195,7 @@ async def build_javis_runtime(
         if engine_max_turns is None and cfg.session.max_turns is not None:
             engine_max_turns = cfg.session.max_turns
         agent_backend = create_agent_backend(
-            engine_name,
+            DEFAULT_ENGINE,
             model=model_id,
             system_prompt=system_prompt_text,
             cwd=cwd_resolved,
@@ -344,18 +337,17 @@ async def run_javis_print_mode(
     workspace: str | Path | None = None,
     model: str | None = None,
     max_turns: int | None = None,
-    engine: str | None = None,
 ) -> int:
     """Run a single prompt and print the assistant output to stdout."""
     cwd_path = str(Path(cwd or Path.cwd()).resolve())
     previous_cwd = Path.cwd()
     os.chdir(cwd_path)
+    
     try:
         bundle = await build_javis_runtime(
             cwd=cwd_path,
             model=model,
             max_turns=max_turns,
-            engine=engine,
             workspace=workspace,
         )
         await start_runtime(bundle)
@@ -364,7 +356,6 @@ async def run_javis_print_mode(
             print(message, file=sys.stderr)
 
         saw_error = False
-
         async def _render_event(event: AgentEvent) -> None:
             nonlocal saw_error
             if isinstance(event, AgentTextDelta):

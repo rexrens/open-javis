@@ -160,20 +160,9 @@ register_engine("my-engine", build_my_backend)
 
 ### 5.2 用户配置
 
-`~/.javis/config.json`（workspace 根目录）：
+当前 javis 固定使用内建 `corecoder` 引擎；`--engine` / `JAVIS_ENGINE` / config 的 `engine` 选择层已移除（插件化方向：引擎 backend 未来由插件提供，见 `docs/plugins.md`）。
 
-```json
-{
-  "engine": "my-engine",
-  "engines": {
-    "my-engine": { "model": "deepseek-chat", "base_url": "...", "api_key": "..." }
-  }
-}
-```
-
-优先级：CLI `--engine` > env `JAVIS_ENGINE` > config `engine` > 默认 `corecoder`。
-
-`engine_config` 参数即 `config["engines"]["my-engine"]`，工厂自行解析（建议同时支持环境变量回退）。
+`register_engine` 注册的工厂仍可通过 `create_agent_backend(name, ...)` 直接调用（宿主程序/测试），但 CLI 暂不暴露选择入口。`engine_config` 由 runtime 从 provider 配置组装（model/base_url/api_key/max_tokens）后传给工厂。
 
 ## 6. 常见坑
 

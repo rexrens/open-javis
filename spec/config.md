@@ -20,7 +20,7 @@
 | 内置默认 | 代码中（`JavisConfig` 模型默认值） | 最低优先级 |
 | **全局** | `~/.javis/config.json` + `~/.javis/.env` | 主配置，启动时不存在则自动创建默认模板 |
 | **项目级** | `<项目根>/.javis/config.json` + `<项目根>/.javis/.env` | 覆盖全局；与全局深合并 |
-| CLI / 环境变量 | `--model`、`--engine`、`JAVIS_*` 等 | 最高优先级 |
+| CLI / 环境变量 | `--model`、`JAVIS_*` 等 | 最高优先级 |
 
 - 项目级配置从**当前工作目录向上查找**最近的 `.javis/`（对齐 corecoder `_load_dotenv` 的向上查找逻辑）
 - `JAVIS_WORKSPACE` 环境变量可覆盖全局位置（已有机制）
@@ -51,8 +51,7 @@ CLI 参数 / 进程环境变量        ← 最高
 
 ```jsonc
 {
-  // —— 引擎与模型选择 ——
-  "engine": "corecoder",            // 执行引擎（AgentLoop 类型），注册表可扩展
+  // —— 模型选择 ——
   "provider": "deepseek",           // 默认 LLM 供应商（必须存在于 providers）
   "model": "deepseek-v4-flash",         // 默认模型（缺省取 provider.models[0].id）
   "fallback_provider": "my-vllm",
@@ -143,7 +142,6 @@ OPENAI_API_KEY=sk-xxx
 CORECODER_API_KEY=sk-xxx      # 全局兜底（可选）
 CORECODER_MODEL=deepseek-chat # 可选：覆盖默认模型
 CORECODER_BASE_URL=...        # 可选：覆盖默认 baseUrl
-JAVIS_ENGINE=corecoder        # 可选：覆盖默认引擎
 ```
 
 - 变量名规范：`<PROVIDER_NAME>_API_KEY`（大写 + snake），`apiKeyEnv` 可显式指定任意名
@@ -152,7 +150,7 @@ JAVIS_ENGINE=corecoder        # 可选：覆盖默认引擎
 ## 5. 启动行为
 
 1. 启动时检查 `~/.javis/config.json`：
-   - 不存在 → 创建默认模板（含 `engine`/`provider`/`model`/`providers` 骨架，注释用 JSON 可表示的最小示例）
+   - 不存在 → 创建默认模板（含 `provider`/`model`/`providers` 骨架，注释用 JSON 可表示的最小示例）
    - 存在但 JSON 解析失败 → 报错并提示（不静默覆盖）
 2. 项目级 `<项目>/.javis/config.json` 存在则深合并；不存在则跳过
 3. 校验失败（pydantic）→ 报错指出具体字段；未知键 → 警告（log warning）
@@ -194,7 +192,6 @@ class PermissionConfig(BaseModel):
 
 class JavisConfig(BaseModel):
     model_config = ConfigDict(extra="allow")   # 未知键宽容（插件预留）
-    engine: str = "corecoder"
     provider: str | None = None                 # 缺省：providers 第一个键
     model: str | None = None
     providers: dict[str, ProviderConfig] = {}
@@ -213,7 +210,7 @@ class JavisConfig(BaseModel):
 | `javis/session/config.py` | pydantic 模型 + 加载/深合并/校验/默认创建 |
 | `javis/session/credentials.py` | 密钥解析：环境变量 > .env > apiKey 兼容 |
 | `javis/session/workspace.py` | 扩展：项目级 `.javis/` 向上查找 |
-| `javis/host/runtime.py` | 接入新配置（替换 load_config/resolve_engine_name 逻辑） |
+| `javis/host/runtime.py` | 接入新配置（load_config + provider/model 解析；engine 固定 corecoder） |
 | `corecoder/config.py` | 保留 CORECODER_* 兼容；新增从 providers 建 Config |
 | `tests/test_javis/test_config.py` | 重写：模型校验/深合并/迁移/密钥解析 |
 | `tests/test_javis/test_credentials.py` | 新增：优先级/环境变量/.env 解析 |
@@ -221,7 +218,7 @@ class JavisConfig(BaseModel):
 ## 9. 待确认的最终决策点
 
 - [x] ① 模型选择：顶层 `provider` + `model` 字段
-- [x] ② engine（执行引擎）与 provider（LLM 供应商）正交
+- [x] ② engine 固定内建 corecoder（选择层已移除），provider（LLM 供应商）独立解析
 - [x] ③ 密钥关联：`apiKeyEnv` 显式 > 名称推断 > 全局兜底
 - [x] ④ 项目级配置：`<项目根>/.javis/config.json`，向上查找
 - [ ] ⑤ `.env` 只读两个位置（`~/.javis/.env` + `<项目>/.javis/.env`），不读任意 cwd .env —— 是否接受？（比 corecoder 现在的"任意 cwd 向上找"更严格）

@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
@@ -94,7 +92,6 @@ class JavisConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")  # tolerate plugin namespaces
 
-    engine: str = DEFAULT_ENGINE
     provider: str | None = None
     model: str | None = None
     fallback_provider: str | None = None  # reserved — not implemented yet
@@ -118,7 +115,6 @@ class JavisConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 DEFAULT_TEMPLATE: dict[str, Any] = {
-    "engine": DEFAULT_ENGINE,
     "provider": "",
     "model": "",
     "providers": {
@@ -218,22 +214,6 @@ def _read_json_object(path: Path) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def resolve_engine_name(
-    cli: str | None = None,
-    config: JavisConfig | None = None,
-    env: Mapping[str, str] | None = None,
-) -> str:
-    """Resolve the active engine name: CLI > env JAVIS_ENGINE > config > default."""
-    env = env if env is not None else os.environ
-    if cli:
-        return cli
-    if env.get("JAVIS_ENGINE"):
-        return env["JAVIS_ENGINE"]
-    if config is not None and config.engine:
-        return config.engine
-    return DEFAULT_ENGINE
-
-
 def resolve_provider_and_model(
     config: JavisConfig,
     cli_model: str | None = None,
@@ -277,6 +257,5 @@ __all__ = [
     "deep_merge",
     "ensure_default_config",
     "load_config",
-    "resolve_engine_name",
     "resolve_provider_and_model",
 ]

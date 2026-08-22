@@ -84,18 +84,18 @@ uv run javis -p "explain this repo"
 
 ## Configuration
 
-Engine selection priority: **`--engine` CLI flag > `JAVIS_ENGINE` env var > `<workspace>/config.json` `engine` key > default (`corecoder`)**.
+The agent engine is fixed to the built-in `corecoder` backend (see `javis/engines/registry.py`). The old `--engine` / `JAVIS_ENGINE` / `config.json` `engine` selection layer was removed; engine backends are expected to come back as plugin-provided services (pluginization).
 
 `config.json` lives in the javis workspace (default `~/.javis`, override with `JAVIS_WORKSPACE` or `--workspace`):
 
 ```json
 {
-  "engine": "corecoder",
-  "engines": {
-    "corecoder": {
-      "model": "deepseek-chat",
-      "base_url": "https://api.deepseek.com",
-      "api_key": "sk-..."
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "providers": {
+    "deepseek": {
+      "baseUrl": "https://api.deepseek.com",
+      "apiKeyEnv": "DEEPSEEK_API_KEY"
     }
   }
 }
@@ -110,7 +110,6 @@ Alternatively, use environment variables (read from `.env` in the working direct
 | `CORECODER_BASE_URL` / `OPENAI_BASE_URL` | OpenAI-compatible endpoint |
 | `CORECODER_MAX_TOKENS`, `CORECODER_TEMPERATURE`, `CORECODER_MAX_CONTEXT` | Generation settings |
 | `CORECODER_PROVIDER=litellm` | Route through LiteLLM (100+ providers) |
-| `JAVIS_ENGINE` | Engine name (default `corecoder`) |
 | `JAVIS_WORKSPACE` | Workspace root (default `~/.javis`) |
 
 ## Usage
@@ -121,7 +120,6 @@ Alternatively, use environment variables (read from `.env` in the working direct
 uv run javis                    # React/Ink TUI (default)
 uv run javis -p "prompt"        # single prompt, print result, exit
 uv run javis --backend-only     # JSON-lines backend host (for custom frontends)
-uv run javis --engine mock -p "hi"   # (mock engine removed; use corecoder)
 uv run javis -v                 # debug logging to stderr
 uv run javis doctor             # check workspace & frontend layout
 ```

@@ -84,18 +84,18 @@ uv run javis -p "解释一下这个仓库"
 
 ## 配置
 
-引擎选择优先级：**`--engine` CLI 参数 > `JAVIS_ENGINE` 环境变量 > `<workspace>/config.json` 的 `engine` 字段 > 默认值（`corecoder`）**。
+代理引擎固定为内建 `corecoder` backend（见 `javis/engines/registry.py`）。旧的 `--engine` / `JAVIS_ENGINE` / `config.json` 的 `engine` 选择层已移除；引擎 backend 未来以插件提供服务的方式回归（插件化）。
 
 `config.json` 位于 javis 工作区（默认 `~/.javis`，可通过 `JAVIS_WORKSPACE` 或 `--workspace` 覆盖）：
 
 ```json
 {
-  "engine": "corecoder",
-  "engines": {
-    "corecoder": {
-      "model": "deepseek-chat",
-      "base_url": "https://api.deepseek.com",
-      "api_key": "sk-..."
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "providers": {
+    "deepseek": {
+      "baseUrl": "https://api.deepseek.com",
+      "apiKeyEnv": "DEEPSEEK_API_KEY"
     }
   }
 }
@@ -110,7 +110,6 @@ uv run javis -p "解释一下这个仓库"
 | `CORECODER_BASE_URL` / `OPENAI_BASE_URL` | OpenAI 兼容接口地址 |
 | `CORECODER_MAX_TOKENS`、`CORECODER_TEMPERATURE`、`CORECODER_MAX_CONTEXT` | 生成参数 |
 | `CORECODER_PROVIDER=litellm` | 通过 LiteLLM 路由（支持 100+ 供应商） |
-| `JAVIS_ENGINE` | 引擎名称（默认 `corecoder`） |
 | `JAVIS_WORKSPACE` | 工作区根目录（默认 `~/.javis`） |
 
 ## 使用方法
@@ -121,7 +120,6 @@ uv run javis -p "解释一下这个仓库"
 uv run javis                    # React/Ink TUI（默认）
 uv run javis -p "提示词"         # 单次提问，打印结果后退出
 uv run javis --backend-only     # JSON-lines 后端主机（供自定义前端使用）
-uv run javis --engine mock -p "hi"   #（mock 引擎已移除，请用 corecoder）
 uv run javis -v                 # 调试日志输出到 stderr
 uv run javis doctor             # 检查工作区与前端布局
 ```
