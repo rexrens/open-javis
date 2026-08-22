@@ -132,7 +132,7 @@ class CoreCoderBackend(AgentBackend):
                     on_tool_result=lambda n, a, out, err: emit(("tool_result", n, a, out, err)),
                 )
                 emit(("done", final))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — forward any producer failure as an error event
                 emit(("error", exc))
 
         task = asyncio.create_task(producer())

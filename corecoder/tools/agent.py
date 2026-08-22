@@ -8,6 +8,8 @@ its own context window.
 The sub-agent runs to completion and returns a text summary.
 """
 
+from typing import Any, ClassVar
+
 from .base import Tool
 
 
@@ -19,7 +21,7 @@ class AgentTool(Tool):
         "researching a codebase, implementing a multi-step change in isolation, "
         "or any task that would benefit from a fresh context window."
     )
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "task": {
@@ -54,5 +56,5 @@ class AgentTool(Tool):
             if len(result) > 5000:
                 result = result[:4500] + "\n... (sub-agent output truncated)"
             return f"[Sub-agent completed]\n{result}"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — tool errors are returned as text for the LLM
             return f"Sub-agent error: {e}"

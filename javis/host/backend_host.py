@@ -181,7 +181,7 @@ class _JavisBackendHost:
                 continue
             try:
                 request = FrontendRequest.model_validate_json(payload)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — malformed wire input must not kill the host
                 await self._emit(BackendEvent(type="error", message=f"Invalid request: {exc}"))
                 continue
             if request.type == "permission_response" and request.request_id in self._edit_approval_requests:

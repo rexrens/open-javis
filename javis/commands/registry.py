@@ -9,12 +9,12 @@ To add a command: register it in ``create_default_command_registry``.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Awaitable, Callable
 
 from javis.contracts.messages import ConversationMessage
-from javis.session.state import AppStateStore
 from javis.contracts.usage import UsageSnapshot
+from javis.session.state import AppStateStore
 
 
 @dataclass

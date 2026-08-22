@@ -9,7 +9,7 @@ layer — javis collapsed it to reduce translation hops.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Union
+from typing import Any
 
 from javis.contracts.messages import ConversationMessage
 from javis.contracts.usage import UsageSnapshot
@@ -89,23 +89,23 @@ class AgentStatus:
     message: str
 
 
-AgentEvent = Union[
-    AgentReasoningDelta,
-    AgentTextDelta,
-    AgentToolCallStart,
-    AgentToolCallResult,
-    AgentTurnEnd,
-    AgentError,
-    AgentStatus,
-]
+AgentEvent = (
+    AgentReasoningDelta
+    | AgentTextDelta
+    | AgentToolCallStart
+    | AgentToolCallResult
+    | AgentTurnEnd
+    | AgentError
+    | AgentStatus
+)
 
 
 __all__ = [
     "AgentContext",
     "AgentError",
     "AgentEvent",
-    "AgentStatus",
     "AgentReasoningDelta",
+    "AgentStatus",
     "AgentTextDelta",
     "AgentToolCallResult",
     "AgentToolCallStart",

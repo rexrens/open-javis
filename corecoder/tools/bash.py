@@ -11,6 +11,8 @@ import os
 import re
 import subprocess
 import threading
+from typing import Any, ClassVar
+
 from .base import Tool
 
 # Track cwd across commands (Claude Code does this too). Thread-local, so that
@@ -42,7 +44,7 @@ class BashTool(Tool):
         "Execute a shell command. Returns stdout, stderr, and exit code. "
         "Use this for running tests, installing packages, git operations, etc."
     )
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "command": {
@@ -67,7 +69,7 @@ class BashTool(Tool):
         cwd = getattr(_local, "cwd", None) or os.getcwd()
 
         try:
-            proc = subprocess.run(
+            proc = subprocess.run(  # noqa: PLW1510 — non-zero exit is a normal result; returncode is handled below
                 command,
                 shell=True,
                 capture_output=True,
@@ -96,7 +98,7 @@ class BashTool(Tool):
             return out.strip() or "(no output)"
         except subprocess.TimeoutExpired:
             return f"Error: timed out after {timeout}s"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — tool errors are returned as text for the LLM
             return f"Error running command: {e}"
 
 

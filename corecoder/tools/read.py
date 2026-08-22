@@ -1,6 +1,8 @@
 """File reading with line numbers."""
 
 from pathlib import Path
+from typing import Any, ClassVar
+
 from .base import Tool
 
 
@@ -10,7 +12,7 @@ class ReadFileTool(Tool):
         "Read a file's contents with line numbers. "
         "Always read a file before editing it."
     )
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "file_path": {
@@ -49,5 +51,5 @@ class ReadFileTool(Tool):
             if total > start + limit:
                 result += f"\n... ({total} lines total, showing {start+1}-{start+len(chunk)})"
             return result or "(empty file)"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — tool errors are returned as text for the LLM
             return f"Error: {e}"

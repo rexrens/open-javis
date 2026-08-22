@@ -62,7 +62,7 @@ def _persistable_tool_metadata(tool_metadata: dict[str, object] | None) -> dict[
 def _sanitize_snapshot_payload(payload: Any) -> dict[str, Any]:
     """Validate and normalize a loaded snapshot payload."""
     if not isinstance(payload, dict):
-        raise ValueError("snapshot payload is not a dict")
+        raise TypeError("snapshot payload is not a dict")
     return payload
 
 

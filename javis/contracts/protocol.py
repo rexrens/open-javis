@@ -7,10 +7,10 @@ without touching ``QueryEngine`` or any TUI code.
 
 from __future__ import annotations
 
-from typing import AsyncIterator, Protocol, runtime_checkable
+from collections.abc import AsyncIterator
+from typing import Protocol, runtime_checkable
 
 from javis.contracts.messages import ConversationMessage
-
 from javis.contracts.types import AgentContext, AgentEvent
 
 

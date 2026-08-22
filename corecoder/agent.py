@@ -233,7 +233,7 @@ class Agent:
             return f"Error: bad arguments for {tc.name}: {e}", True
         try:
             return tool.execute(**tc.arguments), False
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — tool errors are returned as text for the LLM
             return f"Error executing {tc.name}: {e}", True
 
     def _exec_tool(self, tc) -> str:

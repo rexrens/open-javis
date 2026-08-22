@@ -1,6 +1,7 @@
 """Base class for all tools."""
 
 from abc import ABC, abstractmethod
+from typing import Any, ClassVar
 
 
 class Tool(ABC):
@@ -8,7 +9,7 @@ class Tool(ABC):
 
     name: str
     description: str
-    parameters: dict  # JSON Schema for the function args
+    parameters: ClassVar[dict[str, Any]]  # JSON Schema for the function args
 
     @abstractmethod
     def execute(self, **kwargs) -> str:

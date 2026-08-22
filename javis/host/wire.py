@@ -118,7 +118,7 @@ class BackendEvent(BaseModel):
     swarm_notifications: list[dict[str, Any]] | None = None
 
     @classmethod
-    def ready(cls, state: AppState, commands: list[str]) -> "BackendEvent":
+    def ready(cls, state: AppState, commands: list[str]) -> BackendEvent:
         return cls(
             type="ready",
             state=_state_payload(state),
@@ -129,11 +129,11 @@ class BackendEvent(BaseModel):
         )
 
     @classmethod
-    def status_snapshot(cls, state: AppState) -> "BackendEvent":
+    def status_snapshot(cls, state: AppState) -> BackendEvent:
         return cls(type="state_snapshot", state=_state_payload(state))
 
     @classmethod
-    def tasks_snapshot(cls) -> "BackendEvent":
+    def tasks_snapshot(cls) -> BackendEvent:
         return cls(type="tasks_snapshot", tasks=[])
 
 

@@ -32,7 +32,7 @@ class ImageBlock(BaseModel):
     source_path: str = ""
 
     @classmethod
-    def from_path(cls, path: str | Path) -> "ImageBlock":
+    def from_path(cls, path: str | Path) -> ImageBlock:
         resolved = Path(path).expanduser().resolve()
         media_type, _ = mimetypes.guess_type(str(resolved))
         if not media_type or not media_type.startswith("image/"):
@@ -80,11 +80,11 @@ class ConversationMessage(BaseModel):
         return value
 
     @classmethod
-    def from_user_text(cls, text: str) -> "ConversationMessage":
+    def from_user_text(cls, text: str) -> ConversationMessage:
         return cls(role="user", content=[TextBlock(text=text)])
 
     @classmethod
-    def from_user_content(cls, content: list[ContentBlock]) -> "ConversationMessage":
+    def from_user_content(cls, content: list[ContentBlock]) -> ConversationMessage:
         return cls(role="user", content=list(content))
 
     @property

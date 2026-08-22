@@ -1,6 +1,8 @@
 """File creation / overwrite."""
 
 from pathlib import Path
+from typing import Any, ClassVar
+
 from .base import Tool
 from .edit import _changed_files
 
@@ -11,7 +13,7 @@ class WriteFileTool(Tool):
         "Create a new file or completely overwrite an existing one. "
         "For small edits to existing files, prefer edit_file instead."
     )
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "file_path": {
@@ -34,5 +36,5 @@ class WriteFileTool(Tool):
             _changed_files.add(str(p))
             n_lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
             return f"Wrote {n_lines} lines to {file_path}"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — tool errors are returned as text for the LLM
             return f"Error: {e}"
