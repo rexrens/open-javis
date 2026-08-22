@@ -1,0 +1,72 @@
+# javis 插件系统
+
+javis 借鉴 DeepSeek Harness 的 cordis 模型实现了轻量插件内核：
+插件 = `apply(ctx, config)`，`ctx` 提供服务仓库、事件与生命周期钩子；
+`PluginInstance` 状态机跟踪每个插件的生命周期（PENDING→LOADING→ACTIVE/FAILED→UNLOADING→DISPOSED）。
+
+## 快速开始
+
+1. 建目录 `~/.javis/plugins/`（全局）或 `<项目>/.javis/plugins/`（项目级）
+2. 放入一个 `.py` 文件（见 `examples/plugins/`）
+3. 启动 javis —— 插件在启动时自动加载
+
+## 插件形态（四种）
+
+1. 模块级 `apply(ctx, config)` 函数
+2. 模块级声明式变量：`Config`（pydantic）/ `inject` / `name` + `apply`
+3. 模块级 `plugin = {"name": ..., "Config": ..., "inject": [...], "apply": ...}` 对象
+4. 模块级 `__plugins__ = [...]` 列表（一个文件多个插件；每个条目是带 `name` / `Config` / `inject` / `apply` 属性的对象）
+
+`apply` 可以返回一个 disposer（或 async disposer），插件卸载时逆序执行。
+
+## 配置
+
+```json
+{
+  "plugins": {
+    "hello": { "enabled": true, "config": { "greeting": "你好" } }
+  }
+}
+```
+
+- 配置键是插件**声明的名字**（模块级 `name`、`plugin["name"]` 或 `__plugins__` 条目的 `name`），不是文件名
+- `enabled: false` 跳过该插件的激活（`apply` 不会执行）；文件本身仍会被 import，import 失败仍会记录日志
+- `config` 用插件声明的 pydantic `Config` 校验后传入 `apply` 的第二个参数
+- 校验失败 → 该插件 FAILED，不影响其他插件
+
+## ctx API
+
+| 方法 | 说明 |
+|---|---|
+| `ctx.register_tool(tool)` | 注册工具（进入引擎工具集） |
+| `ctx.register_command(cmd)` | 注册斜杠命令 |
+| `ctx.register_engine(name, factory)` | 注册引擎（转发到 `javis.engines.register_engine`） |
+| `ctx.provide(name, value)` / `ctx.get(name)` | 跨插件服务 |
+| `ctx.on(event, handler)` / `ctx.emit(event, payload)` | 事件（fire-and-forget） |
+| `ctx.emit_serial(event, payload)` | 事件（等待所有 handler） |
+| `ctx.effect(disposer)` / `ctx.on_close(fn)` | 卸载清理（逆序） |
+| `ctx.on_start(fn)` | 应用启动钩子 |
+| `ctx.config` / `ctx.logger` | 校验后的插件配置 / 独立 logger |
+| `ctx.javis_config` | 完整 javis 配置（`JavisConfig`） |
+
+`inject = ["service-name"]` 声明依赖：依赖服务未提供时插件停在 PENDING，提供后自动继续；超时（10s）未提供则 FAILED。
+
+## 生命周期
+
+```
+启动: build_javis_runtime → 扫描目录 → import → 并行激活（依赖等待 → apply → ACTIVE）
+运行: 工具/命令直接可用；start_runtime 触发 on_start 钩子
+退出: close_runtime → 逆序执行 disposers → 撤销服务 → DISPOSED
+```
+
+目录来源按顺序为全局（`~/.javis/plugins/`）、项目（`<项目>/.javis/plugins/`），同名插件以后者覆盖前者。
+
+## 设计预留
+
+- **profile**：`~/.javis/profiles/<name>/plugins/` 未来作为第三层目录源（`javis --profile <name>`）
+- **热重载**：PluginInstance 模型支持 dispose + 重建，未来加目录 watcher 即可
+
+## 调试
+
+- 日志：`javis.plugins`（`javis` 命名空间默认 INFO 级别可见；`-v`/`--verbose` 看 debug）
+- 插件加载失败只影响该插件，不阻塞启动；失败原因在日志中
