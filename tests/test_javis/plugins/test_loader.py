@@ -120,6 +120,21 @@ async def test_load_plugins_disabled_skipped(reg):
 
 
 @pytest.mark.asyncio
+async def test_load_plugins_non_dict_config_does_not_crash(reg, caplog):
+    # A bare bool (natural enable/disable spelling) and a non-dict `config`
+    # must be tolerated, never raising AttributeError out of load_plugins.
+    plugins_cfg = {
+        "simple_apply": False,
+        "decl-plugin": {"enabled": True, "config": "not-a-dict"},
+    }
+    await load_plugins(reg, [FIXTURES], plugins_cfg)
+    # Non-dict entries are treated as empty ({} => enabled, no config).
+    assert reg.get("simple_apply") is not None
+    assert reg.get("decl-plugin") is not None
+    assert "treating as empty" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_load_plugins_isolates_bad_syntax(reg, caplog):
     plugins_cfg = {}
     await load_plugins(reg, [FIXTURES], plugins_cfg)

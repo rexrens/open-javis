@@ -141,10 +141,28 @@ async def load_plugins(
         for spec in specs:
             # All config keys are the declared plugin name (spec.name).
             entry_cfg = plugins_cfg.get(spec.name, {})
+            if not isinstance(entry_cfg, dict):
+                # A bare bool/list/etc. (e.g. ``"hello": false``) is a natural
+                # enable/disable spelling; treat non-dict entries as empty so
+                # the loader never raises on malformed per-plugin config.
+                log.warning(
+                    "Plugin %r config is not a dict (got %r); treating as empty",
+                    spec.name,
+                    type(entry_cfg).__name__,
+                )
+                entry_cfg = {}
             if not entry_cfg.get("enabled", True):
                 report.skipped.append(spec.name)
                 continue
-            raw_config = dict(entry_cfg.get("config", {}))
+            config = entry_cfg.get("config", {})
+            if not isinstance(config, dict):
+                log.warning(
+                    "Plugin %r 'config' is not a dict (got %r); treating as empty",
+                    spec.name,
+                    type(config).__name__,
+                )
+                config = {}
+            raw_config = dict(config)
             instance = PluginInstance(
                 name=spec.name,
                 apply_fn=spec.apply,
