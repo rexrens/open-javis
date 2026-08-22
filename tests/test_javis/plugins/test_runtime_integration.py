@@ -57,3 +57,15 @@ async def test_close_runtime_runs_disposers(isolated_env, monkeypatch):
     await close_runtime(bundle)
     for p in bundle.plugins.list_plugins():
         assert p["state"].value == "disposed"
+
+
+@pytest.mark.asyncio
+async def test_close_runtime_unregisters_plugin_tools(isolated_env, monkeypatch):
+    from corecoder.tools import get_tool
+    from javis.host.runtime import close_runtime
+
+    monkeypatch.setattr("javis.host.runtime._build_plugin_dirs", lambda **kw: [PLUGIN_DIR])
+    bundle = await build_javis_runtime(cwd=str(isolated_env), agent_backend=FakeBackend())
+    assert get_tool("plug_tool") is not None
+    await close_runtime(bundle)
+    assert get_tool("plug_tool") is None

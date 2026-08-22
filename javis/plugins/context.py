@@ -134,7 +134,7 @@ class PluginContext:
         self._bus = bus
         self._disposers: list[Disposer] = []
         self._start_hooks: list[StartHook] = []
-        self._services.provide("logger", self.logger)
+        self._registered_tools: list[str] = []
 
     # ---- services -------------------------------------------------------
     def provide(self, name: str, value: Any) -> None:
@@ -149,6 +149,7 @@ class PluginContext:
     # ---- extension points ----------------------------------------------
     def register_tool(self, tool: Any) -> None:
         self._services.get("tools").register_tool(tool)
+        self._registered_tools.append(tool.name)
 
     def register_command(self, command: Any) -> None:
         self._services.get("commands").register(command)
@@ -183,11 +184,29 @@ class PluginContext:
                 await result
 
     async def close(self) -> None:
-        """Run disposers (reverse order), then drop listeners and owned services."""
-        for disposer in reversed(self._disposers):
-            result = disposer()
-            if inspect.isawaitable(result):
-                await result
-        self._disposers.clear()
-        self._bus.remove_owner(self.name)
-        self._services.revoke_owner(self.name)
+        """Run disposers (reverse order), then drop listeners, tools and services.
+
+        Each disposer is isolated: a failure is logged and the remaining
+        disposers still run. Listener/service/tool cleanup lives in the
+        ``finally`` so it always runs even when a disposer raises.
+        """
+        try:
+            for disposer in reversed(self._disposers):
+                try:
+                    result = disposer()
+                    if inspect.isawaitable(result):
+                        await result
+                # A failing disposer must not skip the rest nor the cleanup
+                # below; the failure is logged (self.logger.exception) and close
+                # continues.
+                except Exception:
+                    self.logger.exception(
+                        "disposer for plugin %r failed during close", self.name
+                    )
+        finally:
+            self._disposers.clear()
+            self._bus.remove_owner(self.name)
+            self._services.revoke_owner(self.name)
+            for name in self._registered_tools:
+                self._services.get("tools").unregister_tool(name)
+            self._registered_tools.clear()

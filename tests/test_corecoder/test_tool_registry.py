@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from corecoder.tools import all_tools, get_tool, register_tool
+from corecoder.tools import all_tools, get_tool, register_tool, unregister_tool
 from corecoder.tools.base import Tool
 
 
@@ -36,3 +36,11 @@ def test_register_idempotent():
     register_tool(TestEchoTool())
     assert len(all_tools()) == before
     assert sum(1 for t in all_tools() if t.name == "test_echo") == 1
+
+
+def test_unregister_tool():
+    register_tool(TestEchoTool())
+    assert get_tool("test_echo") is not None
+    unregister_tool("test_echo")
+    assert get_tool("test_echo") is None
+    unregister_tool("test_echo")  # idempotent — missing name is silently ignored

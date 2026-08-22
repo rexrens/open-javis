@@ -91,3 +91,26 @@ def test_close_revokes_services_and_listeners(ctx):
     asyncio.run(_close())
     assert not ctx._services.contains("svc")
     assert ctx._bus._listeners.get("evt", {}) == {}  # owner listeners removed
+
+
+def test_close_continues_after_disposer_failure(ctx):
+    order = []
+
+    def boom():
+        raise RuntimeError("bad disposer")
+
+    ctx.effect(lambda: order.append("first") or None)
+    ctx.effect(boom)
+    ctx.effect(lambda: order.append("third") or None)
+    ctx.provide("svc", 1)
+    ctx.on("evt", lambda p: None)
+
+    async def _close():
+        await ctx.close()
+
+    asyncio.run(_close())
+    # Reverse order; "boom" raises but the remaining disposers still run.
+    assert order == ["third", "first"]
+    # finally-block cleanup still ran despite the failure.
+    assert not ctx._services.contains("svc")
+    assert ctx._bus._listeners.get("evt", {}) == {}

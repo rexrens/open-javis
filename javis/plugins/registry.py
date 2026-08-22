@@ -62,7 +62,12 @@ class PluginRegistry:
         return report
 
     async def close_all(self) -> None:
-        """Stop every instance in parallel; disposer errors are logged, not raised."""
+        """Stop every instance in parallel.
+
+        Disposer errors are logged inside ``ctx.close``; ``gather`` with
+        ``return_exceptions=True`` is a backstop that collects any residual
+        exception so ``close_all`` itself never raises.
+        """
         await asyncio.gather(
             *(i.stop() for i in self._instances.values()),
             return_exceptions=True,

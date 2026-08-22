@@ -30,6 +30,11 @@ def register_tool(tool: Tool) -> None:
     _TOOLS[tool.name] = tool
 
 
+def unregister_tool(name: str) -> None:
+    """Remove a tool by name. Missing names are silently ignored."""
+    _TOOLS.pop(name, None)
+
+
 def get_tool(name: str) -> Tool | None:
     """Look up a tool by name."""
     return _TOOLS.get(name)
@@ -54,4 +59,4 @@ for _tool in (
 # Deprecated compatibility alias: import-time snapshot.
 ALL_TOOLS = all_tools()
 
-__all__ = ["ALL_TOOLS", "Tool", "all_tools", "get_tool", "register_tool"]
+__all__ = ["ALL_TOOLS", "Tool", "all_tools", "get_tool", "register_tool", "unregister_tool"]

@@ -75,9 +75,8 @@ class PluginInstance:
 
         # Dependencies must be satisfied before the context is built: the
         # registry is a constructor parameter (no private access into ctx),
-        # and building ctx registers `logger` in the shared registry — that
-        # should only happen once the plugin is about to load, so a failed
-        # dependency wait cannot leak an owner-less logger.
+        # so the context is only created once the plugin is actually about
+        # to load.
         if self._inject:
             missing = await self._services.wait_for(self._inject, self._start_timeout)
             if missing:
