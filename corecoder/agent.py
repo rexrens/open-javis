@@ -15,7 +15,7 @@ import inspect
 from collections.abc import Awaitable, Callable
 
 from .context import ContextManager
-from .llm import LLMProvider, ToolCall
+from .llm import LLMProvider, LLMRequest, ToolCall
 from .prompt import system_prompt
 from .tools import all_tools
 from .tools.agent import AgentTool
@@ -63,8 +63,7 @@ class Agent:
 
         for _ in range(self.max_rounds):
             resp = self.llm.chat(
-                messages=self._full_messages(),
-                tools=self._tool_schemas(),
+                LLMRequest(messages=self._full_messages(), tools=self._tool_schemas()),
                 on_token=on_token,
                 on_reasoning=on_reasoning,
             )
@@ -135,8 +134,7 @@ class Agent:
         try:
             for _ in range(self.max_rounds):
                 resp = await self.llm.achat(
-                    messages=self._full_messages(),
-                    tools=self._tool_schemas(),
+                    LLMRequest(messages=self._full_messages(), tools=self._tool_schemas()),
                     on_token=on_token,
                     on_reasoning=on_reasoning,
                 )
