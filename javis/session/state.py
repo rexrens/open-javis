@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from typing import Any
 
 
 @dataclass
@@ -43,7 +44,7 @@ class AppStateStore:
     def get(self) -> AppState:
         return self._state
 
-    def set(self, **updates) -> AppState:
+    def set(self, **updates: Any) -> AppState:
         self._state = replace(self._state, **updates)
         for listener in list(self._listeners):
             listener(self._state)

@@ -42,7 +42,7 @@ class EditFileTool(Tool):
         "required": ["file_path", "old_string", "new_string"],
     }
 
-    def execute(self, file_path: str, old_string: str, new_string: str) -> str:
+    def execute(self, file_path: str, old_string: str, new_string: str, **kwargs: Any) -> str:
         try:
             p = Path(file_path).expanduser().resolve()
             if not p.exists():

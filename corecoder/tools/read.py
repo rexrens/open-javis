@@ -31,7 +31,7 @@ class ReadFileTool(Tool):
         "required": ["file_path"],
     }
 
-    def execute(self, file_path: str, offset: int = 1, limit: int = 2000) -> str:
+    def execute(self, file_path: str, offset: int = 1, limit: int = 2000, **kwargs: Any) -> str:
         try:
             p = Path(file_path).expanduser().resolve()
             if not p.exists():

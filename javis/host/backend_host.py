@@ -30,6 +30,7 @@ from uuid import uuid4
 from javis.contracts.messages import ContentBlock, ConversationMessage, ImageBlock, TextBlock
 from javis.contracts.types import (
     AgentError,
+    AgentEvent,
     AgentReasoningDelta,
     AgentStatus,
     AgentTextDelta,
@@ -93,7 +94,7 @@ class _JavisBackendHost:
         self._busy = False
         self._running = True
         self._active_request_task: asyncio.Task[bool] | None = None
-        self._last_tool_inputs: dict[str, dict] = {}
+        self._last_tool_inputs: dict[str, dict[str, Any]] = {}
         self._edit_always_approved = False
 
     async def run(self) -> int:
@@ -185,19 +186,19 @@ class _JavisBackendHost:
                 await self._emit(BackendEvent(type="error", message=f"Invalid request: {exc}"))
                 continue
             if request.type == "permission_response" and request.request_id in self._edit_approval_requests:
-                future = self._edit_approval_requests[request.request_id]
-                if not future.done():
-                    future.set_result(_edit_approval_reply_from_request(request))
+                edit_future = self._edit_approval_requests[request.request_id]
+                if not edit_future.done():
+                    edit_future.set_result(_edit_approval_reply_from_request(request))
                 continue
             if request.type == "permission_response" and request.request_id in self._permission_requests:
-                future = self._permission_requests[request.request_id]
-                if not future.done():
-                    future.set_result(bool(request.allowed))
+                permission_future = self._permission_requests[request.request_id]
+                if not permission_future.done():
+                    permission_future.set_result(bool(request.allowed))
                 continue
             if request.type == "question_response" and request.request_id in self._question_requests:
-                future = self._question_requests[request.request_id]
-                if not future.done():
-                    future.set_result(request.answer or "")
+                question_future = self._question_requests[request.request_id]
+                if not question_future.done():
+                    question_future.set_result(request.answer or "")
                 continue
             if request.type == "interrupt":
                 await self._interrupt_active_request()
@@ -253,7 +254,7 @@ class _JavisBackendHost:
                 BackendEvent(type="transcript_item", item=TranscriptItem(role="system", text=message))
             )
 
-        async def _render_event(event) -> None:
+        async def _render_event(event: AgentEvent) -> None:
             if isinstance(event, AgentTextDelta):
                 await self._emit(BackendEvent(type="assistant_delta", message=event.text))
                 return
@@ -437,21 +438,21 @@ class _JavisBackendHost:
             return
 
         if command == "model":
-            current = state.model
-            candidates = [current] if current else []
+            current_model = state.model
+            candidates = [current_model] if current_model else []
             seen: set[str] = set()
             options = []
             for value in candidates:
                 if not value or value in seen:
                     continue
                 seen.add(value)
-                options.append({"value": value, "label": value, "description": "javis model", "active": value == current})
+                options.append({"value": value, "label": value, "description": "javis model", "active": value == current_model})
             await self._emit(BackendEvent(type="select_request", modal={"kind": "select", "title": "Model", "command": "model"}, select_options=options))
             return
 
         await self._emit(BackendEvent(type="error", message=f"No selector available for /{command}"))
 
-    async def _check_permission(self, tool_name: str, tool_input: dict) -> str:
+    async def _check_permission(self, tool_name: str, tool_input: dict[str, Any]) -> str:
         """Permission hook for the agent loop: decide allow/deny, ask via modal."""
         mode = self._bundle.app_state.get().permission_mode
         decision = decide_permission(mode, tool_name)
@@ -583,7 +584,7 @@ async def run_javis_backend(
     model: str | None = None,
     max_turns: int | None = None,
     engine: str | None = None,
-    restore_messages: list[dict] | None = None,
+    restore_messages: list[dict[str, Any]] | None = None,
     restore_tool_metadata: dict[str, object] | None = None,
 ) -> int:
     """Run the structured React backend host."""

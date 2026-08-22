@@ -43,13 +43,13 @@ def _user_text(content: list[Any]) -> str:
     return "".join(parts).strip()
 
 
-def _to_corecoder_messages(messages: list[ConversationMessage]) -> list[dict]:
+def _to_corecoder_messages(messages: list[ConversationMessage]) -> list[dict[str, Any]]:
     """Convert javis conversation history into OpenAI-style message dicts.
 
     Tool results live in ``user`` messages in javis; corecoder expects them
     as standalone ``tool`` messages with ``tool_call_id``.
     """
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for msg in messages:
         if msg.role == "user":
             tool_results = [b for b in msg.content if isinstance(b, ToolResultBlock)]
@@ -117,9 +117,9 @@ class CoreCoderBackend(AgentBackend):
         prompt_before = getattr(llm, "total_prompt_tokens", 0)
         completion_before = getattr(llm, "total_completion_tokens", 0)
 
-        queue: asyncio.Queue[tuple] = asyncio.Queue()
+        queue: asyncio.Queue[tuple[Any, ...]] = asyncio.Queue()
 
-        def emit(item: tuple) -> None:
+        def emit(item: tuple[Any, ...]) -> None:
             queue.put_nowait(item)
 
         async def producer() -> None:
@@ -185,7 +185,7 @@ def build_corecoder_backend(
     cwd: str | None = None,
     max_turns: int | None = None,
     tool_metadata: dict[str, Any] | None = None,
-    engine_config: dict | None = None,
+    engine_config: dict[str, Any] | None = None,
 ) -> CoreCoderBackend:
     """Build a CoreCoderBackend from env + per-engine config."""
     del cwd, tool_metadata

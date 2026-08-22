@@ -66,7 +66,7 @@ def is_fallback_trigger(exc: Exception) -> bool:
 class ToolCall:
     id: str
     name: str
-    arguments: dict
+    arguments: dict[str, Any]
 
 
 @dataclass
@@ -78,14 +78,14 @@ class LLMRequest:
     非 None 则本次调用覆盖。
     """
 
-    messages: list[dict]  # 对话历史（OpenAI Chat 格式）
-    tools: list[dict] | None = None  # 工具 schema
+    messages: list[dict[str, Any]]  # 对话历史（OpenAI Chat 格式）
+    tools: list[dict[str, Any]] | None = None  # 工具 schema
     max_tokens: int | None = None
     temperature: float | None = None
     stop: list[str] | None = None
     top_p: float | None = None
     seed: int | None = None
-    response_format: dict | None = None
+    response_format: dict[str, Any] | None = None
 
 
 @dataclass
@@ -98,9 +98,9 @@ class LLMResponse:
     finish_reason: str = "stop"
 
     @property
-    def message(self) -> dict:
+    def message(self) -> dict[str, Any]:
         """Convert to OpenAI message format for appending to history."""
-        msg: dict = {"role": "assistant", "content": self.content or None}
+        msg: dict[str, Any] = {"role": "assistant", "content": self.content or None}
         if self.tool_calls:
             msg["tool_calls"] = [
                 {
@@ -209,7 +209,7 @@ class LLMProvider(ABC):
     # -- the one abstract method -------------------------------------------
 
     @abstractmethod
-    async def achat_stream(
+    def achat_stream(
         self,
         request: LLMRequest,
         *,
@@ -290,7 +290,7 @@ class LLMProvider(ABC):
         """Rough cost estimate in USD. None if model not in pricing table."""
         return estimated_cost(self.model, self.total_prompt_tokens, self.total_completion_tokens)
 
-    def _format_tools(self, tools: list[dict] | None) -> list[dict]:
+    def _format_tools(self, tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
         """Sort tools by name → stable request prefix → prompt caching hits.
 
         (OpenAI/Anthropic/Gemini prompt caching all require stable prefixes.)
@@ -461,7 +461,7 @@ class OpenAICompatProvider(LLMProvider):
         self._client: Any = None  # OpenAI (lazy)
         self._aclient: Any = None  # AsyncOpenAI (lazy)
 
-    def _ensure_client(self):
+    def _ensure_client(self) -> Any:
         from openai import OpenAI
 
         if self._client is None:
@@ -472,7 +472,7 @@ class OpenAICompatProvider(LLMProvider):
             )
         return self._client
 
-    def _ensure_aclient(self):
+    def _ensure_aclient(self) -> Any:
         from openai import AsyncOpenAI
 
         if self._aclient is None:
@@ -483,14 +483,14 @@ class OpenAICompatProvider(LLMProvider):
             )
         return self._aclient
 
-    def _base_params(self, request: LLMRequest, extra_body: dict[str, Any] | None = None) -> dict:
+    def _base_params(self, request: LLMRequest, extra_body: dict[str, Any] | None = None) -> dict[str, Any]:
         """Build SDK params from a request.
 
         LLMRequest fields with a value override the constructor defaults
         (None keeps the default); ``extra_body`` is merged last so
         vendor-only passthrough fields win.
         """
-        params: dict = {
+        params: dict[str, Any] = {
             "model": self.model,
             "messages": request.messages,
             "stream_options": {"include_usage": True},
@@ -527,7 +527,7 @@ class OpenAICompatProvider(LLMProvider):
         except BadRequestError:
             params.pop("stream_options", None)
             stream = await self._ensure_aclient().chat.completions.create(**params, stream=True)
-        tc_map: dict[int, dict] = {}
+        tc_map: dict[int, dict[str, Any]] = {}
         async for chunk in stream:
             yield _parse_delta(chunk, on_token, on_reasoning, tc_map)
 
@@ -581,7 +581,7 @@ def _parse_delta(
     chunk: Any,
     on_token: Callable[[str], None] | None = None,
     on_reasoning: Callable[[str], None] | None = None,
-    tc_map: dict[int, dict] | None = None,
+    tc_map: dict[int, dict[str, Any]] | None = None,
 ) -> LLMResponse:
     """Parse one streaming chunk into a delta LLMResponse.
 
@@ -659,7 +659,7 @@ def _parse_completion(response: Any) -> LLMResponse:
     content = ""
     reasoning: str | None = None
     finish_reason = ""
-    tc_map: dict[int, dict] = {}
+    tc_map: dict[int, dict[str, Any]] = {}
 
     if response.choices:
         choice = response.choices[0]

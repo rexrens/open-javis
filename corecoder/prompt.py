@@ -2,9 +2,10 @@
 
 import os
 import platform
+from typing import Any
 
 
-def system_prompt(tools) -> str:
+def system_prompt(tools: list[Any]) -> str:
     cwd = os.getcwd()
     tool_list = "\n".join(f"- **{t.name}**: {t.description}" for t in tools)
     uname = platform.uname()

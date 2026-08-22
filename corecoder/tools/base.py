@@ -12,11 +12,11 @@ class Tool(ABC):
     parameters: ClassVar[dict[str, Any]]  # JSON Schema for the function args
 
     @abstractmethod
-    def execute(self, **kwargs) -> str:
+    def execute(self, *args: Any, **kwargs: Any) -> str:
         """Run the tool and return a text result."""
         ...
 
-    def schema(self) -> dict:
+    def schema(self) -> dict[str, Any]:
         """OpenAI function-calling schema."""
         return {
             "type": "function",

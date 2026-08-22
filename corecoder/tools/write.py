@@ -28,7 +28,7 @@ class WriteFileTool(Tool):
         "required": ["file_path", "content"],
     }
 
-    def execute(self, file_path: str, content: str) -> str:
+    def execute(self, file_path: str, content: str, **kwargs: Any) -> str:
         try:
             p = Path(file_path).expanduser().resolve()
             p.parent.mkdir(parents=True, exist_ok=True)

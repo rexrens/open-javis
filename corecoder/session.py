@@ -9,6 +9,7 @@ import re
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 SESSIONS_DIR = Path.home() / ".corecoder" / "sessions"
 _SAFE_SESSION_RE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -38,7 +39,7 @@ def _session_path(session_id: str) -> Path:
     return path
 
 
-def save_session(messages: list[dict], model: str, session_id: str | None = None) -> str:
+def save_session(messages: list[dict[str, Any]], model: str, session_id: str | None = None) -> str:
     """Save conversation to disk. Returns the session ID."""
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -56,7 +57,7 @@ def save_session(messages: list[dict], model: str, session_id: str | None = None
     return session_id
 
 
-def load_session(session_id: str) -> tuple[list[dict], str] | None:
+def load_session(session_id: str) -> tuple[list[dict[str, Any]], str] | None:
     """Load a saved session. Returns (messages, model) or None."""
     path = _session_path(session_id)
     if not path.exists():
@@ -70,7 +71,7 @@ def load_session(session_id: str) -> tuple[list[dict], str] | None:
         return None
 
 
-def list_sessions() -> list[dict]:
+def list_sessions() -> list[dict[str, Any]]:
     """List available sessions, newest first."""
     if not SESSIONS_DIR.exists():
         return []

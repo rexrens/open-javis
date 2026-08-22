@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import mimetypes
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
@@ -77,7 +77,7 @@ class ConversationMessage(BaseModel):
     def _normalize_content(cls, value: Any) -> list[Any]:
         if value is None:
             return []
-        return value
+        return cast(list[Any], value)
 
     @classmethod
     def from_user_text(cls, text: str) -> ConversationMessage:
@@ -140,7 +140,9 @@ def sanitize_conversation_messages(messages: list[ConversationMessage]) -> list[
                 pending_tool_use_index = None
 
         if message.role == "user" and tool_results and not matched_pending_tool_results:
-            content = [block for block in message.content if not isinstance(block, ToolResultBlock)]
+            content: list[ContentBlock] = [
+                block for block in message.content if not isinstance(block, ToolResultBlock)
+            ]
             if not content:
                 continue
             message = ConversationMessage(role="user", content=content)

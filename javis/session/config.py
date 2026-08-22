@@ -151,7 +151,7 @@ DEFAULT_TEMPLATE: dict[str, Any] = {
 # ---------------------------------------------------------------------------
 
 
-def deep_merge(base: dict, override: dict) -> dict:
+def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Recursive merge: override wins on scalars, dicts merge, lists replace."""
     result = dict(base)
     for key, value in override.items():

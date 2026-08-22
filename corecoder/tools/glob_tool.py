@@ -27,7 +27,7 @@ class GlobTool(Tool):
         "required": ["pattern"],
     }
 
-    def execute(self, pattern: str, path: str = ".") -> str:
+    def execute(self, pattern: str, path: str = ".", **kwargs: Any) -> str:
         try:
             base = Path(path).expanduser().resolve()
             if not base.is_dir():

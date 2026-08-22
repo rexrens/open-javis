@@ -59,7 +59,7 @@ class BashTool(Tool):
         "required": ["command"],
     }
 
-    def execute(self, command: str, timeout: int = 120) -> str:
+    def execute(self, command: str, timeout: int = 120, **kwargs: Any) -> str:
         # safety check
         warning = _check_dangerous(command)
         if warning:
@@ -110,7 +110,7 @@ def _check_dangerous(cmd: str) -> str | None:
     return None
 
 
-def _update_cwd(command: str, current_cwd: str):
+def _update_cwd(command: str, current_cwd: str) -> None:
     """Track directory changes from cd commands, per thread."""
     # walk each cd in a && chain, resolving relative targets against the dir the
     # previous cd landed in (not the original cwd) so `cd a && cd b` ends in a/b

@@ -3,6 +3,7 @@
 import argparse
 import os
 import sys
+from typing import Any
 
 from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.history import FileHistory
@@ -20,7 +21,7 @@ from .session import list_sessions, load_session, save_session
 console = Console()
 
 
-def _parse_args():
+def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="corecoder",
         description="Minimal AI coding agent. Works with any OpenAI-compatible LLM.",
@@ -35,7 +36,7 @@ def _parse_args():
     return p.parse_args()
 
 
-def main():
+def main() -> None:
     args = _parse_args()
 
     if args.demo:
@@ -100,12 +101,12 @@ def main():
     _repl(agent, config)
 
 
-def _run_once(agent: Agent, prompt: str):
+def _run_once(agent: Agent, prompt: str) -> None:
     """Non-interactive: run one prompt and exit."""
-    def on_token(tok):
+    def on_token(tok: str) -> None:
         print(tok, end="", flush=True)
 
-    def on_tool(name, kwargs):
+    def on_tool(name: str, kwargs: dict[str, Any]) -> None:
         console.print(f"\n[dim]> {name}({_brief(kwargs)})[/dim]")
 
     try:
@@ -119,7 +120,7 @@ def _run_once(agent: Agent, prompt: str):
     print()
 
 
-def _repl(agent: Agent, config: Config):
+def _repl(agent: Agent, config: Config) -> None:
     """Interactive read-eval-print loop."""
     console.print(Panel(
         f"[bold]CoreCoder[/bold] v{__version__}\n"
@@ -136,11 +137,11 @@ def _repl(agent: Agent, config: Config):
     kb = KeyBindings()
 
     @kb.add("enter")
-    def _submit(event):
+    def _submit(event: Any) -> None:
         event.current_buffer.validate_and_handle()
 
     @kb.add("escape", "enter")
-    def _newline(event):
+    def _newline(event: Any) -> None:
         event.current_buffer.insert_text("\n")
 
     while True:
@@ -228,11 +229,11 @@ def _repl(agent: Agent, config: Config):
         # call the agent
         streamed: list[str] = []
 
-        def on_token(tok, streamed=streamed):
+        def on_token(tok: str, streamed: list[str] = streamed) -> None:
             streamed.append(tok)
             print(tok, end="", flush=True)
 
-        def on_tool(name, kwargs):
+        def on_tool(name: str, kwargs: dict[str, Any]) -> None:
             console.print(f"\n[dim]> {name}({_brief(kwargs)})[/dim]")
 
         try:
@@ -248,7 +249,7 @@ def _repl(agent: Agent, config: Config):
             console.print(f"\n[red]Error: {e}[/red]")
 
 
-def _show_help():
+def _show_help() -> None:
     console.print(Panel(
         "[bold]Commands:[/bold]\n"
         "  /help          Show this help\n"
@@ -270,6 +271,6 @@ def _show_help():
     ))
 
 
-def _brief(kwargs: dict, maxlen: int = 80) -> str:
+def _brief(kwargs: dict[str, Any], maxlen: int = 80) -> str:
     s = ", ".join(f"{k}={repr(v)[:40]}" for k, v in kwargs.items())
     return s[:maxlen] + ("..." if len(s) > maxlen else "")

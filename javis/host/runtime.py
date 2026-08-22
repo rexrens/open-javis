@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -103,7 +103,7 @@ async def build_javis_runtime(
     system_prompt: str | None = None,
     agent_backend: AgentBackend | None = None,
     engine: str | None = None,
-    restore_messages: list[dict] | None = None,
+    restore_messages: list[dict[str, Any]] | None = None,
     restore_tool_metadata: dict[str, object] | None = None,
     session_backend: JavisSessionBackend | None = None,
     workspace: str | Path | None = None,
@@ -331,7 +331,7 @@ async def handle_line(
     return True
 
 
-async def _replay_assistant(message: ConversationMessage):
+async def _replay_assistant(message: ConversationMessage) -> AsyncIterator[AgentEvent]:
     """Replay a restored assistant message as a text delta + turn end."""
     yield AgentTextDelta(text=message.text)
     yield AgentTurnEnd(text=message.text)
@@ -365,7 +365,7 @@ async def run_javis_print_mode(
 
         saw_error = False
 
-        async def _render_event(event) -> None:
+        async def _render_event(event: AgentEvent) -> None:
             nonlocal saw_error
             if isinstance(event, AgentTextDelta):
                 sys.stdout.write(event.text)

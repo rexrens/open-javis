@@ -30,7 +30,7 @@ def list_engines() -> list[str]:
     return sorted(_ENGINES)
 
 
-def get_engine_config(name: str, config: dict) -> dict:
+def get_engine_config(name: str, config: dict[str, Any]) -> dict[str, Any]:
     """Extract the per-engine config subsection (or {})."""
     return dict(config.get("engines", {}).get(name, {}))
 
@@ -43,7 +43,7 @@ def create_agent_backend(
     cwd: str,
     max_turns: int | None = None,
     tool_metadata: dict[str, Any] | None = None,
-    engine_config: dict | None = None,
+    engine_config: dict[str, Any] | None = None,
 ) -> AgentBackend:
     factory = _ENGINES.get(name)
     if factory is None:
@@ -59,7 +59,7 @@ def create_agent_backend(
     )
 
 
-def _build_corecoder_backend(**kwargs) -> AgentBackend:
+def _build_corecoder_backend(**kwargs: Any) -> AgentBackend:
     from javis.engines.corecoder.backend import build_corecoder_backend
 
     return build_corecoder_backend(**kwargs)

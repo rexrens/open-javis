@@ -7,6 +7,7 @@ a live model. Useful for demos, screenshots, and as a smoke test of the loop.
 
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -60,7 +61,7 @@ def _script(workdir: Path) -> list[LLMResponse]:
     ]
 
 
-def _summarize(args: dict) -> str:
+def _summarize(args: dict[str, Any]) -> str:
     parts = []
     for key, value in args.items():
         text = str(value)

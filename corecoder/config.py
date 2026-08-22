@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-def _load_dotenv():
+def _load_dotenv() -> None:
     """Load .env from cwd, walking up to home dir. No-op if python-dotenv missing."""
     try:
-        from dotenv import load_dotenv
+        from dotenv import load_dotenv  # type: ignore[import-not-found]
         # search cwd first, then parent dirs up to ~
         env_path = Path(".env")
         if not env_path.exists():

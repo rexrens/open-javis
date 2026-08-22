@@ -35,7 +35,7 @@ class GrepTool(Tool):
         "required": ["pattern"],
     }
 
-    def execute(self, pattern: str, path: str = ".", include: str | None = None) -> str:
+    def execute(self, pattern: str, path: str = ".", include: str | None = None, **kwargs: Any) -> str:
         try:
             regex = re.compile(pattern)
         except re.error as e:

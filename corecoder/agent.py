@@ -13,6 +13,7 @@ import asyncio
 import concurrent.futures
 import inspect
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from .context import ContextManager
 from .llm import LLMProvider, LLMRequest, ToolCall
@@ -29,7 +30,7 @@ class Agent:
         tools: list[Tool] | None = None,
         max_context_tokens: int = 128_000,
         max_rounds: int = 50,
-        permission_checker: Callable[[str, dict], Awaitable[str]] | None = None,
+        permission_checker: Callable[[str, dict[str, Any]], Awaitable[str]] | None = None,
     ):
         """``permission_checker`` is an async hook called before each tool
         execution (event-loop thread): receives ``(tool_name, arguments)`` and
@@ -39,7 +40,7 @@ class Agent:
         self.llm = llm
         self.tools = tools if tools is not None else all_tools()
         self._tool_by_name = {t.name: t for t in self.tools}
-        self.messages: list[dict] = []
+        self.messages: list[dict[str, Any]] = []
         self.context = ContextManager(max_tokens=max_context_tokens)
         self.max_rounds = max_rounds
         self.permission_checker = permission_checker
@@ -50,13 +51,20 @@ class Agent:
             if isinstance(t, AgentTool):
                 t._parent_agent = self
 
-    def _full_messages(self) -> list[dict]:
+    def _full_messages(self) -> list[dict[str, Any]]:
         return [{"role": "system", "content": self._system}] + self.messages
 
-    def _tool_schemas(self) -> list[dict]:
+    def _tool_schemas(self) -> list[dict[str, Any]]:
         return [t.schema() for t in self.tools]
 
-    def chat(self, user_input: str, on_token=None, on_tool=None, on_tool_result=None, on_reasoning=None) -> str:
+    def chat(
+        self,
+        user_input: str,
+        on_token: Callable[[str], None] | None = None,
+        on_tool: Callable[[str, dict[str, Any]], None] | None = None,
+        on_tool_result: Callable[[str, dict[str, Any], str, bool], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
+    ) -> str:
         """Process one user message. May involve multiple LLM/tool rounds."""
         self.messages.append({"role": "user", "content": user_input})
         self.context.maybe_compress(self.messages, self.llm)
@@ -112,7 +120,14 @@ class Agent:
 
         return "(reached maximum tool-call rounds)"
 
-    async def achat(self, user_input: str, on_token=None, on_tool=None, on_tool_result=None, on_reasoning=None) -> str:
+    async def achat(
+        self,
+        user_input: str,
+        on_token: Callable[[str], None] | None = None,
+        on_tool: Callable[[str, dict[str, Any]], None] | None = None,
+        on_tool_result: Callable[[str, dict[str, Any], str, bool], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
+    ) -> str:
         """Async counterpart of chat(): same loop over awaitable LLM.chat().
 
         Requires an async provider (LLMProvider.achat); building the Agent
@@ -215,7 +230,7 @@ class Agent:
             return None
         return (f"[permission denied: {decision}]", True)
 
-    def _exec_tool_with_status(self, tc) -> tuple[str, bool]:
+    def _exec_tool_with_status(self, tc: ToolCall) -> tuple[str, bool]:
         """Execute a single tool call, returning (result_text, is_error).
 
         is_error is True only when the tool could not be executed (unknown
@@ -236,10 +251,12 @@ class Agent:
         except Exception as e:  # noqa: BLE001 — tool errors are returned as text for the LLM
             return f"Error executing {tc.name}: {e}", True
 
-    def _exec_tool(self, tc) -> str:
+    def _exec_tool(self, tc: ToolCall) -> str:
         return self._exec_tool_with_status(tc)[0]
 
-    def _exec_tools_parallel(self, tool_calls, on_tool=None) -> list[tuple[str, bool]]:
+    def _exec_tools_parallel(
+        self, tool_calls: list[ToolCall], on_tool: Callable[[str, dict[str, Any]], None] | None = None
+    ) -> list[tuple[str, bool]]:
         """Run multiple tool calls concurrently using threads.
 
         This is inspired by Claude Code's StreamingToolExecutor which starts
@@ -254,7 +271,7 @@ class Agent:
             futures = [pool.submit(self._exec_tool_with_status, tc) for tc in tool_calls]
             return [f.result() for f in futures]
 
-    def _answer_pending_tool_calls(self, tool_calls):
+    def _answer_pending_tool_calls(self, tool_calls: list[ToolCall]) -> None:
         """Backfill a tool reply for every call that didn't get one.
 
         OpenAI-compatible APIs reject a request where an assistant message has
@@ -270,14 +287,14 @@ class Agent:
                     "content": "[interrupted]",
                 })
 
-    def reset(self):
+    def reset(self) -> None:
         """Clear conversation history."""
         self.messages.clear()
 
-    def load_messages(self, messages: list[dict]):
+    def load_messages(self, messages: list[dict[str, Any]]) -> None:
         """Replace conversation history (used when restoring a session)."""
         self.messages = list(messages)
 
-    def set_system_prompt(self, prompt: str):
+    def set_system_prompt(self, prompt: str) -> None:
         """Replace the system prompt for subsequent rounds."""
         self._system = prompt

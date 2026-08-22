@@ -11,17 +11,31 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Any, Protocol
 
 from javis.contracts.messages import ConversationMessage
 from javis.contracts.usage import UsageSnapshot
 from javis.session.state import AppStateStore
 
 
+class AgentEngine(Protocol):
+    """QueryEngine-shaped interface for command handlers (avoids a circular import)."""
+
+    @property
+    def messages(self) -> list[ConversationMessage]: ...
+    @property
+    def total_usage(self) -> UsageSnapshot: ...
+    @property
+    def tool_metadata(self) -> dict[str, Any]: ...
+    def clear(self) -> None: ...
+    def set_max_turns(self, max_turns: int | None) -> None: ...
+
+
 @dataclass
 class CommandContext:
     """Context passed to a command handler."""
 
-    engine: object  # QueryEngine-shaped; typed loosely to avoid a circular import
+    engine: AgentEngine
     app_state: AppStateStore
     cwd: str
     session_id: str

@@ -29,7 +29,7 @@ class AgentBackend(Protocol):
             '''Clear engine-internal history.'''
     """
 
-    async def run_turn(
+    def run_turn(
         self,
         prompt: str | ConversationMessage,
         *,
