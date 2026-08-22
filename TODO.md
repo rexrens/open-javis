@@ -70,7 +70,7 @@ uv run javis -p "hi"       # 验证 DeepSeek 连通（读 ~/.javis/config.json�
 - [ ] **P0-E 文档补全**：`docs/plugins.md` 补 `config=None` 语义（未声明 Config 时 apply 第二参数为 None）、`ctx.get` 未提供服务抛 KeyError、生命周期箭头注记（配置/依赖失败直接 PENDING→FAILED 不经 LOADING）
 - [ ] **P0-F runtime 死代码清理**：`runtime.py` 中 `if cfg else` ×5（cfg 恒非 None）与 `commands if cfg is not None else ...` 死分支
 - [ ] **P0-G 测试夹具补全**：`test_context` 的 "tools" 桩缺 `unregister_tool`（与 close() 的撤销路径隐性耦合，新增"注册工具后 close"测试会 AttributeError）
-- [ ] **P0-H mypy 基线**：`corecoder/tools/*.py` 预存 11 个 mypy 错误（`execute` 签名 override 等，`strict` 下）——本次净增 0，但影响 `uv run mypy corecoder/` 全绿
+- [x] **P0-H mypy 基线**：`corecoder/tools/*.py` 预存 11 个 mypy 错误（`execute` 签名 override 等，`strict` 下）——本次净增 0，但影响 `uv run mypy corecoder/` 全绿
 
 ## 🟨 Phase 2：知识层插件
 
@@ -96,7 +96,7 @@ uv run javis -p "hi"       # 验证 DeepSeek 连通（读 ~/.javis/config.json�
   - `javis/host/backend_host.py` 44%（端到端协议测试，Phase 1 事件打通后自然覆盖）
   - `javis/session/session_storage.py` 54%
 - 目标：65% → 70%+（Phase 1 事件链路测试 + 插件延后项测试）
-- 维护：`ruff check javis/ corecoder/` 当前 **58 错误**（28 可 `--fix` 自动修：I001 ×12 / RUF012 ×7 / UP037 ×6 / F401 ×5 / F821 ×4 …——远端 LLMRequest 重构后数字上升，可先跑 `ruff check --fix` 清一批）；`mypy javis/` 当前 **32 错误**（backend_host.py 等既有债务）
+- **质量门已全绿（2026-08-21）**：`ruff check javis/ corecoder/` → All checks passed（0 错误）；`mypy javis/ corecoder/` → Success（51 files，strict）
 
 ## 杂项
 
