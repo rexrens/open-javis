@@ -135,7 +135,10 @@ async def build_javis_runtime(
 
     from javis.session.config import load_config
 
-    cfg = load_config(cwd=cwd_resolved, workspace=workspace_root)  # always non-None
+    # load_config deep-merges global + project config.json; raises ValueError on
+    # malformed JSON (config errors are surfaced, not swallowed). Returns a
+    # JavisConfig with defaults otherwise — cfg is never None after this.
+    cfg = load_config(cwd=cwd_resolved, workspace=workspace_root)
     plugins: PluginRegistry | None = None
 
     # --- plugin system: activate before the backend is built so plugin

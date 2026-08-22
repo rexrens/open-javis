@@ -1759,7 +1759,7 @@ def _build_plugin_dirs(*, cwd: str | None = None, workspace: str | Path | None =
     plugins: PluginRegistry | None = None
 ```
 
-`load_config` 恒返回 `JavisConfig`（无 providers 时用默认模板，不会 raise），因此 `cfg` 永远非 None，插件系统始终激活。在 `create_agent_backend` 之前插入插件激活块：
+`load_config` 深合并 global + project config.json；非法 JSON 会 raise `ValueError`（配置错误直接暴露，不吞）；否则恒返回 `JavisConfig`（默认模板兜底），因此 `cfg` 永远非 None，插件系统始终激活。注意：显式传 `agent_backend` 的调用同样会读取/创建配置文件。在 `create_agent_backend` 之前插入插件激活块：
 
 ```python
         # --- plugin system: activate before the backend is built so plugin
