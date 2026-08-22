@@ -35,7 +35,7 @@ async def test_example_tool_plugin_loads_and_registers(reg):
     import corecoder.tools
 
     reg.services.provide("tools", corecoder.tools)  # real registry, like build_javis_runtime
-    await load_plugins(reg, [EXAMPLES], {"hello_tool": {}, "hello_command": {}})
+    await load_plugins(reg, [EXAMPLES], {"hello_tool": {}})
     await reg.activate_all()
     from corecoder.tools import get_tool
 
@@ -51,7 +51,7 @@ async def test_example_command_plugin_registers_command(reg):
 
     commands = CommandRegistry()
     reg.services.provide("commands", commands)
-    await load_plugins(reg, [EXAMPLES], {"hello_tool": {}, "hello_command": {}})
+    await load_plugins(reg, [EXAMPLES], {"hello_command": {}})
     await reg.activate_all()
     assert commands.lookup("/hello") is not None
     assert commands.lookup("/help") is None  # 内建命令不在此 registry
