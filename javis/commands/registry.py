@@ -9,7 +9,7 @@ To add a command: register it in ``create_default_command_registry``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from javis.contracts.messages import ConversationMessage

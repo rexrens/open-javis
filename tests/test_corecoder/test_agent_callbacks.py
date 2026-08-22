@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from corecoder.agent import Agent
 from corecoder.llm import LLMResponse, ScriptedProvider, ToolCall

@@ -23,12 +23,9 @@ from javis.contracts.usage import UsageSnapshot
 from javis.contracts.protocol import AgentBackend
 from javis.contracts.types import (
     AgentContext,
-    AgentError,
     AgentEvent,
     AgentStatus,
     AgentTextDelta,
-    AgentToolCallResult,
-    AgentToolCallStart,
     AgentTurnEnd,
 )
 
