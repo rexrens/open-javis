@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from corecoder.tools import all_tools, get_tool, register_tool, unregister_tool
-from corecoder.tools.base import Tool
+from javis.engines.corecoder.tools import all_tools, get_tool, register_tool, unregister_tool
+from javis.engines.corecoder.tools.base import Tool
 
 
 class TestEchoTool(Tool):

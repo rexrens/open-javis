@@ -6,8 +6,8 @@ import asyncio
 
 import pytest
 
-from corecoder.agent import Agent
-from corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
+from javis.engines.corecoder.agent import Agent
+from javis.engines.corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
 from javis.contracts.types import (
     AgentError,
     AgentTextDelta,
@@ -150,7 +150,7 @@ def test_load_history_converts_messages():
 def test_clear_history_resets_agent():
     # The sync chat() path requires a sync provider (ScriptedProvider.chat returns
     # a coroutine, so agent.chat would raise AttributeError).
-    from corecoder.llm import ScriptedProvider
+    from javis.engines.corecoder.llm import ScriptedProvider
 
     llm = ScriptedProvider(script=[LLMResponse(content="hi")])
     agent = Agent(llm=llm)

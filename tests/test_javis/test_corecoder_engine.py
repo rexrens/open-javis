@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from corecoder.agent import Agent
-from corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
-from corecoder.tools import all_tools
+from javis.engines.corecoder.agent import Agent
+from javis.engines.corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
+from javis.engines.corecoder.tools import all_tools
 
 
 def _make_agent(script: list[LLMResponse], *, max_rounds: int = 10, tools=None) -> Agent:

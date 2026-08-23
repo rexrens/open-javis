@@ -84,9 +84,9 @@ def _build_plugin_dirs(*, cwd: str | None = None, workspace: str | Path | None =
 
 
 def _tool_module() -> ModuleType:
-    import corecoder.tools
+    import javis.engines.corecoder.tools
 
-    return corecoder.tools
+    return javis.engines.corecoder.tools
 
 
 def _engine_module() -> ModuleType:
@@ -136,7 +136,7 @@ async def build_javis_runtime(
     plugins: PluginRegistry | None = None
 
     # --- plugin system: activate before the backend is built so plugin
-    # tools reach the engine via corecoder.tools.all_tools() ---
+    # tools reach the engine via javis.engines.corecoder.tools.all_tools() ---
     services = ServiceRegistry()
     bus = EventBus()
     commands = create_default_command_registry()
@@ -380,6 +380,8 @@ async def run_javis_print_mode(
             print_system=_print_system,
             render_event=_render_event,
             clear_output=_clear_output,
+            # Print mode is a plain prompt: never dispatch slash commands.
+            user_message=ConversationMessage.from_user_text(prompt),
         )
         await close_runtime(bundle)
         return 1 if saw_error else 0

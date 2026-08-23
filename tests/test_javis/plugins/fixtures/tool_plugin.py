@@ -1,5 +1,5 @@
 """Fixture: registers a tool through the plugin API."""
-from corecoder.tools.base import Tool
+from javis.engines.corecoder.tools.base import Tool
 
 
 class PlugTool(Tool):

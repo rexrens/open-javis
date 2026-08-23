@@ -1,4 +1,8 @@
-"""Interactive REPL - the user-facing terminal interface."""
+"""Standalone corecoder REPL — kept as a verification example.
+
+Run with ``uv run python -m examples.corecoder.cli`` (add ``--demo`` for the
+offline scripted demo, no API key needed).
+"""
 
 import argparse
 import os
@@ -12,11 +16,12 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from . import __version__
-from .agent import Agent
-from .config import Config
-from .llm import OpenAICompatProvider
-from .session import list_sessions, load_session, save_session
+from examples.corecoder.demo import run_demo
+from javis.engines.corecoder import __version__
+from javis.engines.corecoder.agent import Agent
+from javis.engines.corecoder.config import Config
+from javis.engines.corecoder.llm import OpenAICompatProvider
+from javis.engines.corecoder.session import list_sessions, load_session, save_session
 
 console = Console()
 
@@ -40,7 +45,6 @@ def main() -> None:
     args = _parse_args()
 
     if args.demo:
-        from .demo import run_demo
         raise SystemExit(run_demo())
 
     config = Config.from_env()
@@ -274,3 +278,7 @@ def _show_help() -> None:
 def _brief(kwargs: dict[str, Any], maxlen: int = 80) -> str:
     s = ", ".join(f"{k}={repr(v)[:40]}" for k, v in kwargs.items())
     return s[:maxlen] + ("..." if len(s) > maxlen else "")
+
+
+if __name__ == "__main__":
+    main()

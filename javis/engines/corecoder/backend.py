@@ -189,10 +189,10 @@ def build_corecoder_backend(
 ) -> CoreCoderBackend:
     """Build a CoreCoderBackend from env + per-engine config."""
     del cwd, tool_metadata
-    from corecoder.agent import Agent
-    from corecoder.config import Config
-    from corecoder.llm import OpenAICompatProvider
-    from corecoder.tools import all_tools
+    from javis.engines.corecoder.agent import Agent
+    from javis.engines.corecoder.config import Config
+    from javis.engines.corecoder.llm import OpenAICompatProvider
+    from javis.engines.corecoder.tools import all_tools
 
     cfg = Config.from_env()
     if engine_config:

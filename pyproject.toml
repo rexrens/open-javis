@@ -49,7 +49,7 @@ dev = [
 javis = "javis.host.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["javis", "corecoder"]
+packages = ["javis"]
 
 [tool.hatch.build]
 exclude = [

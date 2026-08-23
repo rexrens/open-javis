@@ -5,13 +5,15 @@ Put this file (or a copy) into ~/.javis/plugins/ to enable it.
 
 from __future__ import annotations
 
-from corecoder.tools.base import Tool
+from typing import Any, ClassVar
+
+from javis.engines.corecoder.tools.base import Tool
 
 
 class GreetTool(Tool):
     name = "greet"
     description = "Greet someone by name"
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "name": {"type": "string", "description": "Who to greet"},

@@ -7,7 +7,7 @@ from typing import ClassVar
 
 import pytest
 
-from corecoder.tools.base import Tool
+from javis.engines.corecoder.tools.base import Tool
 from javis.plugins.context import EventBus, PluginContext, ServiceRegistry
 
 

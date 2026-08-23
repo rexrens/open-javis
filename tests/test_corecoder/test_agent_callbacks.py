@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 
-from corecoder.agent import Agent
-from corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
+from javis.engines.corecoder.agent import Agent
+from javis.engines.corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
 
 
 def _agent(script, **kwargs) -> Agent:

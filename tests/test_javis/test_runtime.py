@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from tests.test_javis.fake_backend import FakeBackend
 from javis.host.query_engine import QueryEngine
 from javis.host.runtime import RuntimeBundle, build_javis_runtime
 from javis.session.session_storage import JavisSessionBackend
+from tests.test_javis.fake_backend import FakeBackend
 
 
 @pytest.fixture
@@ -106,6 +106,50 @@ async def test_build_javis_runtime_default_engine_is_corecoder(isolated_env, mon
 
     bundle = await build_javis_runtime(cwd=str(isolated_env))
     assert isinstance(bundle.engine._agent, CoreCoderBackend)
+
+
+@pytest.mark.asyncio
+async def test_print_mode_treats_slash_prompt_as_user_message(
+    isolated_env, monkeypatch, capsys
+):
+    """Print mode is a plain prompt: ``/version`` must not dispatch as a command."""
+    from javis.commands.registry import create_default_command_registry
+    from javis.host.runtime import run_javis_print_mode
+    from javis.session.state import AppState, AppStateStore
+
+    bundle = RuntimeBundle(
+        engine=QueryEngine(
+            agent_backend=FakeBackend(),
+            model="test-model",
+            system_prompt="",
+            cwd=str(isolated_env),
+        ),
+        cwd=str(isolated_env),
+        app_state=AppStateStore(AppState(model="test-model", cwd=str(isolated_env))),
+        commands=create_default_command_registry(),
+        session_backend=JavisSessionBackend(isolated_env / "javis-workspace"),
+        session_id="print-test",
+    )
+
+    async def _fake_build(**kwargs: object) -> RuntimeBundle:
+        return bundle
+
+    async def _noop(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+
+    monkeypatch.setattr("javis.host.runtime.build_javis_runtime", _fake_build)
+    monkeypatch.setattr("javis.host.runtime.start_runtime", _noop)
+    monkeypatch.setattr("javis.host.runtime.close_runtime", _noop)
+
+    exit_code = await run_javis_print_mode(prompt="/version", cwd=str(isolated_env))
+
+    assert exit_code == 0
+    # The registered /version command was NOT dispatched: it reached the engine
+    # as a plain user message.
+    assert bundle.engine.messages
+    assert bundle.engine.messages[0].role == "user"
+    assert bundle.engine.messages[0].text == "/version"
+    assert "fake reply to: /version" in capsys.readouterr().out
 
 
 @pytest.mark.asyncio

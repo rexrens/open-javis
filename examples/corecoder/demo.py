@@ -13,8 +13,8 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from .agent import Agent
-from .llm import LLMResponse, ScriptedProvider, ToolCall
+from javis.engines.corecoder.agent import Agent
+from javis.engines.corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
 
 console = Console()
 
@@ -83,3 +83,7 @@ def run_demo() -> int:
     console.print(Panel.fit(Markdown(result), title="final"))
     console.print(f"[dim]workspace kept at {workdir}[/]")
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run_demo())

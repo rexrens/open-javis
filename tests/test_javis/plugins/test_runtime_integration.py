@@ -41,7 +41,7 @@ async def test_plugin_command_registered_into_bundle(isolated_env, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_plugin_tool_registered_into_corecoder(isolated_env, monkeypatch):
-    from corecoder.tools import get_tool
+    from javis.engines.corecoder.tools import get_tool
 
     monkeypatch.setattr("javis.host.runtime._build_plugin_dirs", lambda **kw: [PLUGIN_DIR])
     await build_javis_runtime(cwd=str(isolated_env), agent_backend=FakeBackend())
@@ -61,7 +61,7 @@ async def test_close_runtime_runs_disposers(isolated_env, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_close_runtime_unregisters_plugin_tools(isolated_env, monkeypatch):
-    from corecoder.tools import get_tool
+    from javis.engines.corecoder.tools import get_tool
     from javis.host.runtime import close_runtime
 
     monkeypatch.setattr("javis.host.runtime._build_plugin_dirs", lambda **kw: [PLUGIN_DIR])

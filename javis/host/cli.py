@@ -51,7 +51,7 @@ def main(
         )
         # Keep javis' own INFO visible (config creation, lifecycle, …).
         logging.getLogger("javis").setLevel(logging.INFO)
-        logging.getLogger("corecoder").setLevel(logging.INFO)
+        logging.getLogger("javis.engines.corecoder").setLevel(logging.INFO)
 
     if ctx.invoked_subcommand is not None:
         return

@@ -32,12 +32,12 @@ def reg():
 @pytest.mark.asyncio
 async def test_example_tool_plugin_loads_and_registers(reg):
     assert EXAMPLES.is_dir(), f"examples dir missing: {EXAMPLES}"
-    import corecoder.tools
+    import javis.engines.corecoder.tools
 
-    reg.services.provide("tools", corecoder.tools)  # real registry, like build_javis_runtime
+    reg.services.provide("tools", javis.engines.corecoder.tools)  # real registry, like build_javis_runtime
     await load_plugins(reg, [EXAMPLES], {"hello_tool": {}})
     await reg.activate_all()
-    from corecoder.tools import get_tool
+    from javis.engines.corecoder.tools import get_tool
 
     assert get_tool("greet") is not None
     tool = get_tool("greet")
