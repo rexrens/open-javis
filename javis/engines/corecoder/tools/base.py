@@ -26,3 +26,20 @@ class Tool(ABC):
                 "parameters": self.parameters,
             },
         }
+
+    # -- concurrency metadata (WIP: no consumer yet) ----------------------
+
+    @property
+    def read_only(self) -> bool:
+        """Whether this tool is side-effect free and safe to parallelize."""
+        return False
+
+    @property
+    def exclusive(self) -> bool:
+        """Whether this tool should run alone even if concurrency is enabled."""
+        return False
+
+    @property
+    def concurrency_safe(self) -> bool:
+        """Whether this tool can run alongside other concurrency-safe tools."""
+        return self.read_only and not self.exclusive
