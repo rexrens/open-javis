@@ -20,6 +20,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+
 from javis.plugins import (
     EventBus,
     PluginContext,
@@ -27,6 +31,8 @@ from javis.plugins import (
     ServiceRegistry,
     load_plugins,
 )
+
+console = Console()
 
 # 本示例的插件目录（真实项目里由 loader 的 plugin_dirs() 扫描全局/项目层）。
 PLUGINS_DIR = Path(__file__).resolve().parent / "plugins"
@@ -104,7 +110,7 @@ async def main() -> int:
     for prompt in PROMPTS:
         _say(f"    用户: {prompt}")
         final_text = await handle.turn(prompt)
-        _say(f"    最终回答: {final_text!r}")
+        console.print(Panel(Markdown(final_text), title="最终回答", border_style="green"))
 
     # 会话日志是事件溯源的：展示真实落库的事件。
     demo = services.get("session").get("demo-session")
