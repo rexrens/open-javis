@@ -103,6 +103,15 @@ def extract_plugins(module: Any, fallback_name: str) -> list[PluginSpec]:
 
 
 def _load_module(path: Path, module_name: str) -> ModuleType:
+    # If the file was already imported under its canonical name (e.g. the host
+    # imports a plugin module directly), reuse that module object — otherwise
+    # classes defined in the plugin would exist twice and isinstance checks
+    # (typed service.get) would fail.
+    path = Path(path).resolve()
+    for module in tuple(sys.modules.values()):
+        module_file = getattr(module, "__file__", None)
+        if module_file and Path(module_file).resolve() == path:
+            return module
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load plugin from {path}")

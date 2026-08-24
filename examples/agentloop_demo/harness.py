@@ -20,10 +20,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
+from examples.agentloop_demo.plugins.agent_loop import AgentLoopService
+from examples.agentloop_demo.plugins.session import SessionService
 from javis.plugins import (
     EventBus,
     PluginContext,
@@ -33,6 +36,18 @@ from javis.plugins import (
 )
 
 console = Console()
+
+
+class HarnessConfig(BaseModel):
+    """内建 ``config`` 服务的数据结构。
+
+    ``services.get("config", HarnessConfig)`` 时经 pydantic 校验并转换为
+    模型实例。
+    """
+
+    workspace_root: str
+    model: str = "deepseek-chat"
+
 
 # 本示例的插件目录（真实项目里由 loader 的 plugin_dirs() 扫描全局/项目层）。
 PLUGINS_DIR = Path(__file__).resolve().parent / "plugins"
@@ -78,7 +93,7 @@ async def main() -> int:
             config=config,
             services=services,
             bus=bus,
-            javis_config=services.get("config"),
+            javis_config=services.get("config", HarnessConfig),
         )
 
     registry = PluginRegistry(services=services, bus=bus, ctx_builder=make_ctx)
@@ -92,7 +107,8 @@ async def main() -> int:
         state = item["state"].value
         error = f"  ({item['error']})" if item["error"] else ""
         _say(f"    {item['name']:<15} {state}{error}")
-    if services.get("agentLoop") is None:
+    agent_loop = services.get("agentLoop", AgentLoopService)
+    if agent_loop is None:
         _say("    agentLoop 服务不可用（插件激活失败），示例终止")
         await registry.close_all()
         return 1
@@ -103,7 +119,6 @@ async def main() -> int:
 
     # ============ 4/5 agent loop：宿主只做"把输入交给 agent" ============
     _say("4/5 agent loop：创建会话，逐条提交用户输入")
-    agent_loop = services.get("agentLoop")
     handle = agent_loop.create(
         {"sessionId": "demo-session", "cwd": str(WORKSPACE_ROOT)}
     )
@@ -113,7 +128,7 @@ async def main() -> int:
         console.print(Panel(Markdown(final_text), title="最终回答", border_style="green"))
 
     # 会话日志是事件溯源的：展示真实落库的事件。
-    demo = services.get("session").get("demo-session")
+    demo = services.get("session", SessionService).get("demo-session")
     _say(f"    会话日志（事件溯源，共 {len(demo.events)} 条）:")
     for event in demo.events:
         brief = json.dumps(event.data, ensure_ascii=False)[:100]

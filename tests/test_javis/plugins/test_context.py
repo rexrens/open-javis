@@ -6,6 +6,7 @@ import asyncio
 from typing import ClassVar
 
 import pytest
+from pydantic import BaseModel
 
 from javis.engines.corecoder.tools.base import Tool
 from javis.plugins.context import EventBus, PluginContext, ServiceRegistry
@@ -18,6 +19,15 @@ class CtxTool(Tool):
 
     def execute(self, **kwargs) -> str:
         return "ok"
+
+
+class PlainService:
+    def __init__(self, x: int) -> None:
+        self.x = x
+
+
+class SvcModel(BaseModel):
+    value: int
 
 
 @pytest.fixture
@@ -36,6 +46,47 @@ def ctx():
 def test_provide_and_get(ctx):
     ctx.provide("svc", 42)
     assert ctx.get("svc") == 42
+
+
+def test_get_with_pydantic_model_validates():
+    services = ServiceRegistry()
+    services.provide("cfg", {"value": 3})
+    cfg = services.get("cfg", SvcModel)
+    assert isinstance(cfg, SvcModel)
+    assert cfg.value == 3
+
+
+def test_get_with_pydantic_model_mismatch_raises():
+    services = ServiceRegistry()
+    services.provide("cfg", {"value": "nope"})
+    with pytest.raises(Exception, match="validation error"):
+        services.get("cfg", SvcModel)
+
+
+def test_get_with_plain_type_checks_instance():
+    services = ServiceRegistry()
+    svc = PlainService(1)
+    services.provide("svc", svc)
+    assert services.get("svc", PlainService) is svc
+
+
+def test_get_with_mismatched_type_raises():
+    services = ServiceRegistry()
+    services.provide("svc", 42)
+    with pytest.raises(TypeError, match="expected"):
+        services.get("svc", str)
+
+
+def test_get_typed_missing_returns_none():
+    services = ServiceRegistry()
+    assert services.get("missing", PlainService) is None
+
+
+def test_ctx_get_with_type_validates(ctx):
+    ctx.provide("cfg", {"value": 1})
+    cfg = ctx.get("cfg", SvcModel)
+    assert isinstance(cfg, SvcModel)
+    assert cfg.value == 1
 
 
 def test_get_unknown_service_raises(ctx):

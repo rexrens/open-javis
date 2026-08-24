@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 from javis.plugins.context import EventBus, ServiceRegistry
 from javis.plugins.instance import PluginState
 from javis.plugins.loader import (
+    _load_module,
     discover_plugin_files,
     extract_plugins,
     load_plugins,
@@ -76,6 +78,26 @@ def _load(module_name):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def test_load_module_reuses_already_imported_file(tmp_path, monkeypatch):
+    """The loader must reuse a module already imported under another name,
+    otherwise classes defined in the plugin would exist twice and typed
+    ``service.get`` isinstance checks would fail."""
+    import importlib.util
+
+    path = tmp_path / "shared.py"
+    path.write_text("class Service:\n    pass\n")
+    spec = importlib.util.spec_from_file_location("host_imported_shared", path)
+    host_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(host_mod)
+    # Normal imports register the module in sys.modules; mirror that.
+    monkeypatch.setitem(sys.modules, "host_imported_shared", host_mod)
+
+    loaded = _load_module(path, "javis_plugin_shared")
+
+    assert loaded is host_mod
+    assert loaded.Service is host_mod.Service
 
 
 @pytest.fixture

@@ -13,11 +13,32 @@ import asyncio
 import inspect
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, TypeVar, cast, overload
+
+from pydantic import BaseModel
 
 Disposer = Callable[[], Awaitable[None] | None]
 EventHandler = Callable[[Any], Awaitable[None] | None]
 StartHook = Callable[[], Awaitable[None] | None]
+
+T = TypeVar("T")
+
+
+def _validate_service(name: str, value: Any, value_type: type[T]) -> T:
+    """Validate a retrieved service against ``value_type``.
+
+    - pydantic ``BaseModel`` → ``model_validate`` (data payloads are coerced
+      and validated);
+    - any other type → ``isinstance`` check (``TypeError`` on mismatch).
+    """
+    if issubclass(value_type, BaseModel):
+        return cast(T, value_type.model_validate(value))
+    if not isinstance(value, value_type):
+        raise TypeError(
+            f"Service {name!r} has type {type(value).__name__}, "
+            f"expected {value_type.__name__}"
+        )
+    return value
 
 
 class ServiceRegistry:
@@ -41,8 +62,24 @@ class ServiceRegistry:
         async with self._cond:
             self._cond.notify_all()
 
-    def get(self, name: str) -> Any:
-        return self._services.get(name)
+    @overload
+    def get(self, name: str) -> Any: ...
+
+    @overload
+    def get(self, name: str, value_type: type[T]) -> T | None: ...
+
+    def get(self, name: str, value_type: type[T] | None = None) -> T | None:
+        """Fetch a service by name (``None`` when missing).
+
+        With ``value_type`` the value is validated on retrieval (see
+        ``_validate_service``).
+        """
+        if name not in self._services:
+            return None
+        value = self._services[name]
+        if value_type is None:
+            return cast(T | None, value)
+        return _validate_service(name, value, value_type)
 
     def contains(self, name: str) -> bool:
         return name in self._services
@@ -140,11 +177,20 @@ class PluginContext:
     def provide(self, name: str, value: Any) -> None:
         self._services.provide(name, value, owner=self.name)
 
-    def get(self, name: str) -> Any:
+    @overload
+    def get(self, name: str) -> Any: ...
+
+    @overload
+    def get(self, name: str, value_type: type[T]) -> T | None: ...
+
+    def get(self, name: str, value_type: type[T] | None = None) -> T | None:
+        """Fetch a service, optionally validating it against ``value_type``."""
         value = self._services.get(name)
         if value is None and not self._services.contains(name):
             raise KeyError(f"Service {name!r} not provided")
-        return value
+        if value_type is None:
+            return cast(T | None, value)
+        return _validate_service(name, value, value_type)
 
     # ---- extension points ----------------------------------------------
     def register_tool(self, tool: Any) -> None:

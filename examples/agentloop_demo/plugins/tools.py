@@ -145,7 +145,7 @@ async def bash(root: Path, command: str, timeout: float = 30.0) -> str:
 
 def apply(ctx: Any, config: Any) -> Any:
     """激活入口：注册工具服务并登记三个真实工具。"""
-    root = Path(ctx.javis_config["workspace_root"]).resolve()
+    root = Path(ctx.javis_config.workspace_root).resolve()
     service = ToolsService(workspace_root=root)
     service.register(
         Tool(
