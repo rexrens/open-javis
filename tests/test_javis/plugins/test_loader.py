@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from javis.plugins.context import EventBus, ServiceRegistry
+from javis.plugins.context import ServiceRegistry
 from javis.plugins.instance import PluginState
 from javis.plugins.loader import (
     _load_module,
@@ -103,24 +103,23 @@ def test_load_module_reuses_already_imported_file(tmp_path, monkeypatch):
 @pytest.fixture
 def reg():
     services = ServiceRegistry()
-    bus = EventBus()
 
     def _build(name, config):
         from javis.plugins.context import PluginContext
 
         return PluginContext(
-            name=name, config=config, services=services, bus=bus, javis_config=None
+            name=name, config=config, services=services, javis_config=None
         )
 
-    return PluginRegistry(services=services, bus=bus, ctx_builder=_build)
+    return PluginRegistry(services=services, ctx_builder=_build)
 
 
 @pytest.mark.asyncio
 async def test_load_plugins_injects_config_and_activates(reg):
     # decl-plugin declares inject=["tools"]; provide the service before activating
-    reg.services.provide("tools", type("T", (), {"register_tool": lambda self, t: None})())
-    reg.services.provide("commands", type("C", (), {"register": lambda self, c: None})())
-    reg.services.provide("engines", type("E", (), {"register_engine": lambda self, n, f: None})())
+    reg.services.provide("tools", type("T", (), {"register": lambda self, t: (lambda: None)})())
+    reg.services.provide("commands", type("C", (), {"register": lambda self, c: (lambda: None)})())
+    reg.services.provide("engines", type("E", (), {"register": lambda self, n, f: (lambda: None)})())
 
     plugins_cfg = {
         "decl-plugin": {"enabled": True, "config": {"greeting": "from-cfg"}},

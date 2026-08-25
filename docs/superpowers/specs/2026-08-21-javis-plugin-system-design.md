@@ -56,7 +56,8 @@ close_runtime (async)
 ```python
 # ① 模块级 apply 函数（最常见）
 def apply(ctx: PluginContext, config: Config) -> Callable | None:
-    ctx.register_tool(MyTool())
+    tools = ctx.get("tools", ToolRegistry)   # 注册表是普通服务，带类型校验
+    ctx.effect(tools.register(MyTool()))      # register 返回 disposer → 卸载自动反注册
     return disposer          # 可选：卸载清理
 
 # ② 模块级声明式变量
@@ -76,18 +77,18 @@ __plugins__ = [PluginA, PluginB]
 
 ## 5. PluginContext（服务仓库 + 事件 + 生命周期钩子）
 
-- **服务**：`ctx.provide(name, value)` 注册、`ctx.get(name)` 获取；服务生命周期绑定插件——插件卸载时自动撤销其提供的服务
-- **内建服务**（MVP 五类）：
+- **服务**：`ctx.provide(name, value)` 注册、`ctx.get(name)` 获取；服务生命周期绑定插件——插件卸载时自动撤销其提供的服务。`ctx.get(name, Type)` 带类型校验（pydantic `model_validate` / `isinstance`）
+- **内建服务**（MVP 五类，均为**类型化实例**而非模块）：
 
-| 服务名 | 内容 |
-|---|---|
-| `tools` | 工具注册表（register_tool / get_tool / all_tools 快照） |
-| `commands` | 命令注册表（register_command） |
-| `engines` | 引擎注册表封装（register_engine，薄封装） |
+| 服务名 | 类型 | 说明 |
+|---|---|---|
+| `tools` | `ToolRegistry` | 工具注册表（register/get/all，register 返回 disposer） |
+| `commands` | `CommandRegistry` | 命令注册表（register 返回 disposer） |
+| `engines` | `EngineRegistry` | 引擎注册表（register/unregister） |
 | `config` | 只读全局 JavisConfig |
 | `logger` | 插件独立 logger（`javis.plugins.<name>`） |
 
-- **扩展点快捷方式**：`ctx.register_tool(tool)`、`ctx.register_command(cmd)`、`ctx.register_engine(name, factory)` 底层写入对应服务
+- **内核无领域概念**：不设 `register_tool/command/engine` 快捷方法（曾有此设计，已否决——见下方"方案 A 变更"）。插件直取服务：`ctx.get("tools", ToolRegistry).register(tool)`，注册即返回 disposer，交给 `ctx.effect` 保证卸载清理统一（工具/命令/引擎三类注册表均有 disposer，无泄漏）
 - **事件**：`ctx.on(name, handler)`（返回取消函数，插件卸载自动移除）、`ctx.emit(name, payload)`（fire-and-forget）、`ctx.emit_serial(name, payload)`（等待所有 handler 完成）。MVP 只做这两种模式；waterfall/parallel/bail 后续
 - **生命周期钩子**：`ctx.effect(disposer)` / `ctx.on_close(fn)` 注册卸载清理（逆序执行）；`ctx.on_start(fn)` 注册应用级启动钩子（start_runtime 时执行，可 async）
 - **事件命名**：插件间通信用自由字符串（`"agent/turn_end"` 风格）；javis 内部 AgentEvent 流（引擎→前端协议）MVP 不暴露给插件
@@ -157,11 +158,11 @@ class PluginInstance:
 
 | 扩展点 | 现状 | MVP 动作 | 插件 API |
 |---|---|---|---|
-| **工具** | 静态 `ALL_TOOLS` | **迁移为注册表**，内建 7 工具自注册 | `ctx.register_tool(tool)` |
-| **命令** | `CommandRegistry`（build 内建） | 插件可注册，命令表 = 内建 + 插件 | `ctx.register_command(cmd)` |
+| **工具** | 静态 `ALL_TOOLS` | **迁移为注册表**，内建 7 工具自注册 | `ctx.get("tools", ToolRegistry).register(tool)` |
+| **命令** | `CommandRegistry`（build 内建） | 插件可注册，命令表 = 内建 + 插件 | `ctx.get("commands", CommandRegistry).register(cmd)` |
 | **生命周期** | start/close no-op | **真正实现**（instance 激活 + disposer 逆序清理 + on_start） | `apply` 返回 disposer / `ctx.on_close` / `ctx.on_start` |
-| **引擎** | `register_engine` 已存在 | 设计覆盖，不迁移 | `ctx.register_engine(name, factory)`（薄封装） |
-| **LLM provider** | 统一 `LLMProvider` 类 | 设计覆盖，预留接口不实现 | 后续 `ctx.register_provider(...)` |
+| **引擎** | `register_engine` 已存在 | 设计覆盖，不迁移 | `ctx.get("engines", EngineRegistry).register(name, factory)` |
+| **LLM provider** | 统一 `LLMProvider` 类 | 设计覆盖，预留接口不实现 | 宿主 provide `providers` 服务即可，内核零改动 |
 
 ## 10. 工具注册表化（阶段 2 前置，随 MVP 一并落地）
 
@@ -259,4 +260,26 @@ def all_tools() -> list[Tool]            # 快照，替代 ALL_TOOLS
 | `corecoder/__init__.py` | `ALL_TOOLS` 保留为兼容别名 |
 | `javis/host/runtime.py` | build 流程接入插件加载；start/close 变真实生命周期 |
 | `javis/session/config.py` | `plugins` 段读取辅助（enabled + config 提取） |
-| 其余（engines/registry、commands/registry、session、frontend、wire 协议） | **不动** |
+| 其余（session、frontend、wire 协议） | **不动** |
+
+## 17. 方案 A 变更（2026-08-25，实施时修订）
+
+实施时否决了"扩展点快捷方式"（`ctx.register_tool/command/engine`），改为**纯服务模型 + 类型校验**（对齐 dsh/cordis：`ctx.tools.register(...)`，插件内核无领域知识）：
+
+- `PluginContext` 删除三个 `register_*` 方法，内核只剩 provide/get/on/emit/effect 等通用原语
+- 内建服务改为**类型化注册表实例**（不再是模块）：`tools` → `ToolRegistry`（corecoder/tools 新增类，模块函数保留为默认实例 `TOOL_REGISTRY` 的委托，后端 `all_tools()` 读同一实例）；`engines` → `EngineRegistry`（engines/registry 新增类，模块函数委托 `ENGINE_REGISTRY`，新增 `unregister_engine`）
+- 三类注册表的 `register` 均返回 disposer，插件以 `ctx.effect(registry.register(...))` 保证卸载清理统一（修掉命令/引擎无回滚的泄漏）
+- 类型校验：`ctx.get(name, Type)`（pydantic `model_validate` / `isinstance`，不匹配抛 `TypeError`）
+- 新增扩展点（如 LLM provider）不再需要预留接口：宿主 `services.provide("providers", ...)` 一行即可，内核零改动
+- `EventBus` / `ServiceRegistry` 退为内部实现（不导出）：`javis.plugins` 公开面 = PluginContext + PluginRegistry + loader + 异常（插件只经 `ctx.provide/get/on/emit/effect` 交互；宿主/测试从 `javis.plugins.context` 导入内部件）。对齐 cordis：服务仓库 = Context 内置的 ReflectService（ctx.reflect + mixin），无独立 ServiceRegistry 对象
+
+## 18. 依赖图编排（2026-08-25，补 RegistryService 职责）
+
+`PluginRegistry` 增加 cordis RegistryService 的依赖图能力（借鉴 dsh_like 的 PluginManager，但图从运行时事实推导）：
+
+- 依赖图 = `ServiceRegistry._owners`（`ctx.provide` 记录的 owner）+ 各插件 `inject` 声明；**无静态 `provides` 声明**，插件代码零改动
+- `dependency_graph()` — 插件名 → 注入其提供服务的插件（确定性序）
+- `load_order()` — Kahn 拓扑序（提供者先于依赖者）；环回退注册序，不抛错
+- `unload(name)` — 级联卸载（DFS 传递闭包，依赖者先停），返回停止顺序；未知/已卸载 no-op
+- `close_all()` 改为逆拓扑序停止（依赖者先于提供者），替代原来的全量并行
+- 测试 +7（test_cascade.py），193 passed

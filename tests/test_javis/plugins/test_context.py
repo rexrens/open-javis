@@ -9,7 +9,7 @@ import pytest
 from pydantic import BaseModel
 
 from javis.engines.corecoder.tools.base import Tool
-from javis.plugins.context import EventBus, PluginContext, ServiceRegistry
+from javis.plugins.context import PluginContext, ServiceRegistry
 
 
 class CtxTool(Tool):
@@ -30,17 +30,50 @@ class SvcModel(BaseModel):
     value: int
 
 
+class FakeTools:
+    """Minimal stand-in for the real ToolRegistry service shape."""
+
+    def __init__(self) -> None:
+        self._tools: dict = {}
+
+    def register(self, tool):
+        self._tools[tool.name] = tool
+        return lambda: self._tools.pop(tool.name, None)
+
+    def get(self, name):
+        return self._tools.get(name)
+
+
+class FakeCommands:
+    """Minimal stand-in for CommandRegistry."""
+
+    def __init__(self) -> None:
+        self._cmds: dict = {}
+
+    def register(self, command):
+        self._cmds[command.name] = command
+        return lambda: self._cmds.pop(command.name, None)
+
+
+class FakeEngines:
+    """Minimal stand-in for EngineRegistry."""
+
+    def __init__(self) -> None:
+        self._engines: dict = {}
+
+    def register(self, name, factory):
+        self._engines[name] = factory
+        return lambda: self._engines.pop(name, None)
+
+
 @pytest.fixture
 def ctx():
     services = ServiceRegistry()
-    bus = EventBus()
-    services.provide("tools", type("T", (), {
-        "register_tool": lambda self, t: None,
-        "get_tool": lambda self, n: "found" if n == "ctx_test_tool" else None,
-    })())
-    services.provide("commands", type("C", (), {"register": lambda self, c: None})())
-    services.provide("engines", type("E", (), {"register_engine": lambda self, n, f: None})())
-    return PluginContext(name="p1", config=None, services=services, bus=bus, javis_config=None)
+    services.provide("tools", FakeTools())
+    services.provide("commands", FakeCommands())
+    services.provide("engines", FakeEngines())
+    # bus omitted: PluginContext creates its own internal EventBus
+    return PluginContext(name="p1", config=None, services=services, javis_config=None)
 
 
 def test_provide_and_get(ctx):
@@ -94,10 +127,34 @@ def test_get_unknown_service_raises(ctx):
         ctx.get("nope")
 
 
-def test_register_tool_goes_to_tools_service(ctx):
-    ctx.register_tool(CtxTool())
-    tools = ctx.get("tools")
-    assert tools.get_tool("ctx_test_tool") is not None
+def test_plugin_reaches_registry_service_with_type_check(ctx):
+    tools = ctx.get("tools", FakeTools)
+    assert isinstance(tools, FakeTools)
+    tools.register(CtxTool())
+    assert tools.get("ctx_test_tool") is not None
+
+
+def test_typed_get_mismatch_raises(ctx):
+    with pytest.raises(TypeError, match="expected"):
+        ctx.get("tools", FakeCommands)
+
+
+def test_register_disposer_unregisters(ctx):
+    tools = ctx.get("tools", FakeTools)
+    cancel = tools.register(CtxTool())
+    assert tools.get("ctx_test_tool") is not None
+    cancel()
+    assert tools.get("ctx_test_tool") is None
+
+
+def test_on_returns_manual_cancel(ctx):
+    seen = []
+    cancel = ctx.on("evt", lambda payload: seen.append(payload))
+    ctx.emit("evt", "a")
+    assert seen == ["a"]
+    cancel()
+    ctx.emit("evt", "b")
+    assert seen == ["a"]  # cancelled listener no longer receives events
 
 
 def test_on_emit_sync_handler(ctx):
@@ -141,7 +198,8 @@ def test_close_revokes_services_and_listeners(ctx):
 
     asyncio.run(_close())
     assert not ctx._services.contains("svc")
-    assert ctx._bus._listeners.get("evt", {}) == {}  # owner listeners removed
+    # listener cleanup is a disposer: the event key is dropped entirely
+    assert "evt" not in ctx._bus._listeners
 
 
 def test_close_continues_after_disposer_failure(ctx):
@@ -164,4 +222,4 @@ def test_close_continues_after_disposer_failure(ctx):
     assert order == ["third", "first"]
     # finally-block cleanup still ran despite the failure.
     assert not ctx._services.contains("svc")
-    assert ctx._bus._listeners.get("evt", {}) == {}
+    assert "evt" not in ctx._bus._listeners  # listener disposer ran too

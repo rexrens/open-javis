@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import pytest
 
-from javis.plugins.context import EventBus, ServiceRegistry
+from javis.plugins.context import ServiceRegistry
 from javis.plugins.instance import PluginInstance, PluginState
 from javis.plugins.registry import LoadReport, PluginRegistry
 
 
-def _default_ctx_builder(services, bus):
+def _default_ctx_builder(services):
     def build(name, config):
         from javis.plugins.context import PluginContext
 
         return PluginContext(
-            name=name, config=config, services=services, bus=bus, javis_config=None
+            name=name, config=config, services=services, javis_config=None
         )
 
     return build
@@ -23,10 +23,9 @@ def _default_ctx_builder(services, bus):
 @pytest.fixture
 def registry():
     services = ServiceRegistry()
-    bus = EventBus()
     return PluginRegistry(
-        services=services, bus=bus,
-        ctx_builder=_default_ctx_builder(services, bus),
+        services=services,
+        ctx_builder=_default_ctx_builder(services),
     )
 
 

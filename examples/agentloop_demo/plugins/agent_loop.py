@@ -20,6 +20,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from examples.agentloop_demo.plugins.system_prompt import SystemPromptService
 from javis.plugins import PluginContext
 
 
@@ -63,7 +64,7 @@ class AgentHandle:
     async def turn(self, prompt: str) -> str:
         """运行一轮 turn：直到模型不再调用工具或达到 max_steps。"""
         session = self._get("session")
-        system_prompt = self._get("system_prompt")
+        system_prompt:SystemPromptService = self._get("system_prompt")
         tools = self._get("tools")
         llm = self._get("llm")
 

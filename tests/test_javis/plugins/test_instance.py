@@ -7,7 +7,7 @@ import asyncio
 import pytest
 from pydantic import BaseModel
 
-from javis.plugins.context import EventBus, PluginContext, ServiceRegistry
+from javis.plugins.context import PluginContext, ServiceRegistry
 from javis.plugins.errors import PluginConfigError, PluginDependencyError
 from javis.plugins.instance import PluginInstance, PluginState
 
@@ -16,10 +16,10 @@ class Cfg(BaseModel):
     greeting: str = "hi"
 
 
-def make_ctx(services, bus):
+def make_ctx(services):
     def _build(name, config):
         return PluginContext(
-            name=name, config=config, services=services, bus=bus, javis_config=None
+            name=name, config=config, services=services, javis_config=None
         )
 
     return _build
@@ -28,16 +28,15 @@ def make_ctx(services, bus):
 @pytest.fixture
 def env():
     services = ServiceRegistry()
-    bus = EventBus()
-    services.provide("tools", type("T", (), {"register_tool": lambda self, t: None})())
-    services.provide("commands", type("C", (), {"register": lambda self, c: None})())
-    services.provide("engines", type("E", (), {"register_engine": lambda self, n, f: None})())
-    return services, bus
+    services.provide("tools", type("T", (), {"register": lambda self, t: (lambda: None)})())
+    services.provide("commands", type("C", (), {"register": lambda self, c: (lambda: None)})())
+    services.provide("engines", type("E", (), {"register": lambda self, n, f: (lambda: None)})())
+    return services
 
 
 @pytest.mark.asyncio
 async def test_sync_apply_reaches_active(env):
-    services, bus = env
+    services = env
     applied = []
 
     def apply(ctx, config):
@@ -49,7 +48,7 @@ async def test_sync_apply_reaches_active(env):
         config_model=Cfg,
         inject=[],
         raw_config={},
-        ctx_builder=make_ctx(services, bus),
+        ctx_builder=make_ctx(services),
         services=services,
         start_timeout=0.5,
     )
@@ -60,7 +59,7 @@ async def test_sync_apply_reaches_active(env):
 
 @pytest.mark.asyncio
 async def test_async_apply_supported(env):
-    services, bus = env
+    services = env
 
     async def apply(ctx, config):
         await asyncio.sleep(0.01)
@@ -71,7 +70,7 @@ async def test_async_apply_supported(env):
         config_model=None,
         inject=[],
         raw_config={},
-        ctx_builder=make_ctx(services, bus),
+        ctx_builder=make_ctx(services),
         services=services,
         start_timeout=0.5,
     )
@@ -81,7 +80,7 @@ async def test_async_apply_supported(env):
 
 @pytest.mark.asyncio
 async def test_config_validation_failure_fails_plugin(env):
-    services, bus = env
+    services = env
     applied = []
 
     def apply(ctx, config):
@@ -93,7 +92,7 @@ async def test_config_validation_failure_fails_plugin(env):
         config_model=Cfg,
         inject=[],
         raw_config={"greeting": 123},
-        ctx_builder=make_ctx(services, bus),
+        ctx_builder=make_ctx(services),
         services=services,
         start_timeout=0.5,
     )
@@ -105,7 +104,7 @@ async def test_config_validation_failure_fails_plugin(env):
 
 @pytest.mark.asyncio
 async def test_apply_exception_fails_plugin(env):
-    services, bus = env
+    services = env
 
     def apply(ctx, config):
         raise RuntimeError("boom")
@@ -116,7 +115,7 @@ async def test_apply_exception_fails_plugin(env):
         config_model=None,
         inject=[],
         raw_config={},
-        ctx_builder=make_ctx(services, bus),
+        ctx_builder=make_ctx(services),
         services=services,
         start_timeout=0.5,
     )
@@ -127,7 +126,7 @@ async def test_apply_exception_fails_plugin(env):
 
 @pytest.mark.asyncio
 async def test_missing_dependency_fails_after_timeout(env):
-    services, bus = env
+    services = env
 
     def apply(ctx, config):
         pass
@@ -138,7 +137,7 @@ async def test_missing_dependency_fails_after_timeout(env):
         config_model=None,
         inject=["never-provided"],
         raw_config={},
-        ctx_builder=make_ctx(services, bus),
+        ctx_builder=make_ctx(services),
         services=services,
         start_timeout=0.1,
     )
@@ -150,7 +149,7 @@ async def test_missing_dependency_fails_after_timeout(env):
 
 @pytest.mark.asyncio
 async def test_dependency_provided_later_wakes_instance(env):
-    services, bus = env
+    services = env
     entered = []
 
     def apply(ctx, config):
@@ -162,7 +161,7 @@ async def test_dependency_provided_later_wakes_instance(env):
         config_model=None,
         inject=["late-svc"],
         raw_config={},
-        ctx_builder=make_ctx(services, bus),
+        ctx_builder=make_ctx(services),
         services=services,
         start_timeout=2.0,
     )
@@ -177,7 +176,7 @@ async def test_dependency_provided_later_wakes_instance(env):
 
 @pytest.mark.asyncio
 async def test_stop_runs_disposers_in_reverse_order(env):
-    services, bus = env
+    services = env
     order = []
 
     def apply(ctx, config):
@@ -190,7 +189,7 @@ async def test_stop_runs_disposers_in_reverse_order(env):
         config_model=None,
         inject=[],
         raw_config={},
-        ctx_builder=make_ctx(services, bus),
+        ctx_builder=make_ctx(services),
         services=services,
         start_timeout=0.5,
     )
@@ -202,7 +201,7 @@ async def test_stop_runs_disposers_in_reverse_order(env):
 
 @pytest.mark.asyncio
 async def test_apply_return_value_is_used_as_disposer(env):
-    services, bus = env
+    services = env
     closed = []
 
     def apply(ctx, config):
@@ -217,7 +216,7 @@ async def test_apply_return_value_is_used_as_disposer(env):
         config_model=None,
         inject=[],
         raw_config={},
-        ctx_builder=make_ctx(services, bus),
+        ctx_builder=make_ctx(services),
         services=services,
         start_timeout=0.5,
     )
@@ -228,7 +227,7 @@ async def test_apply_return_value_is_used_as_disposer(env):
 
 @pytest.mark.asyncio
 async def test_stop_revokes_owned_service(env):
-    services, bus = env
+    services = env
 
     def apply(ctx, config):
         ctx.provide("my-svc", object())
@@ -239,7 +238,7 @@ async def test_stop_revokes_owned_service(env):
         config_model=None,
         inject=[],
         raw_config={},
-        ctx_builder=make_ctx(services, bus),
+        ctx_builder=make_ctx(services),
         services=services,
         start_timeout=0.5,
     )

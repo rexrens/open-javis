@@ -28,12 +28,11 @@ from rich.panel import Panel
 from examples.agentloop_demo.plugins.agent_loop import AgentLoopService
 from examples.agentloop_demo.plugins.session import SessionService
 from javis.plugins import (
-    EventBus,
     PluginContext,
     PluginRegistry,
-    ServiceRegistry,
     load_plugins,
 )
+from javis.plugins.context import ServiceRegistry
 
 console = Console()
 
@@ -76,9 +75,8 @@ def _say(message: str) -> None:
 
 async def main() -> int:
     # ============ 1/5 构建内核（build_javis_runtime） ============
-    _say("1/5 构建插件内核：ServiceRegistry + EventBus + PluginRegistry")
+    _say("1/5 构建插件内核：ServiceRegistry + PluginRegistry")
     services = ServiceRegistry()
-    bus = EventBus()
 
     # 内建服务（owner=None，永不随插件卸载而撤销）。
     builtin_config = {
@@ -92,11 +90,10 @@ async def main() -> int:
             name=name,
             config=config,
             services=services,
-            bus=bus,
             javis_config=services.get("config", HarnessConfig),
         )
 
-    registry = PluginRegistry(services=services, bus=bus, ctx_builder=make_ctx)
+    registry = PluginRegistry(services=services, ctx_builder=make_ctx)
 
     # ============ 2/5 加载并激活插件（load + activate） ============
     _say(f"2/5 扫描插件目录 {PLUGINS_DIR} 并并行激活")

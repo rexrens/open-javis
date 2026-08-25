@@ -38,16 +38,39 @@ javis 借鉴 DeepSeek Harness 的 cordis 模型实现了轻量插件内核：
 
 | 方法 | 说明 |
 |---|---|
-| `ctx.register_tool(tool)` | 注册工具（进入引擎工具集） |
-| `ctx.register_command(cmd)` | 注册斜杠命令 |
-| `ctx.register_engine(name, factory)` | 注册引擎（转发到 `javis.engines.register_engine`） |
-| `ctx.provide(name, value)` / `ctx.get(name)` | 跨插件服务 |
+| `ctx.get(name)` / `ctx.get(name, Type)` | 跨插件服务；带 `Type` 时校验类型（pydantic `model_validate` / `isinstance`），不匹配抛 `TypeError`，未提供抛 `KeyError` |
+| `ctx.provide(name, value)` | 注册服务（插件卸载时自动撤销） |
 | `ctx.on(event, handler)` / `ctx.emit(event, payload)` | 事件（fire-and-forget） |
 | `ctx.emit_serial(event, payload)` | 事件（等待所有 handler） |
 | `ctx.effect(disposer)` / `ctx.on_close(fn)` | 卸载清理（逆序） |
 | `ctx.on_start(fn)` | 应用启动钩子 |
 | `ctx.config` / `ctx.logger` | 校验后的插件配置 / 独立 logger |
 | `ctx.javis_config` | 完整 javis 配置（`JavisConfig`） |
+
+内核本身不认识"工具/命令/引擎"等任何领域概念——注册表只是普通服务。
+**内建服务**（`build_javis_runtime` 提供，owner=None 永不撤销）：
+
+| 服务名 | 类型 | 说明 |
+|---|---|---|
+| `tools` | `javis.engines.corecoder.tools.ToolRegistry` | 工具注册表；`register(tool)` 返回 disposer |
+| `commands` | `javis.commands.registry.CommandRegistry` | 斜杠命令注册表；`register(cmd)` 返回 disposer |
+| `engines` | `javis.engines.EngineRegistry` | 引擎注册表；`register(name, factory)` 返回 disposer |
+| `config` | `JavisConfig` | 只读全局配置 |
+
+注册扩展的标准姿势是"取服务 → 注册 → 把 disposer 交给 effect"：
+
+```python
+from javis.engines.corecoder.tools import ToolRegistry
+from javis.commands.registry import CommandRegistry
+
+
+def apply(ctx, config):
+    tools = ctx.get("tools", ToolRegistry)          # 类型校验
+    ctx.effect(tools.register(MyTool()))            # 卸载时自动反注册
+
+    commands = ctx.get("commands", CommandRegistry)
+    ctx.effect(commands.register(Command("hello", "...", handler)))
+```
 
 `inject = ["service-name"]` 声明依赖：依赖服务未提供时插件停在 PENDING，提供后自动继续；超时（10s）未提供则 FAILED。
 
@@ -56,8 +79,16 @@ javis 借鉴 DeepSeek Harness 的 cordis 模型实现了轻量插件内核：
 ```
 启动: build_javis_runtime → 扫描目录 → import → 并行激活（依赖等待 → apply → ACTIVE）
 运行: 工具/命令直接可用；start_runtime 触发 on_start 钩子
-退出: close_runtime → 逆序执行 disposers → 撤销服务 → DISPOSED
+卸载: registry.unload(name) → 级联卸载依赖它的插件（先卸依赖者，后卸提供者）→ DISPOSED
+退出: close_runtime → 逆拓扑序停止（依赖者先于提供者）→ 撤销服务 → DISPOSED
 ```
+
+`PluginRegistry` 提供依赖图编排（对齐 cordis RegistryService / dsh 的 fiber 依赖图）：
+
+- `dependency_graph()` — 插件名 → 注入它提供的服务的插件列表。图从**运行时事实**推导（`ctx.provide` 记录的 owner + 各插件的 `inject` 声明），无需静态 `provides` 声明，插件代码零改动
+- `load_order()` — 拓扑序（提供者先于依赖者）；含环时环内按注册序回退，不抛错
+- `unload(name)` — 停止一个插件并**级联**停止所有注入它提供的服务的插件（传递闭包，依赖者先停）；返回停止顺序；未知/已卸载名字为 no-op
+- `close_all()` — 全量关闭按逆拓扑序（依赖者先于提供者），保证依赖者的 disposer 仍能看到它注入的服务
 
 目录来源按顺序为全局（`~/.javis/plugins/`）、项目（`<项目>/.javis/plugins/`），同名插件以后者覆盖前者。
 

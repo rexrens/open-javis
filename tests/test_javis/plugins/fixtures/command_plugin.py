@@ -1,5 +1,5 @@
 """Fixture: registers a slash command through the plugin API."""
-from javis.commands.registry import Command, CommandContext, CommandResult
+from javis.commands.registry import Command, CommandContext, CommandRegistry, CommandResult
 
 
 async def _handler(args: str, context: CommandContext) -> CommandResult:
@@ -7,4 +7,5 @@ async def _handler(args: str, context: CommandContext) -> CommandResult:
 
 
 def apply(ctx, config):
-    ctx.register_command(Command("plughello", "Plugin command", _handler))
+    commands = ctx.get("commands", CommandRegistry)
+    ctx.effect(commands.register(Command("plughello", "Plugin command", _handler)))

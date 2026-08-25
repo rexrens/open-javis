@@ -24,7 +24,6 @@ import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 from uuid import uuid4
 
@@ -83,18 +82,6 @@ def _build_plugin_dirs(*, cwd: str | None = None, workspace: str | Path | None =
     return plugin_dirs(cwd=cwd, workspace=workspace)
 
 
-def _tool_module() -> ModuleType:
-    import javis.engines.corecoder.tools
-
-    return javis.engines.corecoder.tools
-
-
-def _engine_module() -> ModuleType:
-    import javis.engines
-
-    return javis.engines
-
-
 async def build_javis_runtime(
     *,
     cwd: str | None = None,
@@ -136,7 +123,8 @@ async def build_javis_runtime(
     plugins: PluginRegistry | None = None
 
     # --- plugin system: activate before the backend is built so plugin
-    # tools reach the engine via javis.engines.corecoder.tools.all_tools() ---
+    # tools reach the engine via the shared TOOL_REGISTRY that the backend's
+    # all_tools() reads ---
     services = ServiceRegistry()
     bus = EventBus()
     commands = create_default_command_registry()
@@ -148,12 +136,16 @@ async def build_javis_runtime(
         )
 
     registry = PluginRegistry(
-        services=services, bus=bus, ctx_builder=_make_ctx,
+        services=services, ctx_builder=_make_ctx,
     )
-    # built-in services (owner=None, never revoked)
-    services.provide("tools", _tool_module())
+    # built-in services (owner=None, never revoked); registries are typed
+    # instances, so plugins can validate them with ctx.get(name, Type)
+    from javis.engines import ENGINE_REGISTRY
+    from javis.engines.corecoder.tools import TOOL_REGISTRY
+
+    services.provide("tools", TOOL_REGISTRY)
     services.provide("commands", commands)
-    services.provide("engines", _engine_module())
+    services.provide("engines", ENGINE_REGISTRY)
     services.provide("config", cfg)
 
     plugins_cfg = dict(getattr(cfg, "plugins", {}) or {})

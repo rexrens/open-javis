@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from javis.engines.corecoder.tools import all_tools, get_tool, register_tool, unregister_tool
+from javis.engines.corecoder.tools import ToolRegistry, all_tools, get_tool, register_tool, unregister_tool
 from javis.engines.corecoder.tools.base import Tool
 
 
@@ -44,3 +44,22 @@ def test_unregister_tool():
     unregister_tool("test_echo")
     assert get_tool("test_echo") is None
     unregister_tool("test_echo")  # idempotent — missing name is silently ignored
+
+
+def test_tool_registry_register_returns_disposer():
+    reg = ToolRegistry()
+    tool = TestEchoTool()
+    cancel = reg.register(tool)
+    assert reg.get("test_echo") is tool
+    cancel()
+    assert reg.get("test_echo") is None
+    cancel()  # idempotent — second dispose is a no-op
+
+
+def test_tool_registry_seed_and_snapshot():
+    reg = ToolRegistry(seed=(TestEchoTool(),))
+    assert reg.get("test_echo") is not None
+    names = {t.name for t in reg.all()}
+    assert "test_echo" in names
+    # snapshot is a fresh list
+    assert reg.all() is not reg.all()

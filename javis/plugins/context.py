@@ -2,8 +2,9 @@
 
 - ``ServiceRegistry``: shared across plugins; ``provide`` wakes waiting
   instances (asyncio.Condition); owners let unload revoke exactly its services.
-- ``EventBus``: cross-plugin broadcast; listeners grouped by owner plugin so
-  unload removes exactly that plugin's listeners.
+- ``EventBus``: internal broadcast table (implementation detail, not part of
+  the public API). Listener lifetime is owned by ``ctx.effect`` disposers, so
+  unload removes exactly that plugin's listeners — no owner bookkeeping.
 - ``PluginContext``: the ``ctx`` handed to ``apply(ctx, config)``.
 """
 
@@ -22,7 +23,6 @@ EventHandler = Callable[[Any], Awaitable[None] | None]
 StartHook = Callable[[], Awaitable[None] | None]
 
 T = TypeVar("T")
-
 
 def _validate_service(name: str, value: Any, value_type: type[T]) -> T:
     """Validate a retrieved service against ``value_type``.
@@ -84,6 +84,14 @@ class ServiceRegistry:
     def contains(self, name: str) -> bool:
         return name in self._services
 
+    def owner_of(self, name: str) -> str | None:
+        """Plugin that provided ``name`` (``None`` for built-ins / unknown)."""
+        return self._owners.get(name)
+
+    def owners(self) -> dict[str, str]:
+        """Copy of the service → owner plugin map (plugin-provided only)."""
+        return dict(self._owners)
+
     async def wait_for(self, names: list[str], timeout: float) -> list[str]:
         """Wait until all ``names`` are provided (or timeout); return missing."""
         def _ready() -> bool:
@@ -107,47 +115,49 @@ class ServiceRegistry:
 
 
 class EventBus:
-    """Cross-plugin event dispatch (emit = fire-and-forget, emit_serial = await)."""
+    """Cross-plugin event dispatch (emit = fire-and-forget, emit_serial = await).
+
+    Internal implementation detail: listener cleanup is delegated to the
+    disposers ``PluginContext.on`` registers, so this class carries no owner
+    concept.
+    """
 
     def __init__(self) -> None:
-        # event name -> owner plugin -> [handlers]
-        self._listeners: dict[str, dict[str, list[EventHandler]]] = {}
+        self._listeners: dict[str, list[EventHandler]] = {}
 
-    def on(self, event: str, owner: str, handler: EventHandler) -> Callable[[], None]:
-        self._listeners.setdefault(event, {}).setdefault(owner, []).append(handler)
+    def on(self, event: str, handler: EventHandler) -> Callable[[], None]:
+        self._listeners.setdefault(event, []).append(handler)
 
         def cancel() -> None:
-            handlers = self._listeners.get(event, {}).get(owner)
-            if handlers and handler in handlers:
+            handlers = self._listeners.get(event)
+            if not handlers:
+                return
+            if handler in handlers:
                 handlers.remove(handler)
+            if not handlers:
+                del self._listeners[event]
 
         return cancel
 
     def emit(self, event: str, payload: Any = None) -> None:
-        for owner, handlers in list(self._listeners.get(event, {}).items()):
-            for handler in list(handlers):
-                result = handler(payload)
-                if inspect.isawaitable(result):
-                    asyncio.get_running_loop().create_task(_consume(result, event, owner))
+        for handler in list(self._listeners.get(event, ())):
+            result = handler(payload)
+            if inspect.isawaitable(result):
+                asyncio.get_running_loop().create_task(_consume(result, event))
 
     async def emit_serial(self, event: str, payload: Any = None) -> None:
-        for owner, handlers in list(self._listeners.get(event, {}).items()):
-            for handler in list(handlers):
-                result = handler(payload)
-                if inspect.isawaitable(result):
-                    await result
-
-    def remove_owner(self, owner: str) -> None:
-        for event in self._listeners:
-            self._listeners[event].pop(owner, None)
+        for handler in list(self._listeners.get(event, ())):
+            result = handler(payload)
+            if inspect.isawaitable(result):
+                await result
 
 
-async def _consume(awaitable: Awaitable[None], event: str, owner: str) -> None:
+async def _consume(awaitable: Awaitable[None], event: str) -> None:
     try:
         await awaitable
     except Exception:  # fire-and-forget handlers must not crash the loop
         logging.getLogger("javis.plugins").exception(
-            "event handler for %r of plugin %r failed", event, owner
+            "event handler for %r failed", event
         )
 
 
@@ -160,18 +170,17 @@ class PluginContext:
         name: str,
         config: Any,
         services: ServiceRegistry,
-        bus: EventBus,
-        javis_config: Any,
+        bus: EventBus | None = None,
+        javis_config: Any = None,
     ) -> None:
         self.name = name
         self.config = config
         self.javis_config = javis_config
         self.logger = logging.getLogger(f"javis.plugins.{name}")
         self._services = services
-        self._bus = bus
+        self._bus = bus if bus is not None else EventBus()
         self._disposers: list[Disposer] = []
         self._start_hooks: list[StartHook] = []
-        self._registered_tools: list[str] = []
 
     # ---- services -------------------------------------------------------
     def provide(self, name: str, value: Any) -> None:
@@ -192,20 +201,17 @@ class PluginContext:
             return cast(T | None, value)
         return _validate_service(name, value, value_type)
 
-    # ---- extension points ----------------------------------------------
-    def register_tool(self, tool: Any) -> None:
-        self._services.get("tools").register_tool(tool)
-        self._registered_tools.append(tool.name)
-
-    def register_command(self, command: Any) -> None:
-        self._services.get("commands").register(command)
-
-    def register_engine(self, name: str, factory: Any) -> None:
-        self._services.get("engines").register_engine(name, factory)
-
     # ---- events ---------------------------------------------------------
     def on(self, event: str, handler: EventHandler) -> Callable[[], None]:
-        return self._bus.on(event, self.name, handler)
+        """Register a listener; also queued as a close disposer.
+
+        The returned cancel function still works for manual removal; unload
+        removes the listener automatically (same effect mechanism as
+        ``ctx.effect``, like cordis' fiber-owned listeners).
+        """
+        cancel = self._bus.on(event, handler)
+        self._disposers.append(cancel)
+        return cancel
 
     def emit(self, event: str, payload: Any = None) -> None:
         self._bus.emit(event, payload)
@@ -230,11 +236,11 @@ class PluginContext:
                 await result
 
     async def close(self) -> None:
-        """Run disposers (reverse order), then drop listeners, tools and services.
+        """Run disposers (reverse order), then drop services.
 
-        Each disposer is isolated: a failure is logged and the remaining
-        disposers still run. Listener/service/tool cleanup lives in the
-        ``finally`` so it always runs even when a disposer raises.
+        Listener cleanup is itself a disposer (``ctx.on`` queues its cancel
+        function), so no separate bus bookkeeping is needed. Each disposer is
+        isolated: a failure is logged and the remaining disposers still run.
         """
         try:
             for disposer in reversed(self._disposers):
@@ -251,8 +257,4 @@ class PluginContext:
                     )
         finally:
             self._disposers.clear()
-            self._bus.remove_owner(self.name)
             self._services.revoke_owner(self.name)
-            for name in self._registered_tools:
-                self._services.get("tools").unregister_tool(name)
-            self._registered_tools.clear()

@@ -1,4 +1,5 @@
-"""Fixture: registers a tool through the plugin API."""
+"""Fixture: registers a tool through the plugin API (service + disposer)."""
+from javis.engines.corecoder.tools import ToolRegistry
 from javis.engines.corecoder.tools.base import Tool
 
 
@@ -12,4 +13,5 @@ class PlugTool(Tool):
 
 
 def apply(ctx, config):
-    ctx.register_tool(PlugTool())
+    tools = ctx.get("tools", ToolRegistry)
+    ctx.effect(tools.register(PlugTool()))
