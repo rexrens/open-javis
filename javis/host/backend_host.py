@@ -41,9 +41,7 @@ from javis.contracts.types import (
 from javis.host.runtime import (
     RuntimeBundle,
     build_javis_runtime,
-    close_runtime,
     handle_line,
-    start_runtime,
 )
 from javis.host.wire import BackendEvent, FrontendImageAttachment, FrontendRequest, TranscriptItem
 
@@ -99,7 +97,6 @@ class _JavisBackendHost:
 
     async def run(self) -> int:
         """Main loop: emit ready, then read requests and dispatch."""
-        await start_runtime(self._bundle)
         self._inject_permission_checker()
         await self._emit(
             BackendEvent.ready(
@@ -168,7 +165,6 @@ class _JavisBackendHost:
             reader.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await reader
-            await close_runtime(self._bundle)
         return 0
 
     async def _read_requests(self) -> None:

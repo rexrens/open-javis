@@ -7,7 +7,6 @@ themes and output-styles. What remains:
 - ``RuntimeBundle`` — engine + commands + app_state + session_backend
 - ``build_javis_runtime`` — assembles a bundle with an ``AgentEngine``
 - ``handle_line`` — the single dispatch point (slash commands + agent turns)
-- ``start_runtime`` / ``close_runtime`` — lifecycle hooks (currently no-ops)
 - ``run_javis_print_mode`` — non-interactive single-prompt mode
 
 Configuration lives in ``javis.session.config`` (spec/config.md v2); the
@@ -182,24 +181,6 @@ async def build_javis_runtime(
     )
 
 
-async def start_runtime(bundle: RuntimeBundle) -> None:
-    """Application-level startup hook (currently a no-op).
-
-    Signature kept stable as the mount point for future lifecycle hooks;
-    callers pass the bundle unconditionally. ``del bundle`` marks the
-    parameter intentionally unused (ruff does not flag it either way).
-    """
-    del bundle  # unused until a real startup hook lands
-
-
-async def close_runtime(bundle: RuntimeBundle) -> None:
-    """Application-level shutdown hook (currently a no-op).
-
-    See ``start_runtime`` for the signature rationale.
-    """
-    del bundle  # unused until a real shutdown hook lands
-
-
 def _save_session(bundle: RuntimeBundle) -> None:
     """Persist the current conversation to the session backend."""
     bundle.session_backend.save_snapshot(
@@ -285,7 +266,6 @@ async def run_javis_print_mode(
             max_turns=max_turns,
             workspace=workspace,
         )
-        await start_runtime(bundle)
 
         async def _print_system(message: str) -> None:
             print(message, file=sys.stderr)
@@ -318,7 +298,6 @@ async def run_javis_print_mode(
             # Print mode is a plain prompt: never dispatch slash commands.
             user_message=ConversationMessage.from_user_text(prompt),
         )
-        await close_runtime(bundle)
         return 1 if saw_error else 0
     finally:
         os.chdir(previous_cwd)
@@ -328,8 +307,6 @@ __all__ = [
     "RuntimeBundle",
     "build_javis_runtime",
     "build_javis_system_prompt",
-    "close_runtime",
     "handle_line",
     "run_javis_print_mode",
-    "start_runtime",
 ]

@@ -135,8 +135,6 @@ async def test_print_mode_treats_slash_prompt_as_user_message(
         del args, kwargs
 
     monkeypatch.setattr("javis.host.runtime.build_javis_runtime", _fake_build)
-    monkeypatch.setattr("javis.host.runtime.start_runtime", _noop)
-    monkeypatch.setattr("javis.host.runtime.close_runtime", _noop)
 
     exit_code = await run_javis_print_mode(prompt="/version", cwd=str(isolated_env))
 
