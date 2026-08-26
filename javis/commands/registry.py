@@ -72,14 +72,8 @@ class CommandRegistry:
     def __init__(self) -> None:
         self._commands: dict[str, Command] = {}
 
-    def register(self, command: Command) -> Callable[[], None]:
-        """Register a command; returns a disposer that unregisters it.
-
-        Plugins hand the disposer to ``ctx.effect`` so unload removes exactly
-        their commands (re-registration overwrites, like the tool registry).
-        """
+    def register(self, command: Command) -> None:
         self._commands[command.name] = command
-        return lambda: self._commands.pop(command.name, None)
 
     def lookup(self, line: str) -> tuple[Command, str] | None:
         """Return ``(command, args)`` if ``line`` is a registered slash command."""

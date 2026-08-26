@@ -283,3 +283,13 @@ def all_tools() -> list[Tool]            # 快照，替代 ALL_TOOLS
 - `unload(name)` — 级联卸载（DFS 传递闭包，依赖者先停），返回停止顺序；未知/已卸载 no-op
 - `close_all()` 改为逆拓扑序停止（依赖者先于提供者），替代原来的全量并行
 - 测试 +7（test_cascade.py），193 passed
+
+## 19. 核心回退（2026-08-26，插件系统暂不接入主流程）
+
+用户决定：插件系统保持独立探索层（`javis/plugins` + `dsh_like` + `agentloop_demo`），**不参与 javis 核心实现**。回退内容：
+
+- `build_javis_runtime` 删除插件加载全流程（PluginRegistry / load_plugins / plugin_dirs / ServiceRegistry / EventBus / provide / `RuntimeBundle.plugins` / start-close 插件 hooks）
+- `corecoder/tools` 回退为纯函数注册表（删 `ToolRegistry` 类 / `TOOL_REGISTRY` / disposer）；`engines/registry` 回退为纯函数（删 `EngineRegistry` / `unregister_engine` / disposer）；`commands/registry.register` 回退无 disposer；`JavisConfig.plugins` 段删除
+- 删除依赖核心接线的示例与测试：`examples/plugins/`（hello_tool / hello_command）、`test_examples.py`、`test_runtime_integration.py`、fixtures `tool_plugin.py` / `command_plugin.py`
+- 保留：`javis/plugins` 内核（含依赖图编排）+ 全部插件内核测试（test_cascade 等）+ `agentloop_demo`（自包含宿主演示）+ `dsh_like`
+- 测试 182 passed；未来接入 = 在 `build_javis_runtime` 重建接线（恢复类化注册表 + provide 服务 + 加载目录）

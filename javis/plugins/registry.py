@@ -165,7 +165,7 @@ class PluginRegistry:
                 continue
             try:
                 await target.stop()
-            except Exception:  # noqa: BLE001 — keep cascading; teardown never raises
+            except Exception:
                 log.exception("plugin %r failed during unload cascade", plugin)
             stopped.append(plugin)
         return stopped
@@ -184,7 +184,7 @@ class PluginRegistry:
                 continue
             try:
                 await inst.stop()
-            except Exception:  # noqa: BLE001 — backstop: close_all never raises
+            except Exception:
                 log.exception("plugin %r failed during close_all", name)
 
     async def run_start_hooks(self) -> None:

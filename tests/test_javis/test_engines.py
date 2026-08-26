@@ -5,13 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.test_javis.fake_backend import FakeBackend
-from javis.engines import (
-    EngineRegistry,
-    create_agent_backend,
-    get_engine_config,
-    list_engines,
-    register_engine,
-)
+from javis.engines import create_agent_backend, get_engine_config, list_engines, register_engine
 
 
 def _dummy_factory(**kwargs):
@@ -48,19 +42,3 @@ def test_get_engine_config_extracts_subsection():
 
 def test_builtin_corecoder_engine_registered():
     assert "corecoder" in list_engines()
-
-
-def test_engine_registry_register_returns_disposer():
-    reg = EngineRegistry()
-    cancel = reg.register("ephemeral", _dummy_factory)
-    assert reg.get("ephemeral") is _dummy_factory
-    assert isinstance(reg.create("ephemeral", cwd="/tmp"), FakeBackend)
-    cancel()
-    assert reg.get("ephemeral") is None
-    cancel()  # idempotent — second dispose is a no-op
-
-
-def test_engine_registry_unknown_engine_raises():
-    reg = EngineRegistry()
-    with pytest.raises(ValueError, match="Unknown engine 'nope'"):
-        reg.create("nope", cwd="/tmp")

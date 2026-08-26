@@ -5,7 +5,7 @@ Design: spec/config.md (v2).
 - ``config.json`` holds non-secret settings; secrets go to env vars / ``.env``
 - Layering: built-in defaults < ``~/.javis/config.json`` < ``<project>/.javis/config.json``
   (deep-merged, later wins on conflicts) < CLI/env
-- Unknown keys are tolerated (warned) so plugins can register their own
+- Unknown keys are tolerated (warned).
   top-level namespaces later.
 """
 
@@ -102,7 +102,6 @@ class JavisConfig(BaseModel):
     editor: EditorConfig = Field(default_factory=EditorConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     permission: PermissionConfig = Field(default_factory=PermissionConfig)
-    plugins: dict[str, Any] = Field(default_factory=dict)
 
     def warn_unknown_keys(self) -> None:
         extra = self.model_extra or {}
@@ -138,7 +137,6 @@ DEFAULT_TEMPLATE: dict[str, Any] = {
         "path_rules": [],
         "denied_commands": [],
     },
-    "plugins": {},
 }
 
 

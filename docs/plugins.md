@@ -1,5 +1,12 @@
 # javis 插件系统
 
+> **当前状态（2026-08-25）：独立探索层，未接入 javis 核心。**
+> `javis/plugins` 内核完整可用（见 `examples/agentloop_demo/` 自包含演示），但
+> `build_javis_runtime` 不再加载插件目录，核心（host/engines/commands/session）
+> 不依赖插件系统。以下内建服务表 / 生命周期描述的是**插件系统自身的接线形态**，
+> 未来接入核心时在 `build_javis_runtime` 重建该接线即可（`ctx.provide` 类型化
+> 注册表实例，见 §内建服务）。
+
 javis 借鉴 DeepSeek Harness 的 cordis 模型实现了轻量插件内核：
 插件 = `apply(ctx, config)`，`ctx` 提供服务仓库、事件与生命周期钩子；
 `PluginInstance` 状态机跟踪每个插件的生命周期（PENDING→LOADING→ACTIVE/FAILED→UNLOADING→DISPOSED）。
@@ -7,8 +14,11 @@ javis 借鉴 DeepSeek Harness 的 cordis 模型实现了轻量插件内核：
 ## 快速开始
 
 1. 建目录 `~/.javis/plugins/`（全局）或 `<项目>/.javis/plugins/`（项目级）
-2. 放入一个 `.py` 文件（见 `examples/plugins/`）
-3. 启动 javis —— 插件在启动时自动加载
+2. 放入一个 `.py` 文件
+3. 用 `PluginRegistry` + `load_plugins` 驱动（宿主代码接线，见 `examples/agentloop_demo/harness.py`）
+
+> 注意：当前 javis 主程序（`build_javis_runtime`）**不会**自动加载插件；
+> 插件系统的宿主是自建 demo / 未来接入代码。
 
 ## 插件形态（四种）
 
@@ -34,6 +44,8 @@ javis 借鉴 DeepSeek Harness 的 cordis 模型实现了轻量插件内核：
 - `config` 用插件声明的 pydantic `Config` 校验后传入 `apply` 的第二个参数
 - 校验失败 → 该插件 FAILED，不影响其他插件
 
+> 注：`config.json` 的 `plugins` 段已随核心去插件化移除；未来接入时恢复 `JavisConfig.plugins` 字段即可。
+
 ## ctx API
 
 | 方法 | 说明 |
@@ -48,7 +60,7 @@ javis 借鉴 DeepSeek Harness 的 cordis 模型实现了轻量插件内核：
 | `ctx.javis_config` | 完整 javis 配置（`JavisConfig`） |
 
 内核本身不认识"工具/命令/引擎"等任何领域概念——注册表只是普通服务。
-**内建服务**（`build_javis_runtime` 提供，owner=None 永不撤销）：
+**内建服务**（宿主接线时提供，owner=None 永不撤销；未接入核心时不提供）：
 
 | 服务名 | 类型 | 说明 |
 |---|---|---|
@@ -56,6 +68,10 @@ javis 借鉴 DeepSeek Harness 的 cordis 模型实现了轻量插件内核：
 | `commands` | `javis.commands.registry.CommandRegistry` | 斜杠命令注册表；`register(cmd)` 返回 disposer |
 | `engines` | `javis.engines.EngineRegistry` | 引擎注册表；`register(name, factory)` 返回 disposer |
 | `config` | `JavisConfig` | 只读全局配置 |
+
+> 注：`ToolRegistry` / `EngineRegistry` 类型化注册表类是插件系统的服务契约；
+> 核心当前使用纯函数注册表（`register_tool` / `register_engine`），未来接入时
+> 可恢复类化注册表提供为服务。
 
 注册扩展的标准姿势是"取服务 → 注册 → 把 disposer 交给 effect"：
 
@@ -77,10 +93,9 @@ def apply(ctx, config):
 ## 生命周期
 
 ```
-启动: build_javis_runtime → 扫描目录 → import → 并行激活（依赖等待 → apply → ACTIVE）
-运行: 工具/命令直接可用；start_runtime 触发 on_start 钩子
+宿主接线: ServiceRegistry + EventBus → PluginRegistry → load_plugins → 并行激活（依赖等待 → apply → ACTIVE）
 卸载: registry.unload(name) → 级联卸载依赖它的插件（先卸依赖者，后卸提供者）→ DISPOSED
-退出: close_runtime → 逆拓扑序停止（依赖者先于提供者）→ 撤销服务 → DISPOSED
+关闭: close_all() → 逆拓扑序停止（依赖者先于提供者）→ 撤销服务 → DISPOSED
 ```
 
 `PluginRegistry` 提供依赖图编排（对齐 cordis RegistryService / dsh 的 fiber 依赖图）：

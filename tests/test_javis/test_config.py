@@ -42,7 +42,6 @@ def test_ensure_default_config_creates_template(isolated_env):
     assert "appearance" in data
     assert "session" in data
     assert "permission" in data
-    assert "plugins" in data
 
 
 def test_ensure_default_config_idempotent(isolated_env):
