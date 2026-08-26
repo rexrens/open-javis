@@ -1,4 +1,4 @@
-"""End-to-end tests for _JavisBackendHost — drives the FakeBackend test double
+"""End-to-end tests for _JavisBackendHost — drives the FakeEngine test double
 through the full backend host pipeline (request dispatch, emit, modal
 futures).
 """
@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from javis.host.backend_host import _BackendHostConfig, _JavisBackendHost
-from tests.test_javis.fake_backend import FakeBackend
+from tests.test_javis.fake_backend import FakeEngine
 from javis.host.wire import BackendEvent
 from javis.host.runtime import build_javis_runtime, close_runtime, start_runtime
 
@@ -30,7 +30,7 @@ async def _make_host(
 ) -> tuple[_JavisBackendHost, list]:
     bundle = await build_javis_runtime(
         cwd=str(isolated_env),
-        agent_backend=FakeBackend(),
+        engine=FakeEngine(),
         model=model,
     )
     host = _JavisBackendHost(
@@ -167,7 +167,7 @@ async def test_apply_select_theme_updates_state(isolated_env):
 
 @pytest.mark.asyncio
 async def test_apply_select_turns_updates_engine(isolated_env):
-    """P0: /turns selector must update QueryEngine.max_turns, not fall through to the LLM."""
+    """P0: /turns selector must update engine.max_turns, not fall through to the LLM."""
     host, events = await _make_host(isolated_env)
     try:
         await host._apply_select_command("turns", "64")

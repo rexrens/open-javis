@@ -1,9 +1,9 @@
-"""Generic agent event model — the bridge between javis and any agent backend.
+"""Generic agent event model — the bridge between javis and any agent engine.
 
-``AgentEvent`` is the single event stream protocol. An ``AgentBackend`` yields
-these; ``QueryEngine`` passes them through; ``_JavisBackendHost`` renders them
-into ``BackendEvent`` for the React frontend. No separate ``StreamEvent``
-layer — javis collapsed it to reduce translation hops.
+``AgentEvent`` is the single event stream protocol. An ``AgentEngine`` yields
+these; ``_JavisBackendHost`` renders them into ``BackendEvent`` for the React
+frontend. No separate ``StreamEvent`` layer — javis collapsed it to reduce
+translation hops.
 """
 
 from __future__ import annotations
@@ -11,19 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from javis.contracts.messages import ConversationMessage
 from javis.contracts.usage import UsageSnapshot
-
-
-@dataclass(frozen=True)
-class AgentContext:
-    """Runtime context passed to the agent for one turn."""
-
-    cwd: str
-    model: str
-    system_prompt: str
-    messages: list[ConversationMessage] = field(default_factory=list)
-    tool_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -101,7 +89,6 @@ AgentEvent = (
 
 
 __all__ = [
-    "AgentContext",
     "AgentError",
     "AgentEvent",
     "AgentReasoningDelta",

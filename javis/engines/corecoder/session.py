@@ -1,6 +1,6 @@
 """Session persistence - save and resume conversations.
 
-Claude Code maintains session state via QueryEngine (1295 lines).
+Claude Code maintains session state via its QueryEngine (1295 lines).
 CoreCoder distills this to: JSON dump of messages + model config.
 """
 

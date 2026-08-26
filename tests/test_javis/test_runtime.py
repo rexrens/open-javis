@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from javis.host.query_engine import QueryEngine
+from javis.contracts.engine import AgentEngine
 from javis.host.runtime import RuntimeBundle, build_javis_runtime
 from javis.session.session_storage import JavisSessionBackend
-from tests.test_javis.fake_backend import FakeBackend
+from tests.test_javis.fake_backend import FakeEngine
 
 
 @pytest.fixture
@@ -24,15 +24,15 @@ def isolated_env(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_returns_bundle(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env), agent_backend=FakeBackend())
+    bundle = await build_javis_runtime(cwd=str(isolated_env), engine=FakeEngine())
     assert isinstance(bundle, RuntimeBundle)
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_uses_query_engine(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env), agent_backend=FakeBackend())
-    assert isinstance(bundle.engine, QueryEngine)
-    assert isinstance(bundle.engine._agent, FakeBackend)
+async def test_build_javis_runtime_uses_agent_engine(isolated_env):
+    bundle = await build_javis_runtime(cwd=str(isolated_env), engine=FakeEngine())
+    assert isinstance(bundle.engine, AgentEngine)
+    assert isinstance(bundle.engine, FakeEngine)
     assert bundle.engine.model  # non-empty model resolved from env/config
 
 
@@ -40,25 +40,25 @@ async def test_build_javis_runtime_uses_query_engine(isolated_env):
 async def test_build_javis_runtime_injects_custom_agent(isolated_env):
     bundle = await build_javis_runtime(
         cwd=str(isolated_env),
-        agent_backend=FakeBackend(),
+        engine=FakeEngine(),
         model="test-model",
         system_prompt="test prompt",
     )
     assert bundle.engine.model == "test-model"
     assert bundle.engine.system_prompt == "test prompt"
-    assert isinstance(bundle.engine._agent, FakeBackend)
+    assert isinstance(bundle.engine, FakeEngine)
 
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_session_backend(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env), agent_backend=FakeBackend())
+    bundle = await build_javis_runtime(cwd=str(isolated_env), engine=FakeEngine())
     assert isinstance(bundle.session_backend, JavisSessionBackend)
 
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_preserves_cwd(isolated_env):
     cwd = str(isolated_env / "project")
-    bundle = await build_javis_runtime(cwd=cwd, agent_backend=FakeBackend())
+    bundle = await build_javis_runtime(cwd=cwd, engine=FakeEngine())
     assert bundle.cwd == cwd
     assert bundle.engine.system_prompt  # non-empty default
 
@@ -70,7 +70,7 @@ async def test_build_javis_runtime_restores_messages(isolated_env):
         {"role": "assistant", "content": [{"type": "text", "text": "previous answer"}]},
     ]
     bundle = await build_javis_runtime(
-        cwd=str(isolated_env), agent_backend=FakeBackend(), restore_messages=messages
+        cwd=str(isolated_env), engine=FakeEngine(), restore_messages=messages
     )
     assert len(bundle.engine.messages) == 2
     assert bundle.engine.messages[0].role == "user"
@@ -79,13 +79,13 @@ async def test_build_javis_runtime_restores_messages(isolated_env):
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_accepts_custom_model(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env), model="custom-model", agent_backend=FakeBackend())
+    bundle = await build_javis_runtime(cwd=str(isolated_env), model="custom-model", engine=FakeEngine())
     assert bundle.engine.model == "custom-model"
 
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_includes_commands(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env), agent_backend=FakeBackend())
+    bundle = await build_javis_runtime(cwd=str(isolated_env), engine=FakeEngine())
     command_names = {cmd.name for cmd in bundle.commands.list_commands()}
     assert "help" in command_names
     assert "exit" in command_names
@@ -97,7 +97,8 @@ async def test_build_javis_runtime_includes_commands(isolated_env):
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_default_engine_is_corecoder(isolated_env, monkeypatch):
-    from javis.engines.corecoder.backend import CoreCoderBackend
+    from javis.engines.corecoder.agent import Agent
+    from javis.engines.corecoder.engine import CoreCoderEngine
 
     # The installed openai SDK refuses to construct a client without a
     # non-empty api_key (it validates credentials eagerly). The fixture already
@@ -105,7 +106,8 @@ async def test_build_javis_runtime_default_engine_is_corecoder(isolated_env, mon
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
     bundle = await build_javis_runtime(cwd=str(isolated_env))
-    assert isinstance(bundle.engine._agent, CoreCoderBackend)
+    assert isinstance(bundle.engine, CoreCoderEngine)
+    assert isinstance(bundle.engine.agent, Agent)
 
 
 @pytest.mark.asyncio
@@ -118,12 +120,7 @@ async def test_print_mode_treats_slash_prompt_as_user_message(
     from javis.session.state import AppState, AppStateStore
 
     bundle = RuntimeBundle(
-        engine=QueryEngine(
-            agent_backend=FakeBackend(),
-            model="test-model",
-            system_prompt="",
-            cwd=str(isolated_env),
-        ),
+        engine=FakeEngine(),
         cwd=str(isolated_env),
         app_state=AppStateStore(AppState(model="test-model", cwd=str(isolated_env))),
         commands=create_default_command_registry(),
@@ -153,22 +150,23 @@ async def test_print_mode_treats_slash_prompt_as_user_message(
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_restore_calls_backend_load_history(isolated_env):
-    class RecordingBackend(FakeBackend):
+async def test_build_javis_runtime_restore_loads_messages(isolated_env):
+    class RecordingEngine(FakeEngine):
         def __init__(self) -> None:
             super().__init__()
-            self.history_calls = 0
+            self.load_calls = 0
 
-        def load_history(self, messages) -> None:
-            self.history_calls += 1
+        def load_messages(self, messages) -> None:
+            super().load_messages(messages)
+            self.load_calls += 1
 
     messages = [
         {"role": "user", "content": [{"type": "text", "text": "previous question"}]},
         {"role": "assistant", "content": [{"type": "text", "text": "previous answer"}]},
     ]
-    backend = RecordingBackend()
+    engine = RecordingEngine()
     bundle = await build_javis_runtime(
-        cwd=str(isolated_env), agent_backend=backend, restore_messages=messages
+        cwd=str(isolated_env), engine=engine, restore_messages=messages
     )
-    assert backend.history_calls == 1
+    assert engine.load_calls == 1
     assert len(bundle.engine.messages) == 2

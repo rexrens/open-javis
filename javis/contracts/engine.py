@@ -1,0 +1,62 @@
+"""Agent engine protocol — the single engine seam.
+
+The host (runtime / TUI / commands) talks to exactly one object: an
+``AgentEngine`` that owns conversation history and usage, and yields
+``AgentEvent`` streams per turn. The built-in implementation is
+``javis.engines.corecoder.engine.CoreCoderEngine``; future engine
+replacements (e.g. via the plugin system) implement this same protocol.
+
+This replaces the old two-level seam (``AgentBackend`` protocol + a
+``QueryEngine`` shell) with a single contract.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from typing import Any, Protocol, runtime_checkable
+
+from javis.contracts.messages import ConversationMessage
+from javis.contracts.types import AgentEvent
+from javis.contracts.usage import UsageSnapshot
+
+
+@runtime_checkable
+class AgentEngine(Protocol):
+    """One engine object: history + usage + event-stream turns.
+
+    Optional hooks (probed with ``hasattr``, NOT part of the Protocol so a
+    minimal implementation can skip them):
+
+        def load_history(self, messages: list[ConversationMessage]) -> None:
+            '''Rebuild engine-internal history from javis mirror messages.'''
+
+        def clear_history(self) -> None:
+            '''Clear engine-internal history.'''
+    """
+
+    @property
+    def messages(self) -> list[ConversationMessage]: ...
+    @property
+    def total_usage(self) -> UsageSnapshot: ...
+    @property
+    def model(self) -> str: ...
+    @property
+    def system_prompt(self) -> str: ...
+    @property
+    def max_turns(self) -> int | None: ...
+    @property
+    def tool_metadata(self) -> dict[str, Any]: ...
+
+    async def submit_message(self, prompt: str | ConversationMessage) -> AsyncIterator[AgentEvent]:
+        """Submit one user turn and yield events (ends with ``AgentTurnEnd``)."""
+        ...
+
+    def clear(self) -> None: ...
+    def load_messages(self, messages: list[ConversationMessage]) -> None: ...
+    def set_system_prompt(self, prompt: str) -> None: ...
+    def set_max_turns(self, max_turns: int | None) -> None: ...
+    def set_model(self, model: str) -> None: ...
+    def set_effort(self, effort: str | None) -> None: ...
+
+
+__all__ = ["AgentEngine"]

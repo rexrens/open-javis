@@ -1,138 +1,155 @@
-"""Tests for the CoreCoder agent loop (``corecoder.Agent``).
+"""Tests for CoreCoderEngine — the javis-side engine over corecoder.Agent.
 
-CoreCoder is the standalone reference agent; javis plugs agents in through
-the ``AgentBackend`` protocol. These tests exercise the agent directly.
+``CoreCoderEngine`` implements the ``AgentEngine`` contract: history, usage
+and event-stream turns. The inner ``corecoder.Agent`` is driven through a
+scripted LLM provider, so no network is involved.
 """
 
 from __future__ import annotations
 
 import pytest
 
+from javis.contracts.messages import ConversationMessage
+from javis.contracts.types import (
+    AgentError,
+    AgentTextDelta,
+    AgentToolCallResult,
+    AgentToolCallStart,
+    AgentTurnEnd,
+)
+from javis.contracts.usage import UsageSnapshot
 from javis.engines.corecoder.agent import Agent
+from javis.engines.corecoder.engine import CoreCoderEngine
 from javis.engines.corecoder.llm import LLMResponse, ScriptedProvider, ToolCall
-from javis.engines.corecoder.tools import all_tools
 
 
-def _make_agent(script: list[LLMResponse], *, max_rounds: int = 10, tools=None) -> Agent:
-    llm = ScriptedProvider(script=script)
-    return Agent(llm=llm, tools=tools, max_rounds=max_rounds)
+def _engine(script=None, **kwargs) -> CoreCoderEngine:
+    llm = ScriptedProvider(script=list(script or []))
+    agent = Agent(llm=llm)
+    return CoreCoderEngine(
+        agent,
+        model="test-model",
+        system_prompt="test",
+        cwd="/tmp",
+        max_turns=8,
+        **kwargs,
+    )
 
 
-def test_plain_text_reply():
-    agent = _make_agent([LLMResponse(content="hello world")])
-    reply = agent.chat("hi")
-
-    assert reply == "hello world"
-    assert agent.messages[0] == {"role": "user", "content": "hi"}
-    assert agent.messages[-1] == {"role": "assistant", "content": "hello world"}
+async def _collect(engine: CoreCoderEngine, prompt: str):
+    return [e async for e in engine.submit_message(prompt)]
 
 
-def test_tool_call_round(tmp_path):
-    target = tmp_path / "hello.txt"
+def test_initial_state():
+    engine = _engine()
+    assert engine.messages == []
+    assert engine.model == "test-model"
+    assert engine.system_prompt == "test"
+    assert engine.max_turns == 8
+    assert isinstance(engine.total_usage, UsageSnapshot)
+    assert engine.tool_metadata == {}
+
+
+def test_setters():
+    engine = _engine()
+    engine.set_model("new-model")
+    assert engine.model == "new-model"
+    engine.set_system_prompt("new prompt")
+    assert engine.system_prompt == "new prompt"
+    assert "new prompt" in engine.agent._system  # synced to inner agent
+    engine.set_max_turns(16)
+    assert engine.max_turns == 16
+    assert engine.agent.max_rounds == 16  # synced to inner agent
+    engine.set_max_turns(None)
+    assert engine.max_turns is None
+    engine.set_effort("high")  # no-op holder, must not raise
+
+
+def test_load_messages_syncs_inner_history():
+    engine = _engine()
+    engine.load_messages([ConversationMessage.from_user_text("hello")])
+    assert len(engine.messages) == 1
+    assert engine.agent.messages == [{"role": "user", "content": "hello"}]
+
+
+def test_clear_resets_inner_history():
+    engine = _engine()
+    engine.load_messages([ConversationMessage.from_user_text("hello")])
+    engine.clear()
+    assert engine.messages == []
+    assert engine.agent.messages == []
+    assert engine.total_usage.input_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_submit_message_yields_assistant_turn():
+    engine = _engine([LLMResponse(content="hello world")])
+    events = await _collect(engine, "hi")
+
+    deltas = [e for e in events if isinstance(e, AgentTextDelta)]
+    ends = [e for e in events if isinstance(e, AgentTurnEnd)]
+    assert "".join(e.text for e in deltas) == "hello world"
+    assert len(ends) == 1
+    assert ends[0].text == "hello world"
+    # user + assistant mirrored in javis history
+    assert [m.role for m in engine.messages] == ["user", "assistant"]
+    assert engine.messages[1].text == "hello world"
+
+
+@pytest.mark.asyncio
+async def test_submit_message_with_tool_call(tmp_path):
+    target = tmp_path / "f.txt"
     target.write_text("line one\nline two\n", encoding="utf-8")
-
-    agent = _make_agent([
-        LLMResponse(
-            tool_calls=[
-                ToolCall(id="call_1", name="read_file", arguments={"file_path": str(target)})
-            ]
-        ),
+    engine = _engine([
+        LLMResponse(tool_calls=[ToolCall(id="c1", name="read_file", arguments={"file_path": str(target)})]),
         LLMResponse(content="file read done"),
     ])
-    reply = agent.chat("read the file")
+    events = await _collect(engine, "read the file")
 
-    assert reply == "file read done"
-    assert agent.messages[1]["tool_calls"][0]["function"]["name"] == "read_file"
-    tool_reply = agent.messages[2]
-    assert tool_reply["role"] == "tool"
-    assert tool_reply["tool_call_id"] == "call_1"
-    assert "line one" in tool_reply["content"]
-
-
-def test_tool_error_is_reported(tmp_path):
-    missing = tmp_path / "nope.txt"
-    agent = _make_agent([
-        LLMResponse(tool_calls=[ToolCall(id="c1", name="read_file", arguments={"file_path": str(missing)})]),
-        LLMResponse(content="nothing found"),
-    ])
-    reply = agent.chat("read missing file")
-
-    assert reply == "nothing found"
-    tool_reply = agent.messages[2]
-    assert "not found" in tool_reply["content"]
+    starts = [e for e in events if isinstance(e, AgentToolCallStart)]
+    results = [e for e in events if isinstance(e, AgentToolCallResult)]
+    assert len(starts) == 1
+    assert starts[0].tool_name == "read_file"
+    assert len(results) == 1
+    assert not results[0].is_error
+    ends = [e for e in events if isinstance(e, AgentTurnEnd)]
+    assert ends[0].text == "file read done"
 
 
-def test_unknown_tool_is_reported():
-    agent = _make_agent([
-        LLMResponse(tool_calls=[ToolCall(id="c1", name="nope", arguments={})]),
-        LLMResponse(content="done"),
-    ])
-    reply = agent.chat("call an unknown tool")
+@pytest.mark.asyncio
+async def test_submit_message_error_does_not_complete_turn():
+    # ScriptedProvider raises RuntimeError when it runs out of script turns;
+    # the producer forwards it as an AgentError event.
+    engine = _engine()
+    events = await _collect(engine, "hello")
 
-    assert reply == "done"
-    tool_reply = agent.messages[2]
-    assert "unknown tool 'nope'" in tool_reply["content"]
-
-
-def test_parallel_tool_calls(tmp_path):
-    a = tmp_path / "a.txt"
-    b = tmp_path / "b.txt"
-    a.write_text("alpha", encoding="utf-8")
-    b.write_text("beta", encoding="utf-8")
-
-    agent = _make_agent([
-        LLMResponse(tool_calls=[
-            ToolCall(id="c1", name="read_file", arguments={"file_path": str(a)}),
-            ToolCall(id="c2", name="read_file", arguments={"file_path": str(b)}),
-        ]),
-        LLMResponse(content="read both"),
-    ])
-    reply = agent.chat("read both files")
-
-    assert reply == "read both"
-    ids = [m["tool_call_id"] for m in agent.messages if m.get("role") == "tool"]
-    assert ids == ["c1", "c2"]
-    contents = [m["content"] for m in agent.messages if m.get("role") == "tool"]
-    assert "alpha" in contents[0]
-    assert "beta" in contents[1]
+    assert any(isinstance(e, AgentError) for e in events)
+    assert not any(isinstance(e, AgentTurnEnd) for e in events)
+    assert [m.role for m in engine.messages] == ["user"]
 
 
-def test_llm_failure_raises():
-    agent = _make_agent([LLMResponse(content="first reply")])
-    assert agent.chat("turn one") == "first reply"
+@pytest.mark.asyncio
+async def test_usage_accumulates_across_turns():
+    engine = _engine([LLMResponse(content="one two"), LLMResponse(content="three")])
+    await _collect(engine, "first turn")
+    await _collect(engine, "second turn")
 
-    with pytest.raises(RuntimeError, match="out of turns"):
-        agent.chat("turn two that runs out of script")
-
-
-def test_max_rounds_exhausted_ends_turn():
-    # Never a plain-text reply: every round requests a tool call.
-    script = [
-        LLMResponse(tool_calls=[ToolCall(id=f"c{i}", name="glob", arguments={"pattern": "*.py"})])
-        for i in range(3)
-    ]
-    agent = _make_agent(script, max_rounds=2)
-    reply = agent.chat("loop forever")
-
-    assert reply == "(reached maximum tool-call rounds)"
+    # scripted LLM reports completion tokens only; output accumulates across turns
+    assert engine.total_usage.output_tokens == 3  # "one two" + "three"
 
 
-def test_usage_is_tracked():
-    agent = _make_agent([LLMResponse(content="some words here")])
-    agent.chat("hi")
-    assert agent.llm.total_completion_tokens > 0
+@pytest.mark.asyncio
+async def test_submit_message_with_conversation_message():
+    engine = _engine([LLMResponse(content="ok")])
+    msg = ConversationMessage.from_user_text("custom message")
+    events = [e async for e in engine.submit_message(msg)]
+
+    assert any(isinstance(e, AgentTurnEnd) for e in events)
+    assert engine.messages[0].role == "user"
+    assert engine.messages[0].text == "custom message"
 
 
-def test_reset_clears_history():
-    agent = _make_agent([LLMResponse(content="hello world")])
-    agent.chat("hi")
-    assert agent.messages
-    agent.reset()
-    assert agent.messages == []
-
-
-def test_default_tools_include_core_set():
-    agent = _make_agent([LLMResponse(content="ok")])
-    names = {t.name for t in agent.tools}
-    assert {"read_file", "write_file", "edit_file", "bash", "glob", "grep"} <= names
-    assert names == {t.name for t in all_tools()}
+def test_tool_metadata_is_mutable():
+    engine = _engine()
+    engine.tool_metadata["foo"] = "bar"
+    assert engine.tool_metadata["foo"] == "bar"

@@ -11,24 +11,11 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
 
+from javis.contracts.engine import AgentEngine
 from javis.contracts.messages import ConversationMessage
 from javis.contracts.usage import UsageSnapshot
 from javis.session.state import AppStateStore
-
-
-class AgentEngine(Protocol):
-    """QueryEngine-shaped interface for command handlers (avoids a circular import)."""
-
-    @property
-    def messages(self) -> list[ConversationMessage]: ...
-    @property
-    def total_usage(self) -> UsageSnapshot: ...
-    @property
-    def tool_metadata(self) -> dict[str, Any]: ...
-    def clear(self) -> None: ...
-    def set_max_turns(self, max_turns: int | None) -> None: ...
 
 
 @dataclass
@@ -49,8 +36,6 @@ class CommandResult:
     should_exit: bool = False
     clear_screen: bool = False
     submit_prompt: str | None = None
-    continue_pending: bool = False
-    continue_turns: int | None = None
     replay_messages: list[ConversationMessage] | None = None
 
 

@@ -465,13 +465,12 @@ class _JavisBackendHost:
     def _inject_permission_checker(self) -> None:
         """Wire the modal permission channel into the agent's tool loop.
 
-        Only corecoder-backed agents expose a ``permission_checker``; other
-        backends (test doubles) simply skip injection.
+        Only corecoder-backed engines expose a ``permission_checker`` on their
+        inner agent; test doubles simply skip injection.
         """
-        agent = getattr(self._bundle.engine, "_agent", None)
-        core_agent = getattr(agent, "agent", None)
-        if core_agent is not None and hasattr(core_agent, "permission_checker"):
-            core_agent.permission_checker = self._check_permission
+        agent = getattr(self._bundle.engine, "agent", None)
+        if agent is not None and hasattr(agent, "permission_checker"):
+            agent.permission_checker = self._check_permission
 
     async def _ask_permission(self, tool_name: str, reason: str) -> bool:
         async with self._permission_lock:

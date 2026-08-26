@@ -12,7 +12,7 @@ from javis.host.backend_host import (
     decide_permission,
 )
 from javis.host.runtime import build_javis_runtime
-from tests.test_javis.fake_backend import FakeBackend
+from tests.test_javis.fake_backend import FakeEngine
 
 
 # --- pure decision logic ---
@@ -51,7 +51,7 @@ def isolated_env(tmp_path, monkeypatch):
 async def _make_host(isolated_env) -> tuple[_JavisBackendHost, list]:
     bundle = await build_javis_runtime(
         cwd=str(isolated_env),
-        agent_backend=FakeBackend(),
+        engine=FakeEngine(),
         model="test-model",
     )
     host = _JavisBackendHost(
@@ -81,7 +81,7 @@ class _BackendWithAgent:
 async def test_inject_wires_permission_checker(isolated_env):
     backend = _BackendWithAgent()
     bundle = await build_javis_runtime(
-        cwd=str(isolated_env), agent_backend=backend, model="m"
+        cwd=str(isolated_env), engine=backend, model="m"
     )
     host = _JavisBackendHost(bundle=bundle, config=_BackendHostConfig(cwd=str(isolated_env)))
     host._inject_permission_checker()
@@ -92,8 +92,8 @@ async def test_inject_wires_permission_checker(isolated_env):
 @pytest.mark.asyncio
 async def test_inject_skips_backend_without_agent(isolated_env):
     host, _ = await _make_host(isolated_env)
-    host._inject_permission_checker()  # must not raise for FakeBackend
-    assert getattr(host._bundle.engine._agent, "agent", None) is None
+    host._inject_permission_checker()  # must not raise for FakeEngine
+    assert getattr(host._bundle.engine, "agent", None) is None
 
 
 @pytest.mark.asyncio

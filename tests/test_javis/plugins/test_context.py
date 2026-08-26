@@ -31,7 +31,7 @@ class SvcModel(BaseModel):
 
 
 class FakeTools:
-    """Minimal stand-in for the real ToolRegistry service shape."""
+    """Minimal stand-in for a typed tools-registry service (register + get)."""
 
     def __init__(self) -> None:
         self._tools: dict = {}

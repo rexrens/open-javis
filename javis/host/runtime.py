@@ -5,7 +5,7 @@ MCP, hooks, permissions, bridge, tasks, coordinator, auth, sandbox, plugins,
 themes and output-styles. What remains:
 
 - ``RuntimeBundle`` — engine + commands + app_state + session_backend
-- ``build_javis_runtime`` — assembles a bundle with a ``QueryEngine``
+- ``build_javis_runtime`` — assembles a bundle with an ``AgentEngine``
 - ``handle_line`` — the single dispatch point (slash commands + agent turns)
 - ``start_runtime`` / ``close_runtime`` — lifecycle hooks (currently no-ops)
 - ``run_javis_print_mode`` — non-interactive single-prompt mode
@@ -28,10 +28,9 @@ from typing import Any
 from uuid import uuid4
 
 from javis.commands.registry import CommandContext, CommandRegistry, create_default_command_registry
+from javis.contracts.engine import AgentEngine
 from javis.contracts.messages import ConversationMessage, sanitize_conversation_messages
-from javis.contracts.protocol import AgentBackend
 from javis.contracts.types import AgentError, AgentEvent, AgentStatus, AgentTextDelta, AgentTurnEnd
-from javis.host.query_engine import QueryEngine
 from javis.session.session_storage import JavisSessionBackend
 from javis.session.state import AppState, AppStateStore
 from javis.session.workspace import initialize_workspace
@@ -50,7 +49,7 @@ def build_javis_system_prompt(cwd: str | Path | None = None, *, workspace: str |
     del cwd, workspace  # signature kept for parity; stored on the engine
     return (
         "You are javis, an agent running on the javis TUI.\n\n"
-        "You are backed by an ``AgentBackend`` implementation. Your responses "
+        "You are backed by an ``AgentEngine`` implementation. Your responses "
         "stream through the React terminal frontend via the JSON-lines wire "
         "protocol."
     )
@@ -60,7 +59,7 @@ def build_javis_system_prompt(cwd: str | Path | None = None, *, workspace: str |
 class RuntimeBundle:
     """Everything the host needs to drive one interactive session."""
 
-    engine: QueryEngine
+    engine: AgentEngine
     cwd: str
     app_state: AppStateStore
     commands: CommandRegistry
@@ -76,17 +75,17 @@ async def build_javis_runtime(
     model: str | None = None,
     max_turns: int | None = None,
     system_prompt: str | None = None,
-    agent_backend: AgentBackend | None = None,
+    engine: AgentEngine | None = None,
     restore_messages: list[dict[str, Any]] | None = None,
     restore_tool_metadata: dict[str, object] | None = None,
     session_backend: JavisSessionBackend | None = None,
     workspace: str | Path | None = None,
 ) -> RuntimeBundle:
-    """Assemble a ``RuntimeBundle`` backed by a ``QueryEngine``.
+    """Assemble a ``RuntimeBundle`` backed by an ``AgentEngine``.
 
-    The agent backend is built from the built-in engine registry (default
-    ``corecoder``) unless ``agent_backend=...`` is passed explicitly (used by
-    tests to inject a fake backend).
+    The built-in ``CoreCoderEngine`` is constructed directly from config
+    unless ``engine=...`` is passed explicitly (used by tests to inject a
+    fake engine).
     """
     cwd_resolved = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd())
     workspace_root = initialize_workspace(workspace)
@@ -111,12 +110,9 @@ async def build_javis_runtime(
     commands = create_default_command_registry()
 
     engine_max_turns = max_turns
-    if agent_backend is None:
-        from javis.engines import create_agent_backend
-        from javis.session.config import (
-            DEFAULT_ENGINE,
-            resolve_provider_and_model,
-        )
+    if engine is None:
+        from javis.engines.corecoder.engine import CoreCoderEngine
+        from javis.session.config import resolve_provider_and_model
         from javis.session.credentials import resolve_api_key
 
         provider_name, model_id = resolve_provider_and_model(cfg, cli_model=model)
@@ -128,45 +124,38 @@ async def build_javis_runtime(
             workspace=workspace_root,
             cwd=cwd_resolved,
         )
-        engine_config: dict[str, Any] = {
-            "model": model_id,
-            "base_url": provider_cfg.base_url,
-            "api_key": api_key or "",
-        }
+        max_tokens: int | None = None
         for m in provider_cfg.models:
             if m.id == model_id:
-                engine_config["max_tokens"] = m.max_tokens
+                max_tokens = m.max_tokens
                 break
         if engine_max_turns is None and cfg.session.max_turns is not None:
             engine_max_turns = cfg.session.max_turns
-        agent_backend = create_agent_backend(
-            DEFAULT_ENGINE,
+        engine_obj = CoreCoderEngine.build(
             model=model_id,
+            api_key=api_key or "",
+            base_url=provider_cfg.base_url,
+            max_tokens=max_tokens,
             system_prompt=system_prompt_text,
             cwd=cwd_resolved,
             max_turns=engine_max_turns,
             tool_metadata=tool_metadata,
-            engine_config=engine_config,
         )
+    else:
+        engine_obj = engine
+        # explicit CLI overrides win over the injected engine's defaults
+        if model is not None and hasattr(engine_obj, "set_model"):
+            engine_obj.set_model(model)
+        if system_prompt is not None and hasattr(engine_obj, "set_system_prompt"):
+            engine_obj.set_system_prompt(system_prompt)
 
-    model_name = model or getattr(agent_backend, "model", None) or "unknown"
-
-    engine_obj = QueryEngine(
-        agent_backend=agent_backend,
-        model=model_name,
-        system_prompt=system_prompt_text,
-        cwd=cwd_resolved,
-        max_turns=engine_max_turns,
-        tool_metadata=tool_metadata,
-    )
+    model_name = model or getattr(engine_obj, "model", None) or "unknown"
 
     if restore_messages:
         restored = sanitize_conversation_messages(
             [ConversationMessage.model_validate(m) for m in restore_messages]
         )
         engine_obj.load_messages(restored)
-        if hasattr(agent_backend, "load_history"):
-            agent_backend.load_history(restored)
 
     app_state = AppStateStore(
         AppState(
@@ -251,10 +240,6 @@ async def handle_line(
                         await render_event(event)
         if result.submit_prompt:
             async for event in bundle.engine.submit_message(result.submit_prompt):
-                await render_event(event)
-            _save_session(bundle)
-        if result.continue_pending:
-            async for event in bundle.engine.continue_pending(max_turns=result.continue_turns):
                 await render_event(event)
             _save_session(bundle)
         return not result.should_exit
