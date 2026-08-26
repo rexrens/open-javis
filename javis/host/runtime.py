@@ -183,13 +183,21 @@ async def build_javis_runtime(
 
 
 async def start_runtime(bundle: RuntimeBundle) -> None:
-    """Application-level startup hook (currently a no-op)."""
-    del bundle
+    """Application-level startup hook (currently a no-op).
+
+    Signature kept stable as the mount point for future lifecycle hooks;
+    callers pass the bundle unconditionally. ``del bundle`` marks the
+    parameter intentionally unused (ruff does not flag it either way).
+    """
+    del bundle  # unused until a real startup hook lands
 
 
 async def close_runtime(bundle: RuntimeBundle) -> None:
-    """Application-level shutdown hook (currently a no-op)."""
-    del bundle
+    """Application-level shutdown hook (currently a no-op).
+
+    See ``start_runtime`` for the signature rationale.
+    """
+    del bundle  # unused until a real shutdown hook lands
 
 
 def _save_session(bundle: RuntimeBundle) -> None:
