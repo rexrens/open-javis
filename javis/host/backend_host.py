@@ -40,7 +40,7 @@ from javis.contracts.types import (
 )
 from javis.host.runtime import (
     RuntimeBundle,
-    build_javis_runtime,
+    build_runtime,
     handle_line,
 )
 from javis.host.wire import BackendEvent, FrontendImageAttachment, FrontendRequest, TranscriptItem
@@ -572,7 +572,7 @@ def _edit_approval_reply_from_request(request: FrontendRequest) -> str:
     return "once" if bool(request.allowed) else "reject"
 
 
-async def run_javis_backend(
+async def run_backend_mode(
     *,
     cwd: str | None = None,
     workspace: str | Path | None = None,
@@ -585,7 +585,7 @@ async def run_javis_backend(
     import os
     if cwd:
         os.chdir(cwd)
-    bundle = await build_javis_runtime(
+    bundle = await build_runtime(
         cwd=cwd,
         model=model,
         max_turns=max_turns,
@@ -600,4 +600,4 @@ async def run_javis_backend(
     return await host.run()
 
 
-__all__ = ["decide_permission", "run_javis_backend"]
+__all__ = ["decide_permission", "run_backend_mode"]

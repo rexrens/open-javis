@@ -5,9 +5,9 @@ MCP, hooks, permissions, bridge, tasks, coordinator, auth, sandbox, plugins,
 themes and output-styles. What remains:
 
 - ``RuntimeBundle`` — engine + commands + app_state + session_backend
-- ``build_javis_runtime`` — assembles a bundle with an ``AgentEngine``
+- ``build_runtime`` — assembles a bundle with an ``AgentEngine``
 - ``handle_line`` — the single dispatch point (slash commands + agent turns)
-- ``run_javis_print_mode`` — non-interactive single-prompt mode
+- ``run_print_mode`` — non-interactive single-prompt mode
 
 Configuration lives in ``javis.session.config`` (spec/config.md v2); the
 system-prompt builder (``build_javis_system_prompt``) lives here.
@@ -30,6 +30,7 @@ from javis.commands.registry import CommandContext, CommandRegistry, create_defa
 from javis.contracts.engine import AgentEngine
 from javis.contracts.messages import ConversationMessage, sanitize_conversation_messages
 from javis.contracts.types import AgentError, AgentEvent, AgentStatus, AgentTextDelta, AgentTurnEnd
+from javis.session.config import JavisConfig
 from javis.session.session_storage import JavisSessionBackend
 from javis.session.state import AppState, AppStateStore
 from javis.session.workspace import initialize_workspace
@@ -68,13 +69,61 @@ class RuntimeBundle:
     settings_overrides: dict[str, Any] = field(default_factory=dict)
 
 
-async def build_javis_runtime(
+def _build_default_engine(
+    *,
+    cfg: JavisConfig,
+    model: str | None,
+    system_prompt: str,
+    cwd: str,
+    max_turns: int | None,
+    tool_metadata: dict[str, Any],
+    workspace: str | Path,
+) -> AgentEngine:
+    """Construct the built-in ``CoreCoderEngine`` from resolved config.
+
+    This is the single seam where the engine is chosen: the runtime no longer
+    accepts an injected engine, and future engine implementations (e.g. the
+    plugin system's ``ctx.provide("engine", impl)``) replace the body of this
+    function instead of threading an engine parameter through the runtime.
+    """
+    from javis.engines.corecoder.engine import CoreCoderEngine
+    from javis.session.config import resolve_provider_and_model
+    from javis.session.credentials import resolve_api_key
+
+    provider_name, model_id = resolve_provider_and_model(cfg, cli_model=model)
+    provider_cfg = cfg.providers[provider_name]
+    api_key = resolve_api_key(
+        provider_name,
+        provider_cfg.api_key_env,
+        provider_cfg.api_key,
+        workspace=workspace,
+        cwd=cwd,
+    )
+    max_tokens: int | None = None
+    for m in provider_cfg.models:
+        if m.id == model_id:
+            max_tokens = m.max_tokens
+            break
+    if max_turns is None and cfg.session.max_turns is not None:
+        max_turns = cfg.session.max_turns
+    return CoreCoderEngine.build(
+        model=model_id,
+        api_key=api_key or "",
+        base_url=provider_cfg.base_url,
+        max_tokens=max_tokens,
+        system_prompt=system_prompt,
+        cwd=cwd,
+        max_turns=max_turns,
+        tool_metadata=tool_metadata,
+    )
+
+
+async def build_runtime(
     *,
     cwd: str | None = None,
     model: str | None = None,
     max_turns: int | None = None,
     system_prompt: str | None = None,
-    engine: AgentEngine | None = None,
     restore_messages: list[dict[str, Any]] | None = None,
     restore_tool_metadata: dict[str, object] | None = None,
     session_backend: JavisSessionBackend | None = None,
@@ -82,9 +131,9 @@ async def build_javis_runtime(
 ) -> RuntimeBundle:
     """Assemble a ``RuntimeBundle`` backed by an ``AgentEngine``.
 
-    The built-in ``CoreCoderEngine`` is constructed directly from config
-    unless ``engine=...`` is passed explicitly (used by tests to inject a
-    fake engine).
+    The engine is built from config by ``_build_default_engine`` — engine
+    selection lives in that one seam (tests patch it with a fake; the future
+    plugin system provides an engine there).
     """
     cwd_resolved = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd())
     workspace_root = initialize_workspace(workspace)
@@ -108,47 +157,22 @@ async def build_javis_runtime(
     cfg = load_config(cwd=cwd_resolved, workspace=workspace_root)
     commands = create_default_command_registry()
 
-    engine_max_turns = max_turns
-    if engine is None:
-        from javis.engines.corecoder.engine import CoreCoderEngine
-        from javis.session.config import resolve_provider_and_model
-        from javis.session.credentials import resolve_api_key
+    engine_obj = _build_default_engine(
+        cfg=cfg,
+        model=model,
+        system_prompt=system_prompt_text,
+        cwd=cwd_resolved,
+        max_turns=max_turns,
+        tool_metadata=tool_metadata,
+        workspace=workspace_root,
+    )
+    # Explicit CLI overrides win over the engine's resolved defaults.
+    if model is not None:
+        engine_obj.set_model(model)
+    if system_prompt is not None:
+        engine_obj.set_system_prompt(system_prompt)
 
-        provider_name, model_id = resolve_provider_and_model(cfg, cli_model=model)
-        provider_cfg = cfg.providers[provider_name]
-        api_key = resolve_api_key(
-            provider_name,
-            provider_cfg.api_key_env,
-            provider_cfg.api_key,
-            workspace=workspace_root,
-            cwd=cwd_resolved,
-        )
-        max_tokens: int | None = None
-        for m in provider_cfg.models:
-            if m.id == model_id:
-                max_tokens = m.max_tokens
-                break
-        if engine_max_turns is None and cfg.session.max_turns is not None:
-            engine_max_turns = cfg.session.max_turns
-        engine_obj = CoreCoderEngine.build(
-            model=model_id,
-            api_key=api_key or "",
-            base_url=provider_cfg.base_url,
-            max_tokens=max_tokens,
-            system_prompt=system_prompt_text,
-            cwd=cwd_resolved,
-            max_turns=engine_max_turns,
-            tool_metadata=tool_metadata,
-        )
-    else:
-        engine_obj = engine
-        # explicit CLI overrides win over the injected engine's defaults
-        if model is not None and hasattr(engine_obj, "set_model"):
-            engine_obj.set_model(model)
-        if system_prompt is not None and hasattr(engine_obj, "set_system_prompt"):
-            engine_obj.set_system_prompt(system_prompt)
-
-    model_name = model or getattr(engine_obj, "model", None) or "unknown"
+    model_name = model or engine_obj.model or "unknown"
 
     if restore_messages:
         restored = sanitize_conversation_messages(
@@ -246,7 +270,7 @@ async def _replay_assistant(message: ConversationMessage) -> AsyncIterator[Agent
     yield AgentTurnEnd(text=message.text)
 
 
-async def run_javis_print_mode(
+async def run_print_mode(
     *,
     prompt: str,
     cwd: str | None = None,
@@ -260,7 +284,7 @@ async def run_javis_print_mode(
     os.chdir(cwd_path)
     
     try:
-        bundle = await build_javis_runtime(
+        bundle = await build_runtime(
             cwd=cwd_path,
             model=model,
             max_turns=max_turns,
@@ -305,8 +329,8 @@ async def run_javis_print_mode(
 
 __all__ = [
     "RuntimeBundle",
-    "build_javis_runtime",
+    "build_runtime",
     "build_javis_system_prompt",
     "handle_line",
-    "run_javis_print_mode",
+    "run_print_mode",
 ]

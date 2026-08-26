@@ -11,7 +11,7 @@ from javis.host.backend_host import (
     _JavisBackendHost,
     decide_permission,
 )
-from javis.host.runtime import build_javis_runtime
+from javis.host.runtime import build_runtime
 from tests.test_javis.fake_backend import FakeEngine
 
 
@@ -48,10 +48,11 @@ def isolated_env(tmp_path, monkeypatch):
     return tmp_path
 
 
-async def _make_host(isolated_env) -> tuple[_JavisBackendHost, list]:
-    bundle = await build_javis_runtime(
+@pytest.fixture
+async def _make_host(isolated_env, fake_engine_factory) -> tuple[_JavisBackendHost, list]:
+    fake_engine_factory()
+    bundle = await build_runtime(
         cwd=str(isolated_env),
-        engine=FakeEngine(),
         model="test-model",
     )
     host = _JavisBackendHost(
@@ -73,15 +74,26 @@ class _FakeCoreAgent:
 
 
 class _BackendWithAgent:
+    """Minimal engine double with an ``agent`` attribute (for the permission
+    checker wiring test); satisfies the setters the runtime applies."""
+
     def __init__(self) -> None:
         self.agent = _FakeCoreAgent()
+        self.model = "m"
+
+    def set_model(self, model: str) -> None:
+        self.model = model
+
+    def set_system_prompt(self, prompt: str) -> None:
+        del prompt
 
 
 @pytest.mark.asyncio
-async def test_inject_wires_permission_checker(isolated_env):
+async def test_inject_wires_permission_checker(isolated_env, fake_engine_factory):
     backend = _BackendWithAgent()
-    bundle = await build_javis_runtime(
-        cwd=str(isolated_env), engine=backend, model="m"
+    fake_engine_factory(backend)
+    bundle = await build_runtime(
+        cwd=str(isolated_env), model="m"
     )
     host = _JavisBackendHost(bundle=bundle, config=_BackendHostConfig(cwd=str(isolated_env)))
     host._inject_permission_checker()
@@ -90,15 +102,15 @@ async def test_inject_wires_permission_checker(isolated_env):
 
 
 @pytest.mark.asyncio
-async def test_inject_skips_backend_without_agent(isolated_env):
-    host, _ = await _make_host(isolated_env)
+async def test_inject_skips_backend_without_agent(isolated_env, _make_host):
+    host, _ = _make_host
     host._inject_permission_checker()  # must not raise for FakeEngine
     assert getattr(host._bundle.engine, "agent", None) is None
 
 
 @pytest.mark.asyncio
-async def test_check_permission_default_asks_then_allows(isolated_env):
-    host, events = await _make_host(isolated_env)
+async def test_check_permission_default_asks_then_allows(isolated_env, _make_host):
+    host, events = _make_host
     task = asyncio.create_task(host._check_permission("write_file", {"path": "/x"}))
     await asyncio.sleep(0)  # let it emit the modal request
     modal_events = [e for e in events if e.type == "modal_request"]
@@ -112,8 +124,8 @@ async def test_check_permission_default_asks_then_allows(isolated_env):
 
 
 @pytest.mark.asyncio
-async def test_check_permission_default_denies_when_user_rejects(isolated_env):
-    host, events = await _make_host(isolated_env)
+async def test_check_permission_default_denies_when_user_rejects(isolated_env, _make_host):
+    host, events = _make_host
     task = asyncio.create_task(host._check_permission("bash", {"command": "rm -rf /"}))
     await asyncio.sleep(0)
     modal_events = [e for e in events if e.type == "modal_request"]
@@ -125,23 +137,23 @@ async def test_check_permission_default_denies_when_user_rejects(isolated_env):
 
 
 @pytest.mark.asyncio
-async def test_check_permission_read_tools_do_not_ask(isolated_env):
-    host, events = await _make_host(isolated_env)
+async def test_check_permission_read_tools_do_not_ask(isolated_env, _make_host):
+    host, events = _make_host
     assert await host._check_permission("read_file", {"file_path": "/x"}) == "allow"
     assert not [e for e in events if e.type == "modal_request"]
 
 
 @pytest.mark.asyncio
-async def test_check_permission_plan_denies_without_asking(isolated_env):
-    host, _ = await _make_host(isolated_env)
+async def test_check_permission_plan_denies_without_asking(isolated_env, _make_host):
+    host, _ = _make_host
     host._bundle.app_state.set(permission_mode="plan")
     assert await host._check_permission("write_file", {}) == "deny"
     assert await host._check_permission("read_file", {}) == "allow"
 
 
 @pytest.mark.asyncio
-async def test_check_permission_full_auto_allows_without_asking(isolated_env):
-    host, events = await _make_host(isolated_env)
+async def test_check_permission_full_auto_allows_without_asking(isolated_env, _make_host):
+    host, events = _make_host
     host._bundle.app_state.set(permission_mode="full_auto")
     assert await host._check_permission("write_file", {}) == "allow"
     assert not [e for e in events if e.type == "modal_request"]

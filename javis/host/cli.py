@@ -14,7 +14,7 @@ from pathlib import Path
 
 import typer
 
-from javis.host.runtime import run_javis_print_mode
+from javis.host.runtime import run_print_mode
 from javis.session.workspace import initialize_workspace
 
 app = typer.Typer(
@@ -59,13 +59,12 @@ def main(
     cwd_path = str(Path(cwd).resolve())
     workspace_root = initialize_workspace(workspace)
 
-
     if backend_only:
-        from javis.host.backend_host import run_javis_backend
+        from javis.host.backend_host import run_backend_mode
 
         raise SystemExit(
             asyncio.run(
-                run_javis_backend(
+                run_backend_mode(
                     cwd=cwd_path,
                     workspace=workspace_root,
                     model=model,
@@ -77,7 +76,7 @@ def main(
     if print_mode is not None:
         raise SystemExit(
             asyncio.run(
-                run_javis_print_mode(
+                run_print_mode(
                     prompt=print_mode,
                     cwd=cwd_path,
                     workspace=workspace_root,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from javis.contracts.engine import AgentEngine
-from javis.host.runtime import RuntimeBundle, build_javis_runtime
+from javis.host.runtime import RuntimeBundle, build_runtime
 from javis.session.session_storage import JavisSessionBackend
 from tests.test_javis.fake_backend import FakeEngine
 
@@ -23,24 +23,26 @@ def isolated_env(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_returns_bundle(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env), engine=FakeEngine())
+async def test_build_javis_runtime_returns_bundle(isolated_env, fake_engine_factory):
+    fake_engine_factory()
+    bundle = await build_runtime(cwd=str(isolated_env))
     assert isinstance(bundle, RuntimeBundle)
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_uses_agent_engine(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env), engine=FakeEngine())
+async def test_build_javis_runtime_uses_agent_engine(isolated_env, fake_engine_factory):
+    fake_engine_factory()
+    bundle = await build_runtime(cwd=str(isolated_env))
     assert isinstance(bundle.engine, AgentEngine)
     assert isinstance(bundle.engine, FakeEngine)
     assert bundle.engine.model  # non-empty model resolved from env/config
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_injects_custom_agent(isolated_env):
-    bundle = await build_javis_runtime(
+async def test_build_javis_runtime_injects_custom_agent(isolated_env, fake_engine_factory):
+    fake_engine_factory()
+    bundle = await build_runtime(
         cwd=str(isolated_env),
-        engine=FakeEngine(),
         model="test-model",
         system_prompt="test prompt",
     )
@@ -50,27 +52,29 @@ async def test_build_javis_runtime_injects_custom_agent(isolated_env):
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_session_backend(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env), engine=FakeEngine())
+async def test_build_javis_runtime_session_backend(isolated_env, fake_engine_factory):
+    fake_engine_factory()
+    bundle = await build_runtime(cwd=str(isolated_env))
     assert isinstance(bundle.session_backend, JavisSessionBackend)
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_preserves_cwd(isolated_env):
+async def test_build_javis_runtime_preserves_cwd(isolated_env, fake_engine_factory):
     cwd = str(isolated_env / "project")
-    bundle = await build_javis_runtime(cwd=cwd, engine=FakeEngine())
+    bundle = await build_runtime(cwd=cwd)
     assert bundle.cwd == cwd
     assert bundle.engine.system_prompt  # non-empty default
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_restores_messages(isolated_env):
+async def test_build_javis_runtime_restores_messages(isolated_env, fake_engine_factory):
+    fake_engine_factory()
     messages = [
         {"role": "user", "content": [{"type": "text", "text": "previous question"}]},
         {"role": "assistant", "content": [{"type": "text", "text": "previous answer"}]},
     ]
-    bundle = await build_javis_runtime(
-        cwd=str(isolated_env), engine=FakeEngine(), restore_messages=messages
+    bundle = await build_runtime(
+        cwd=str(isolated_env), restore_messages=messages
     )
     assert len(bundle.engine.messages) == 2
     assert bundle.engine.messages[0].role == "user"
@@ -78,14 +82,16 @@ async def test_build_javis_runtime_restores_messages(isolated_env):
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_accepts_custom_model(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env), model="custom-model", engine=FakeEngine())
+async def test_build_javis_runtime_accepts_custom_model(isolated_env, fake_engine_factory):
+    fake_engine_factory()
+    bundle = await build_runtime(cwd=str(isolated_env), model="custom-model")
     assert bundle.engine.model == "custom-model"
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_includes_commands(isolated_env):
-    bundle = await build_javis_runtime(cwd=str(isolated_env), engine=FakeEngine())
+async def test_build_javis_runtime_includes_commands(isolated_env, fake_engine_factory):
+    fake_engine_factory()
+    bundle = await build_runtime(cwd=str(isolated_env))
     command_names = {cmd.name for cmd in bundle.commands.list_commands()}
     assert "help" in command_names
     assert "exit" in command_names
@@ -105,7 +111,7 @@ async def test_build_javis_runtime_default_engine_is_corecoder(isolated_env, mon
     # stripped proxy vars; supply a dummy key so AsyncOpenAI can build.
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
-    bundle = await build_javis_runtime(cwd=str(isolated_env))
+    bundle = await build_runtime(cwd=str(isolated_env))
     assert isinstance(bundle.engine, CoreCoderEngine)
     assert isinstance(bundle.engine.agent, Agent)
 
@@ -116,7 +122,7 @@ async def test_print_mode_treats_slash_prompt_as_user_message(
 ):
     """Print mode is a plain prompt: ``/version`` must not dispatch as a command."""
     from javis.commands.registry import create_default_command_registry
-    from javis.host.runtime import run_javis_print_mode
+    from javis.host.runtime import run_print_mode
     from javis.session.state import AppState, AppStateStore
 
     bundle = RuntimeBundle(
@@ -134,9 +140,9 @@ async def test_print_mode_treats_slash_prompt_as_user_message(
     async def _noop(*args: object, **kwargs: object) -> None:
         del args, kwargs
 
-    monkeypatch.setattr("javis.host.runtime.build_javis_runtime", _fake_build)
+    monkeypatch.setattr("javis.host.runtime.build_runtime", _fake_build)
 
-    exit_code = await run_javis_print_mode(prompt="/version", cwd=str(isolated_env))
+    exit_code = await run_print_mode(prompt="/version", cwd=str(isolated_env))
 
     assert exit_code == 0
     # The registered /version command was NOT dispatched: it reached the engine
@@ -148,7 +154,7 @@ async def test_print_mode_treats_slash_prompt_as_user_message(
 
 
 @pytest.mark.asyncio
-async def test_build_javis_runtime_restore_loads_messages(isolated_env):
+async def test_build_javis_runtime_restore_loads_messages(isolated_env, fake_engine_factory):
     class RecordingEngine(FakeEngine):
         def __init__(self) -> None:
             super().__init__()
@@ -162,9 +168,9 @@ async def test_build_javis_runtime_restore_loads_messages(isolated_env):
         {"role": "user", "content": [{"type": "text", "text": "previous question"}]},
         {"role": "assistant", "content": [{"type": "text", "text": "previous answer"}]},
     ]
-    engine = RecordingEngine()
-    bundle = await build_javis_runtime(
-        cwd=str(isolated_env), engine=engine, restore_messages=messages
+    engine = fake_engine_factory(RecordingEngine())
+    bundle = await build_runtime(
+        cwd=str(isolated_env), restore_messages=messages
     )
     assert engine.load_calls == 1
     assert len(bundle.engine.messages) == 2
