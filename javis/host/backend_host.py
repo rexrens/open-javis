@@ -22,7 +22,6 @@ import json
 import logging
 import sys
 from collections.abc import Coroutine
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -67,7 +66,6 @@ def decide_permission(mode: str, tool_name: str) -> str:
     return "ask" if tool_name in _WRITE_TOOLS else "allow"
 
 
-@dataclass(frozen=True)
 class BackendHost:
     """Drive the javis runtime over a structured stdin/stdout protocol."""
 
