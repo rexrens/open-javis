@@ -47,8 +47,13 @@ class AgentEngine(Protocol):
     @property
     def tool_metadata(self) -> dict[str, Any]: ...
 
-    async def submit_message(self, prompt: str | ConversationMessage) -> AsyncIterator[AgentEvent]:
-        """Submit one user turn and yield events (ends with ``AgentTurnEnd``)."""
+    def submit_message(self, prompt: str | ConversationMessage) -> AsyncIterator[AgentEvent]:
+        """Submit one user turn and yield events (ends with ``AgentTurnEnd``).
+
+        Declared as a plain method returning an async iterator (not ``async
+        def``) so the protocol reads as "an async-iterable event stream";
+        implementations provide it as an async generator.
+        """
         ...
 
     def clear(self) -> None: ...
