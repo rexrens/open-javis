@@ -48,6 +48,8 @@ class PluginRegistry:
         self.services = services
         self.ctx_builder = ctx_builder
         self._instances: dict[str, PluginInstance] = {}
+        self._tracking_tasks: set[asyncio.Task[None]] = set()
+        self._unsubscribe = services.add_listener(self._on_service_changed)
 
     def add(self, instance: PluginInstance) -> None:
         self._instances[instance.name] = instance
@@ -72,7 +74,120 @@ class PluginRegistry:
             elif inst.state is PluginState.FAILED:
                 report.failed.append(name)
                 report.errors[name] = str(inst.error)
+        await self.settle()
         return report
+
+    def replace(self, instance: PluginInstance) -> None:
+        """Replace a plugin instance in the table (used by HMR reloads)."""
+        self._instances[instance.name] = instance
+
+    async def replace_and_start(self, instance: PluginInstance) -> None:
+        """Stop the old instance, install a new one, and start it."""
+        old = self._instances.get(instance.name)
+        if old is not None:
+            try:
+                await old.stop()
+            except Exception:
+                log.exception("plugin %r failed while stopping for reload", instance.name)
+        self._instances[instance.name] = instance
+        await instance.start()
+        await self.settle()
+
+    async def update(self, name: str, raw_config: dict[str, Any]) -> None:
+        """Validate and apply new config to one plugin."""
+        instance = self._instances.get(name)
+        if instance is None:
+            raise KeyError(f"plugin {name!r} is not registered")
+        await instance.update(raw_config)
+        await self.settle()
+
+    async def update_many(self, configs: dict[str, Any]) -> list[str]:
+        """Apply changed plugin configs and return the updated plugin names."""
+        changed: list[str] = []
+        for name, entry in configs.items():
+            instance = self._instances.get(name)
+            if instance is None:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            raw = entry.get("config", {})
+            if not isinstance(raw, dict):
+                raw = {}
+            if raw == instance.raw_config:
+                continue
+            await instance.update(raw)
+            changed.append(name)
+        await self.settle()
+        return changed
+
+    async def settle(self) -> None:
+        """Wait until all pending service-change reactions have finished."""
+        while self._tracking_tasks:
+            tasks = list(self._tracking_tasks)
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _on_service_changed(self, name: str, provided: bool, owner: str | None) -> None:
+        del owner
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(self._handle_service_change(name, provided))
+        self._tracking_tasks.add(task)
+        task.add_done_callback(self._tracking_tasks.discard)
+
+    async def _handle_service_change(self, name: str, provided: bool) -> None:
+        if provided:
+            await self._start_dependents_for_service(name)
+        else:
+            await self._stop_dependents_for_service(name)
+
+    async def _start_dependents_for_service(self, name: str) -> None:
+        del name
+        for plugin_name in self.load_order():
+            inst = self._instances.get(plugin_name)
+            if inst is None or inst.state not in (PluginState.PENDING, PluginState.DISPOSED):
+                continue
+            missing = [svc for svc in inst.inject if not self.services.contains(svc)]
+            if missing:
+                continue
+            if inst.state is PluginState.DISPOSED:
+                await inst.restart()
+            else:
+                await inst.start()
+
+    async def _stop_dependents_for_service(self, name: str) -> None:
+        affected = [
+            inst.name
+            for inst in self._instances.values()
+            if name in inst.inject and inst.state not in (PluginState.UNLOADING, PluginState.DISPOSED)
+        ]
+        for plugin_name in self._dependent_stop_order(affected):
+            inst = self._instances.get(plugin_name)
+            if inst is None or inst.state in (PluginState.UNLOADING, PluginState.DISPOSED):
+                continue
+            try:
+                await inst.stop()
+            except Exception:
+                log.exception("plugin %r failed while stopping dependency", plugin_name)
+
+    def _dependent_stop_order(self, affected: list[str]) -> list[str]:
+        """Dependents first, providers last, starting from affected plugins."""
+        graph = self.dependency_graph()
+        order: list[str] = []
+        visited: set[str] = set()
+
+        def visit(plugin: str) -> None:
+            if plugin in visited:
+                return
+            visited.add(plugin)
+            for dependent in graph.get(plugin, ()):
+                visit(dependent)
+            order.append(plugin)
+
+        for plugin in affected:
+            visit(plugin)
+        return order
 
     # ------------------------------------------------------------------
     # dependency graph (provide/inject DAG, derived from runtime facts)
@@ -168,6 +283,7 @@ class PluginRegistry:
             except Exception:
                 log.exception("plugin %r failed during unload cascade", plugin)
             stopped.append(plugin)
+        await self.settle()
         return stopped
 
     async def close_all(self) -> None:
@@ -186,6 +302,7 @@ class PluginRegistry:
                 await inst.stop()
             except Exception:
                 log.exception("plugin %r failed during close_all", name)
+        await self.settle()
 
     async def run_start_hooks(self) -> None:
         for inst in self._instances.values():

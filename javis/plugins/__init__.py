@@ -16,8 +16,9 @@ from javis.plugins.errors import (
     PluginDependencyError,
     PluginError,
 )
+from javis.plugins.hot_reload import PluginWatcher
 from javis.plugins.instance import PluginInstance, PluginState
-from javis.plugins.loader import load_plugins, plugin_dirs
+from javis.plugins.loader import load_plugins, plugin_dirs, reload_plugin
 from javis.plugins.registry import LoadReport, PluginRegistry
 
 __all__ = [
@@ -29,6 +30,8 @@ __all__ = [
     "PluginInstance",
     "PluginRegistry",
     "PluginState",
+    "PluginWatcher",
     "load_plugins",
     "plugin_dirs",
+    "reload_plugin",
 ]

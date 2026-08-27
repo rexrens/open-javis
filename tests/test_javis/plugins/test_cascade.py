@@ -139,8 +139,8 @@ async def test_cyclic_dependency_does_not_crash_shutdown():
     reg = make_registry()
     add_plugin(reg, "a", provides=("s1",), inject=("s2",))
     add_plugin(reg, "b", provides=("s2",), inject=("s1",))
-    await reg.activate_all()  # both time out waiting on each other → FAILED
-    assert {p["state"] for p in reg.list_plugins()} == {PluginState.FAILED}
+    await reg.activate_all()  # both stay pending waiting on each other
+    assert {p["state"] for p in reg.list_plugins()} == {PluginState.PENDING}
 
     order = reg.load_order()  # cycle → acyclic prefix + registration-order remainder
     assert len(order) == 2

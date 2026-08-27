@@ -102,16 +102,31 @@ def extract_plugins(module: Any, fallback_name: str) -> list[PluginSpec]:
     return specs
 
 
-def _load_module(path: Path, module_name: str) -> ModuleType:
+def _load_module(path: Path, module_name: str, *, force_reload: bool = False) -> ModuleType:
     # If the file was already imported under its canonical name (e.g. the host
     # imports a plugin module directly), reuse that module object — otherwise
     # classes defined in the plugin would exist twice and isinstance checks
     # (typed service.get) would fail.
     path = Path(path).resolve()
-    for module in tuple(sys.modules.values()):
-        module_file = getattr(module, "__file__", None)
-        if module_file and Path(module_file).resolve() == path:
-            return module
+    if force_reload:
+        for name, module in tuple(sys.modules.items()):
+            module_file = getattr(module, "__file__", None)
+            if module_file is not None and Path(module_file).resolve() == path:
+                del sys.modules[name]
+        module = ModuleType(module_name)
+        module.__file__ = str(path)
+        module.__package__ = ""
+        sys.modules[module_name] = module
+        exec(  # noqa: S102 - dynamic plugin loading is the loader's purpose
+            compile(path.read_text(encoding="utf-8"), str(path), "exec"),
+            module.__dict__,
+        )
+        return module
+    else:
+        for module in tuple(sys.modules.values()):
+            module_file = getattr(module, "__file__", None)
+            if module_file and Path(module_file).resolve() == path:
+                return module
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load plugin from {path}")
@@ -123,6 +138,52 @@ def _load_module(path: Path, module_name: str) -> ModuleType:
         sys.modules.pop(module_name, None)
         raise
     return module
+
+
+async def reload_plugin(
+    registry: PluginRegistry,
+    dirs: list[Path],
+    plugins_cfg: dict[str, Any],
+    name: str,
+) -> PluginInstance | None:
+    """Reload one plugin file and replace its live instance."""
+    path = next((path for path, plugin_name in discover_plugin_files(dirs) if plugin_name == name), None)
+    if path is None:
+        raise FileNotFoundError(f"plugin {name!r} not found in {[str(d) for d in dirs]}")
+    old = registry.get(name)
+    raw_config = dict(old.raw_config) if old is not None else {}
+
+    try:
+        module = _load_module(path, f"javis_plugin_{name}", force_reload=True)
+        specs = extract_plugins(module, name)
+    except Exception:
+        log.exception("plugin %r failed to reload from %s", name, path)
+        raise
+
+    spec = next((item for item in specs if item.name == name), None)
+    if spec is None:
+        raise ImportError(f"reloaded plugin module {path} no longer exports {name!r}")
+
+    entry_cfg = plugins_cfg.get(spec.name, {})
+    if not isinstance(entry_cfg, dict):
+        entry_cfg = {}
+    config = entry_cfg.get("config", {})
+    if not isinstance(config, dict):
+        config = {}
+    if not config:
+        config = raw_config
+
+    instance = PluginInstance(
+        name=spec.name,
+        apply_fn=spec.apply,
+        config_model=spec.config_model,
+        inject=spec.inject,
+        raw_config=dict(config),
+        ctx_builder=registry.ctx_builder,
+        services=registry.services,
+    )
+    await registry.replace_and_start(instance)
+    return instance
 
 
 async def load_plugins(

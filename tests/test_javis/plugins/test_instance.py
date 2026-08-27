@@ -125,7 +125,7 @@ async def test_apply_exception_fails_plugin(env):
 
 
 @pytest.mark.asyncio
-async def test_missing_dependency_fails_after_timeout(env):
+async def test_missing_dependency_stays_pending_after_timeout(env):
     services = env
 
     def apply(ctx, config):
@@ -142,7 +142,7 @@ async def test_missing_dependency_fails_after_timeout(env):
         start_timeout=0.1,
     )
     await inst.start()
-    assert inst.state is PluginState.FAILED
+    assert inst.state is PluginState.PENDING
     assert isinstance(inst.error, PluginDependencyError)
     assert "never-provided" in str(inst.error)
 

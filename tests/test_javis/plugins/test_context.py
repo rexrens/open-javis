@@ -223,3 +223,107 @@ def test_close_continues_after_disposer_failure(ctx):
     # finally-block cleanup still ran despite the failure.
     assert not ctx._services.contains("svc")
     assert "evt" not in ctx._bus._listeners  # listener disposer ran too
+
+
+@pytest.mark.asyncio
+async def test_parallel_waits_for_all_handlers(ctx):
+    seen: list[str] = []
+
+    async def first(_payload: object) -> None:
+        await asyncio.sleep(0.01)
+        seen.append("first")
+
+    async def second(_payload: object) -> None:
+        seen.append("second")
+
+    ctx.on("evt", first)
+    ctx.on("evt", second)
+    await ctx.parallel("evt", "x")
+    assert set(seen) == {"first", "second"}
+
+
+@pytest.mark.asyncio
+async def test_parallel_reports_handler_failures(ctx):
+    async def boom(_payload: object) -> None:
+        raise RuntimeError("boom")
+
+    ctx.on("evt", boom)
+    with pytest.raises(RuntimeError, match="boom"):
+        await ctx.parallel("evt")
+
+
+@pytest.mark.asyncio
+async def test_serial_bails_after_first_non_false_value(ctx):
+    reached: list[str] = []
+
+    def first(_payload: object) -> str | None:
+        return None
+
+    def second(_payload: object) -> str:
+        return "stop"
+
+    def third(_payload: object) -> None:
+        reached.append("third")
+
+    ctx.on("evt", first)
+    ctx.on("evt", second)
+    ctx.on("evt", third)
+    assert await ctx.serial("evt", "x") == "stop"
+    assert reached == []
+
+
+def test_bail_stops_synchronously(ctx):
+    reached: list[str] = []
+
+    def first(_payload: object) -> bool:
+        return False
+
+    def second(_payload: object) -> str:
+        return "stop"
+
+    def third(_payload: object) -> None:
+        reached.append("third")
+
+    ctx.on("evt", first)
+    ctx.on("evt", second)
+    ctx.on("evt", third)
+    assert ctx.bail("evt", "x") == "stop"
+    assert reached == []
+
+
+@pytest.mark.asyncio
+async def test_waterfall_wraps_downstream_result(ctx):
+    async def downstream(value: str) -> str:
+        return value.upper()
+
+    async def handler(payload: str, next: object) -> str:
+        result = await next(payload)
+        return result + "!"
+
+    ctx.on("evt", handler)
+    assert await ctx.waterfall("evt", "hi", downstream) == "HI!"
+
+
+@pytest.mark.asyncio
+async def test_waterfall_can_short_circuit(ctx):
+    async def downstream(_value: str) -> str:
+        return "unreachable"
+
+    ctx.on("evt", lambda payload, next: "blocked")
+    assert await ctx.waterfall("evt", "go", downstream) == "blocked"
+
+
+def test_once_removes_listener_after_first_call(ctx):
+    calls: list[str] = []
+    ctx.once("evt", lambda payload: calls.append(payload))
+    ctx.emit("evt", "a")
+    ctx.emit("evt", "b")
+    assert calls == ["a"]
+
+
+def test_prepend_controls_listener_order(ctx):
+    order: list[str] = []
+    ctx.on("evt", lambda _payload: order.append("second"))
+    ctx.on("evt", lambda _payload: order.append("first"), prepend=True)
+    ctx.emit("evt")
+    assert order == ["first", "second"]

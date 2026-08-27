@@ -53,6 +53,11 @@ javis 借鉴 DeepSeek Harness 的 cordis 模型实现了轻量插件内核：
 | `ctx.get(name)` / `ctx.get(name, Type)` | 跨插件服务；带 `Type` 时校验类型（pydantic `model_validate` / `isinstance`），不匹配抛 `TypeError`，未提供抛 `KeyError` |
 | `ctx.provide(name, value)` | 注册服务（插件卸载时自动撤销） |
 | `ctx.on(event, handler)` / `ctx.emit(event, payload)` | 事件（fire-and-forget） |
+| `ctx.once(event, handler)` | 只监听一次 |
+| `ctx.parallel(event, payload)` | 所有监听器并发执行并等待 |
+| `ctx.serial(event, payload)` | 按顺序 await，遇到第一个非 `None`/`False` 返回值停止 |
+| `ctx.bail(event, payload)` | 同步版本 serial |
+| `ctx.waterfall(event, payload, next)` | 中间件链；不调用 `next()` 则短路 |
 | `ctx.emit_serial(event, payload)` | 事件（等待所有 handler） |
 | `ctx.effect(disposer)` / `ctx.on_close(fn)` | 卸载清理（逆序） |
 | `ctx.on_start(fn)` | 应用启动钩子 |
@@ -104,6 +109,38 @@ def apply(ctx, config):
 - `load_order()` — 拓扑序（提供者先于依赖者）；含环时环内按注册序回退，不抛错
 - `unload(name)` — 停止一个插件并**级联**停止所有注入它提供的服务的插件（传递闭包，依赖者先停）；返回停止顺序；未知/已卸载名字为 no-op
 - `close_all()` — 全量关闭按逆拓扑序（依赖者先于提供者），保证依赖者的 disposer 仍能看到它注入的服务
+
+### 运行时依赖跟踪
+
+`ServiceRegistry` 会在 service provide / revoke 时通知 `PluginRegistry`：
+
+- service 被撤销时，所有直接或间接依赖它的插件按逆拓扑序自动 `stop()`。
+- service 再次提供时，相关 `PENDING` / `DISPOSED` 插件会自动 `start()` / `restart()`。
+- provider 热替换时，依赖方先 stop，新 provider 激活并发布服务后再恢复。
+
+因此缺依赖不再固定失败：缺依赖插件保持 `PENDING`，provider 出现后可以继续启动。
+
+`PluginInstance` 新增：
+
+- `restart()` — 停止并用当前配置重新加载。
+- `update(raw_config)` — 校验新配置后 restart；校验失败保持旧配置和旧状态。
+
+`PluginRegistry` 新增：
+
+- `update(name, raw_config)` / `update_many(configs)` — 配置热更新。
+- `replace_and_start(instance)` — HMR 替换插件实例。
+- `settle()` — 等待所有 service-change 反应完成。
+
+### 配置热更新与 HMR
+
+`javis/plugins/hot_reload.py` 提供 `PluginWatcher`：
+
+- 监听插件目录和可选配置文件。
+- 插件 `.py` 文件变化时重新 import 并替换同名实例。
+- 配置文件变化时解析 `plugins` 段并调用 `update_many()`。
+- 通过 `start()` / `stop()` 控制，不自动接入 javis 主 runtime。
+
+加载器新增 `reload_plugin(registry, dirs, plugins_cfg, name)`，供 HMR 或测试直接触发单插件重载。
 
 目录来源按顺序为全局（`~/.javis/plugins/`）、项目（`<项目>/.javis/plugins/`），同名插件以后者覆盖前者。
 
