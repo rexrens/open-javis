@@ -9,7 +9,7 @@ themes and output-styles. What remains:
 - ``handle_line`` — the single dispatch point (slash commands + agent turns)
 
 Configuration lives in ``javis.session.config`` (spec/config.md v2); the
-system-prompt builder (``build_javis_system_prompt``) lives here.
+system-prompt builder (``build_system_prompt``) lives here.
 
 ``handle_line`` yields ``AgentEvent`` straight through to the host's
 ``render_event`` callback — no ``StreamEvent`` translation layer.
@@ -41,7 +41,7 @@ ClearHandler = Callable[[], Awaitable[None]]
 # System prompt builder
 # ---------------------------------------------------------------------------
 
-def build_javis_system_prompt(cwd: str | Path | None = None, *, workspace: str | Path | None = None) -> str:
+def build_system_prompt(cwd: str | Path | None = None, *, workspace: str | Path | None = None) -> str:
     """Return a short system prompt for the agent."""
     del cwd, workspace  # signature kept for parity; stored on the engine
     return (
@@ -134,7 +134,7 @@ async def build_runtime(
     """
     cwd_resolved = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd())
     workspace_root = initialize_workspace(workspace)
-    system_prompt_text = system_prompt or build_javis_system_prompt(cwd_resolved, workspace=workspace_root)
+    system_prompt_text = system_prompt or build_system_prompt(cwd_resolved, workspace=workspace_root)
 
     tool_metadata: dict[str, Any] = {
         "permission_mode": "default",
@@ -269,7 +269,7 @@ async def _replay_assistant(message: ConversationMessage) -> AsyncIterator[Agent
 
 __all__ = [
     "RuntimeBundle",
-    "build_javis_system_prompt",
     "build_runtime",
+    "build_system_prompt",
     "handle_line",
 ]
