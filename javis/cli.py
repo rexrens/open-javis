@@ -14,7 +14,7 @@ from pathlib import Path
 
 import typer
 
-from javis.host.runtime import run_print_mode
+from javis.host.app import run_print_mode, run_tui_mode
 from javis.session.workspace import initialize_workspace
 
 app = typer.Typer(
@@ -60,11 +60,10 @@ def main(
     workspace_root = initialize_workspace(workspace)
 
     if backend_only:
-        from javis.host.backend_host import run_backend_mode
-
         raise SystemExit(
             asyncio.run(
-                run_backend_mode(
+                run_tui_mode(
+                    backend_only=True,
                     cwd=cwd_path,
                     workspace=workspace_root,
                     model=model,
@@ -86,11 +85,9 @@ def main(
             )
         )
 
-    from javis.host.react_launcher import launch_react_tui
-
     raise SystemExit(
         asyncio.run(
-            launch_react_tui(
+            run_tui_mode(
                 cwd=cwd_path,
                 workspace=workspace_root,
                 model=model,

@@ -7,7 +7,6 @@ themes and output-styles. What remains:
 - ``RuntimeBundle`` — engine + commands + app_state + session_backend
 - ``build_runtime`` — assembles a bundle with an ``AgentEngine``
 - ``handle_line`` — the single dispatch point (slash commands + agent turns)
-- ``run_print_mode`` — non-interactive single-prompt mode
 
 Configuration lives in ``javis.session.config`` (spec/config.md v2); the
 system-prompt builder (``build_javis_system_prompt``) lives here.
@@ -18,8 +17,6 @@ system-prompt builder (``build_javis_system_prompt``) lives here.
 
 from __future__ import annotations
 
-import os
-import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,7 +26,7 @@ from uuid import uuid4
 from javis.commands.registry import CommandContext, CommandRegistry, create_default_command_registry
 from javis.contracts.engine import AgentEngine
 from javis.contracts.messages import ConversationMessage, sanitize_conversation_messages
-from javis.contracts.types import AgentError, AgentEvent, AgentStatus, AgentTextDelta, AgentTurnEnd
+from javis.contracts.types import AgentEvent, AgentTextDelta, AgentTurnEnd
 from javis.session.config import JavisConfig
 from javis.session.session_storage import JavisSessionBackend
 from javis.session.state import AppState, AppStateStore
@@ -270,67 +267,9 @@ async def _replay_assistant(message: ConversationMessage) -> AsyncIterator[Agent
     yield AgentTurnEnd(text=message.text)
 
 
-async def run_print_mode(
-    *,
-    prompt: str,
-    cwd: str | None = None,
-    workspace: str | Path | None = None,
-    model: str | None = None,
-    max_turns: int | None = None,
-) -> int:
-    """Run a single prompt and print the assistant output to stdout."""
-    cwd_path = str(Path(cwd or Path.cwd()).resolve())
-    previous_cwd = Path.cwd()
-    os.chdir(cwd_path)
-    
-    try:
-        bundle = await build_runtime(
-            cwd=cwd_path,
-            model=model,
-            max_turns=max_turns,
-            workspace=workspace,
-        )
-
-        async def _print_system(message: str) -> None:
-            print(message, file=sys.stderr)
-
-        saw_error = False
-        async def _render_event(event: AgentEvent) -> None:
-            nonlocal saw_error
-            if isinstance(event, AgentTextDelta):
-                sys.stdout.write(event.text)
-                sys.stdout.flush()
-            elif isinstance(event, AgentTurnEnd):
-                sys.stdout.write("\n")
-                sys.stdout.flush()
-            elif isinstance(event, AgentError):
-                saw_error = True
-                print(event.message, file=sys.stderr)
-            elif isinstance(event, AgentStatus):
-                print(event.message, file=sys.stderr)
-            # Tool start/result events are not printed in print mode.
-
-        async def _clear_output() -> None:
-            return None
-
-        await handle_line(
-            bundle,
-            prompt,
-            print_system=_print_system,
-            render_event=_render_event,
-            clear_output=_clear_output,
-            # Print mode is a plain prompt: never dispatch slash commands.
-            user_message=ConversationMessage.from_user_text(prompt),
-        )
-        return 1 if saw_error else 0
-    finally:
-        os.chdir(previous_cwd)
-
-
 __all__ = [
     "RuntimeBundle",
-    "build_runtime",
     "build_javis_system_prompt",
+    "build_runtime",
     "handle_line",
-    "run_print_mode",
 ]
