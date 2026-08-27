@@ -122,7 +122,7 @@ async def test_print_mode_treats_slash_prompt_as_user_message(
 ):
     """Print mode is a plain prompt: ``/version`` must not dispatch as a command."""
     from javis.commands.registry import create_default_command_registry
-    from javis.host.runtime import run_print_mode
+    from javis.host.app import run_print_mode
     from javis.session.state import AppState, AppStateStore
 
     bundle = RuntimeBundle(
@@ -140,7 +140,7 @@ async def test_print_mode_treats_slash_prompt_as_user_message(
     async def _noop(*args: object, **kwargs: object) -> None:
         del args, kwargs
 
-    monkeypatch.setattr("javis.host.runtime.build_runtime", _fake_build)
+    monkeypatch.setattr("javis.host.app.build_runtime", _fake_build)
 
     exit_code = await run_print_mode(prompt="/version", cwd=str(isolated_env))
 
