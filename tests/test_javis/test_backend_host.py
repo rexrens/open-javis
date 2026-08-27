@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from javis.host.backend_host import _BackendHostConfig, BackendHost
+from javis.host.backend_host import BackendHost
 from tests.test_javis.fake_backend import FakeEngine
 from javis.host.wire import BackendEvent
 from javis.host.runtime import build_runtime
@@ -34,10 +34,7 @@ async def _make_host(
         cwd=str(isolated_env),
         model=model,
     )
-    host = BackendHost(
-        bundle=bundle,
-        config=_BackendHostConfig(cwd=str(isolated_env)),
-    )
+    host = BackendHost(bundle=bundle)
     events: list = []
 
     async def _emit(event):

@@ -68,21 +68,11 @@ def decide_permission(mode: str, tool_name: str) -> str:
 
 
 @dataclass(frozen=True)
-class _BackendHostConfig:
-    """Configuration for one backend host session."""
-
-    model: str | None = None
-    max_turns: int | None = None
-    cwd: str | None = None
-    workspace: str | Path | None = None
-
-
 class BackendHost:
     """Drive the javis runtime over a structured stdin/stdout protocol."""
 
-    def __init__(self, bundle: RuntimeBundle, config: _BackendHostConfig) -> None:
+    def __init__(self, bundle: RuntimeBundle) -> None:
         self._bundle = bundle
-        self._config = config
         self._write_lock = asyncio.Lock()
         self._request_queue: asyncio.Queue[FrontendRequest] = asyncio.Queue()
         self._permission_requests: dict[str, asyncio.Future[bool]] = {}
@@ -593,10 +583,7 @@ async def run_backend_mode(
         restore_tool_metadata=restore_tool_metadata,
         workspace=workspace,
     )
-    host = BackendHost(
-        bundle=bundle,
-        config=_BackendHostConfig(model=model, max_turns=max_turns, cwd=cwd, workspace=workspace),
-    )
+    host = BackendHost(bundle=bundle)
     return await host.run()
 
 

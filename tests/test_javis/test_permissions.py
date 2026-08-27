@@ -7,7 +7,6 @@ import asyncio
 import pytest
 
 from javis.host.backend_host import (
-    _BackendHostConfig,
     BackendHost,
     decide_permission,
 )
@@ -55,10 +54,7 @@ async def _make_host(isolated_env, fake_engine_factory) -> tuple[BackendHost, li
         cwd=str(isolated_env),
         model="test-model",
     )
-    host = BackendHost(
-        bundle=bundle,
-        config=_BackendHostConfig(cwd=str(isolated_env)),
-    )
+    host = BackendHost(bundle=bundle)
     events: list = []
 
     async def _emit(event):
@@ -95,7 +91,7 @@ async def test_inject_wires_permission_checker(isolated_env, fake_engine_factory
     bundle = await build_runtime(
         cwd=str(isolated_env), model="m"
     )
-    host = BackendHost(bundle=bundle, config=_BackendHostConfig(cwd=str(isolated_env)))
+    host = BackendHost(bundle=bundle)
     host._inject_permission_checker()
     assert backend.agent.permission_checker is not None
     assert callable(backend.agent.permission_checker)
