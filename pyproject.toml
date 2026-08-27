@@ -46,7 +46,7 @@ dev = [
 ]
 
 [project.scripts]
-javis = "javis.host.cli:app"
+javis = "javis.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["javis"]

@@ -1,1 +1,1 @@
-"""javis host: CLI, runtime, wire protocol, backend host and frontend launcher."""
+"""javis host: runtime, wire protocol, backend host and frontend launcher."""
