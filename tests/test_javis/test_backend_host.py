@@ -7,10 +7,9 @@ from __future__ import annotations
 
 import pytest
 
-from javis.host.backend_host import BackendHost
-from tests.test_javis.fake_backend import FakeEngine
-from javis.host.wire import BackendEvent
-from javis.host.runtime import build_runtime
+from javis.app.backend_host import BackendHost
+from javis.app.runtime import build_runtime
+from javis.app.wire import BackendEvent
 
 
 @pytest.fixture
@@ -132,7 +131,7 @@ async def test_backend_host_select_command_model(isolated_env, _make_host):
 @pytest.mark.asyncio
 async def test_apply_select_theme_updates_state(isolated_env, _make_host):
     """P0: /theme selector must update AppState, not fall through to the LLM."""
-    host, events = _make_host
+    host, _events = _make_host
     await host._apply_select_command("theme", "dark")
 
     assert host._bundle.app_state.get().theme == "dark"
@@ -141,7 +140,7 @@ async def test_apply_select_theme_updates_state(isolated_env, _make_host):
 @pytest.mark.asyncio
 async def test_apply_select_turns_updates_engine(isolated_env, _make_host):
     """P0: /turns selector must update engine.max_turns, not fall through to the LLM."""
-    host, events = _make_host
+    host, _events = _make_host
     await host._apply_select_command("turns", "64")
 
     assert host._bundle.engine.max_turns == 64
@@ -150,7 +149,7 @@ async def test_apply_select_turns_updates_engine(isolated_env, _make_host):
 @pytest.mark.asyncio
 async def test_apply_select_turns_unlimited_clears_limit(isolated_env, _make_host):
     """/turns unlimited must reset the engine's max-turn limit to None."""
-    host, events = _make_host
+    host, _events = _make_host
     await host._apply_select_command("turns", "64")
     await host._apply_select_command("turns", "unlimited")
 

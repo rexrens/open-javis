@@ -210,7 +210,7 @@ class JavisConfig(BaseModel):
 | `javis/session/config.py` | pydantic 模型 + 加载/深合并/校验/默认创建 |
 | `javis/session/credentials.py` | 密钥解析：环境变量 > .env > apiKey 兼容 |
 | `javis/session/workspace.py` | 扩展：项目级 `.javis/` 向上查找 |
-| `javis/host/runtime.py` | 接入新配置（load_config + provider/model 解析；engine 固定 corecoder） |
+| `javis/app/runtime.py` | 接入新配置（load_config + provider/model 解析；engine 固定 corecoder） |
 | `corecoder/config.py` | 保留 CORECODER_* 兼容；新增从 providers 建 Config |
 | `tests/test_javis/test_config.py` | 重写：模型校验/深合并/迁移/密钥解析 |
 | `tests/test_javis/test_credentials.py` | 新增：优先级/环境变量/.env 解析 |

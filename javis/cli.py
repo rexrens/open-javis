@@ -14,7 +14,7 @@ from pathlib import Path
 
 import typer
 
-from javis.host.app import run_print_mode, run_tui_mode
+from javis.app.app import run_print_mode, run_tui_mode
 from javis.session.workspace import initialize_workspace
 
 app = typer.Typer(
@@ -103,7 +103,7 @@ def doctor(
     workspace: str | None = typer.Option(None, "--workspace", help="Path to the javis workspace (defaults to ~/.javis)"),
 ) -> None:
     """Check the javis workspace and frontend layout."""
-    from javis.host.react_launcher import _get_frontend_dir
+    from javis.app.react_launcher import _get_frontend_dir
     from javis.session.workspace import workspace_health
 
     workspace_root = initialize_workspace(workspace)

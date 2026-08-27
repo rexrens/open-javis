@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from javis.engines.corecoder.llm import LLMRequest, LLMResponse, OpenAICompatProvider, ScriptedProvider
-
+from javis.engines.corecoder.llm import (
+    LLMRequest,
+    LLMResponse,
+    OpenAICompatProvider,
+    ScriptedProvider,
+)
 
 # --- ScriptedProvider ---
 
@@ -134,8 +138,9 @@ def test_openai_compat_lazy_client_builds_on_first_call(monkeypatch):
 
 
 def test_is_fallback_trigger_classification():
-    from openai import BadRequestError, RateLimitError
     from unittest.mock import MagicMock
+
+    from openai import BadRequestError, RateLimitError
 
     from javis.engines.corecoder.llm import is_fallback_trigger
 

@@ -87,7 +87,7 @@ examples/agentloop_demo/
 ## 与 dsh / javis 真实实现的关系
 
 - 本示例的宿主对应 javis 的 `build_javis_runtime` + `handle_line`
-  （`javis/host/runtime.py`）以及 dsh 的宿主组合。
+  （`javis/app/runtime.py`）以及 dsh 的宿主组合。
 - `AgentHandle.turn()` 对应 dsh 的 `ReactLoopAgent`；`_collect()` 对应
   dsh 的 `BlockAssembler` + 逐 chunk 落日志。
 - 插件的四种书写形态见 `docs/plugins.md`；本示例全部使用模块级

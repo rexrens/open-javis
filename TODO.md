@@ -93,7 +93,7 @@ uv run javis -p "hi"       # 验证 DeepSeek 连通（读 ~/.javis/config.json�
 
 - 当前 174 passed，总覆盖率 65%（Phase 0 插件测试贡献主要增量）：
   - `corecoder/llm.py` 65%（缺口在流式错误路径）
-  - `javis/host/backend_host.py` 44%（端到端协议测试，Phase 1 事件打通后自然覆盖）
+  - `javis/app/backend_host.py` 44%（端到端协议测试，Phase 1 事件打通后自然覆盖）
   - `javis/session/session_storage.py` 54%
 - 目标：65% → 70%+（Phase 1 事件链路测试 + 插件延后项测试）
 - **质量门已全绿（2026-08-21）**：`ruff check javis/ corecoder/` → All checks passed（0 错误）；`mypy javis/ corecoder/` → Success（51 files，strict）

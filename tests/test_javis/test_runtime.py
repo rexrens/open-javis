@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from javis.app.runtime import RuntimeBundle, build_runtime
 from javis.contracts.engine import AgentEngine
-from javis.host.runtime import RuntimeBundle, build_runtime
 from javis.session.session_storage import JavisSessionBackend
 from tests.test_javis.fake_backend import FakeEngine
 
@@ -121,8 +121,8 @@ async def test_print_mode_treats_slash_prompt_as_user_message(
     isolated_env, monkeypatch, capsys
 ):
     """Print mode is a plain prompt: ``/version`` must not dispatch as a command."""
+    from javis.app.app import run_print_mode
     from javis.commands.registry import create_default_command_registry
-    from javis.host.app import run_print_mode
     from javis.session.state import AppState, AppStateStore
 
     bundle = RuntimeBundle(
@@ -140,7 +140,7 @@ async def test_print_mode_treats_slash_prompt_as_user_message(
     async def _noop(*args: object, **kwargs: object) -> None:
         del args, kwargs
 
-    monkeypatch.setattr("javis.host.app.build_runtime", _fake_build)
+    monkeypatch.setattr("javis.app.app.build_runtime", _fake_build)
 
     exit_code = await run_print_mode(prompt="/version", cwd=str(isolated_env))
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from javis.session.config import (
     DEFAULT_ENGINE,
@@ -110,7 +111,7 @@ def test_invalid_field_value_rejected(isolated_env):
     (get_workspace_root() / "config.json").write_text(
         json.dumps({"session": {"permission_mode": "bogus"}}), encoding="utf-8"
     )
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         load_config()
 
 
@@ -176,7 +177,7 @@ def test_resolve_provider_cli_model_wins():
         model="b2",
         providers={"b": {"base_url": "http://b", "models": [{"id": "b1"}]}},
     )
-    provider, model = resolve_provider_and_model(config, cli_model="b1")
+    _provider, model = resolve_provider_and_model(config, cli_model="b1")
     assert model == "b1"
 
 

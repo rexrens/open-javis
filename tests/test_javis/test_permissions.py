@@ -6,13 +6,11 @@ import asyncio
 
 import pytest
 
-from javis.host.backend_host import (
+from javis.app.backend_host import (
     BackendHost,
     decide_permission,
 )
-from javis.host.runtime import build_runtime
-from tests.test_javis.fake_backend import FakeEngine
-
+from javis.app.runtime import build_runtime
 
 # --- pure decision logic ---
 

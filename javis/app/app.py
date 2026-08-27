@@ -9,9 +9,9 @@ directly, mirroring openharness' ``run_repl(backend_only=...)``.
 
 Layer layout (entry → implementation):
     javis.cli           typer parsing only
-    javis.host.app      this file — entry functions
-    javis.host.runtime  build_runtime / handle_line
-    javis.host.backend_host / react_launcher  implementations
+    javis.app.app      this file — entry functions
+    javis.app.runtime  build_runtime / handle_line
+    javis.app.backend_host / react_launcher  implementations
 """
 
 from __future__ import annotations
@@ -20,6 +20,9 @@ import os
 import sys
 from pathlib import Path
 
+from javis.app.backend_host import run_backend_mode
+from javis.app.react_launcher import launch_react_tui
+from javis.app.runtime import build_runtime, handle_line
 from javis.contracts.messages import ConversationMessage
 from javis.contracts.types import (
     AgentError,
@@ -28,9 +31,6 @@ from javis.contracts.types import (
     AgentTextDelta,
     AgentTurnEnd,
 )
-from javis.host.backend_host import run_backend_mode
-from javis.host.react_launcher import launch_react_tui
-from javis.host.runtime import build_runtime, handle_line
 
 
 async def run_tui_mode(

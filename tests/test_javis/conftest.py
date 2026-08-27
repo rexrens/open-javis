@@ -26,7 +26,7 @@ def fake_engine_factory(monkeypatch):
 
     def _patch(engine: AgentEngine | None = None) -> FakeEngine:
         impl = engine if engine is not None else FakeEngine()
-        monkeypatch.setattr("javis.host.runtime._build_default_engine", lambda **_: impl)
+        monkeypatch.setattr("javis.app.runtime._build_default_engine", lambda **_: impl)
         return impl
 
     return _patch

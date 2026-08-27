@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from javis.engines.corecoder.tools import all_tools, get_tool, register_tool, unregister_tool
 from javis.engines.corecoder.tools.base import Tool
 
@@ -9,7 +11,7 @@ from javis.engines.corecoder.tools.base import Tool
 class TestEchoTool(Tool):
     name = "test_echo"
     description = "Echo text back"
-    parameters = {"type": "object", "properties": {"text": {"type": "string"}}}
+    parameters: ClassVar[dict[str, str]] = {"type": "object", "properties": {"text": {"type": "string"}}}
 
     def execute(self, **kwargs) -> str:
         return kwargs.get("text", "")

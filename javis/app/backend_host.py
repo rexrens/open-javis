@@ -26,6 +26,12 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from javis.app.runtime import (
+    RuntimeBundle,
+    build_runtime,
+    handle_line,
+)
+from javis.app.wire import BackendEvent, FrontendImageAttachment, FrontendRequest, TranscriptItem
 from javis.contracts.messages import ContentBlock, ConversationMessage, ImageBlock, TextBlock
 from javis.contracts.types import (
     AgentError,
@@ -37,12 +43,6 @@ from javis.contracts.types import (
     AgentToolCallStart,
     AgentTurnEnd,
 )
-from javis.host.runtime import (
-    RuntimeBundle,
-    build_runtime,
-    handle_line,
-)
-from javis.host.wire import BackendEvent, FrontendImageAttachment, FrontendRequest, TranscriptItem
 
 log = logging.getLogger(__name__)
 

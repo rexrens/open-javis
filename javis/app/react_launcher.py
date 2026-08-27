@@ -62,8 +62,8 @@ def _get_frontend_dir() -> Path:
         return pkg_frontend
 
     # 2. Development repo: <repo>/frontend/terminal/
-    # __file__ = <repo>/javis/host/react_launcher.py
-    # parents[0] = javis/host/, parents[1] = javis/, parents[2] = <repo>/
+    # __file__ = <repo>/javis/app/react_launcher.py
+    # parents[0] = javis/app/, parents[1] = javis/, parents[2] = <repo>/
     repo_root = Path(__file__).resolve().parents[2]
     dev_frontend = repo_root / "frontend" / "terminal"
     if (dev_frontend / "package.json").exists():
