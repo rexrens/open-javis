@@ -84,8 +84,18 @@ class BackendHost:
         self._edit_always_approved = False
 
     async def run(self) -> int:
-        """Main loop: emit ready, then read requests and dispatch."""
+        """后端宿主的服务循环：与 React 前端通过 stdin/stdout 的 JSON-lines 协议通讯。
+
+        流程：
+        1. 注入权限检查器（把 `decide_permission` 挂到 engine 的 agent 上）；
+        2. 向前端发送 `ready` 事件（当前 AppState + 可用斜杠命令列表）和状态快照；
+        3. 启动一个后台 task 持续从 stdin 读取前端请求（`_read_requests`）；
+        4. 主循环：从队列取请求、按类型分派（关闭/中断/选择器/普通提交等）；
+        5. 退出时取消读取 task，返回退出码。
+        """
+        # 把纯函数权限决策接入 engine：后续工具调用会经过这里决定 allow/deny/ask。
         self._inject_permission_checker()
+        # 握手：先发 ready（前端以此确认后端已就绪、渲染初始状态），再发一次状态快照。
         await self._emit(
             BackendEvent.ready(
                 self._bundle.app_state.get(),
@@ -94,26 +104,37 @@ class BackendHost:
         )
         await self._emit(self._status_snapshot())
 
+        # 读取循环独立成一个 task，避免主循环被 stdin 阻塞；
+        # 它把解析好的 FrontendRequest 塞进队列，主循环负责消费。
         reader = asyncio.create_task(self._read_requests())
         try:
+            # ── 主循环：消费请求队列，逐条分派 ──
             while self._running:
                 request = await self._request_queue.get()
+                # 前端要求关闭：回发 shutdown 事件后退出循环。
                 if request.type == "shutdown":
                     await self._emit(BackendEvent(type="shutdown"))
                     break
+                # 中断当前正在执行的 agent 回合（如用户按 Ctrl+C）。
                 if request.type == "interrupt":
                     await self._interrupt_active_request()
                     continue
+                # 权限/提问的应答不单独处理：
+                # 它们已由 _read_requests 直接喂给对应的 future，无需进入主循环。
                 if request.type in ("permission_response", "question_response"):
                     continue
+                # 会话列表查询。
                 if request.type == "list_sessions":
                     await self._handle_list_sessions()
                     continue
+                # 选择器命令（/model、/permissions 等）：更新 AppState 并回发状态。
                 if request.type == "select_command":
                     await self._handle_select_command(request.command or "")
                     continue
+                # 选择器确认（如选了某个 model/主题后回车）：把变更应用为一行命令。
                 if request.type == "apply_select_command":
                     if self._busy:
+                        # 上一回合尚未结束，拒绝并发提交。
                         await self._emit(BackendEvent(type="error", message="Session is busy"))
                         continue
                     self._busy = True
@@ -126,30 +147,38 @@ class BackendHost:
                         )
                     finally:
                         self._busy = False
+                    # agent 回合结束（或触发了退出类命令）→ 关闭会话。
                     if not should_continue:
                         await self._emit(BackendEvent(type="shutdown"))
                         break
                     continue
+                # 除 submit_line 外的未知请求类型：报错并继续，不崩溃。
                 if request.type != "submit_line":
                     await self._emit(BackendEvent(type="error", message=f"Unknown request type: {request.type}"))
                     continue
+                # 普通用户消息提交（可能带图片附件）。
                 if self._busy:
+                    # 同样拒绝在忙时叠加提交。
                     await self._emit(BackendEvent(type="error", message="Session is busy"))
                     continue
                 line = (request.line or "").strip()
+                # 空文本且无图片：无可处理内容，直接忽略。
                 if not line and not request.images:
                     continue
                 self._busy = True
                 try:
+                    # 处理一行输入：斜杠命令或 agent 回合（handle_line → engine.submit_message）。
                     should_continue = await self._run_active_request(
                         self._process_line(line, images=request.images)
                     )
                 finally:
                     self._busy = False
+                # 退出类命令（如 /exit、/quit）→ 关闭会话。
                 if not should_continue:
                     await self._emit(BackendEvent(type="shutdown"))
                     break
         finally:
+            # 无论正常退出还是异常，都要停掉 stdin 读取 task，避免残留协程。
             reader.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await reader
