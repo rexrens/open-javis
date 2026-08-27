@@ -8,7 +8,7 @@ import pytest
 
 from javis.host.backend_host import (
     _BackendHostConfig,
-    _JavisBackendHost,
+    BackendHost,
     decide_permission,
 )
 from javis.host.runtime import build_runtime
@@ -49,13 +49,13 @@ def isolated_env(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-async def _make_host(isolated_env, fake_engine_factory) -> tuple[_JavisBackendHost, list]:
+async def _make_host(isolated_env, fake_engine_factory) -> tuple[BackendHost, list]:
     fake_engine_factory()
     bundle = await build_runtime(
         cwd=str(isolated_env),
         model="test-model",
     )
-    host = _JavisBackendHost(
+    host = BackendHost(
         bundle=bundle,
         config=_BackendHostConfig(cwd=str(isolated_env)),
     )
@@ -95,7 +95,7 @@ async def test_inject_wires_permission_checker(isolated_env, fake_engine_factory
     bundle = await build_runtime(
         cwd=str(isolated_env), model="m"
     )
-    host = _JavisBackendHost(bundle=bundle, config=_BackendHostConfig(cwd=str(isolated_env)))
+    host = BackendHost(bundle=bundle, config=_BackendHostConfig(cwd=str(isolated_env)))
     host._inject_permission_checker()
     assert backend.agent.permission_checker is not None
     assert callable(backend.agent.permission_checker)

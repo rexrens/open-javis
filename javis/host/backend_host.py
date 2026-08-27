@@ -77,7 +77,7 @@ class _BackendHostConfig:
     workspace: str | Path | None = None
 
 
-class _JavisBackendHost:
+class BackendHost:
     """Drive the javis runtime over a structured stdin/stdout protocol."""
 
     def __init__(self, bundle: RuntimeBundle, config: _BackendHostConfig) -> None:
@@ -593,7 +593,7 @@ async def run_backend_mode(
         restore_tool_metadata=restore_tool_metadata,
         workspace=workspace,
     )
-    host = _JavisBackendHost(
+    host = BackendHost(
         bundle=bundle,
         config=_BackendHostConfig(model=model, max_turns=max_turns, cwd=cwd, workspace=workspace),
     )
