@@ -102,6 +102,8 @@ class BackendHost:
                 [f"/{command.name}" for command in self._bundle.commands.list_commands()],
             )
         )
+
+        # 刷新前端状态条
         await self._emit(self._status_snapshot())
 
         # 读取循环独立成一个 task，避免主循环被 stdin 阻塞；
@@ -110,7 +112,7 @@ class BackendHost:
         try:
             # ── 主循环：消费请求队列，逐条分派 ──
             while self._running:
-                request = await self._request_queue.get()
+                request :FrontendRequest = await self._request_queue.get()
                 # 前端要求关闭：回发 shutdown 事件后退出循环。
                 if request.type == "shutdown":
                     await self._emit(BackendEvent(type="shutdown"))
