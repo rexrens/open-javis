@@ -50,8 +50,9 @@ def main(
             format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         )
         # Keep javis' own INFO visible (config creation, lifecycle, …).
+        # Setting the parent logger covers all javis.* sub-loggers via
+        # effective-level inheritance.
         logging.getLogger("javis").setLevel(logging.INFO)
-        logging.getLogger("javis.engines.corecoder").setLevel(logging.INFO)
 
     if ctx.invoked_subcommand is not None:
         return
