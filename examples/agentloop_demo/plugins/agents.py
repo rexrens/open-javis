@@ -1,72 +1,63 @@
-"""Agent 循环插件（仿 ``@deepseek-ai/dsh-agent-loop``）。
-
-dsh 中 agent-loop 本身是一个插件：``static inject = ['agents', 'sessions',
-'llm', 'tools', 'systemPrompt']`` 声明依赖，启动时创建 ``ReactLoopAgent``。
-驱动循环的逻辑（turn/step 边界、组装请求、流式收集、工具执行、事件落库）
-全部在插件内部，宿主只负责把用户输入交给 agent。
-
-本插件实现 ``ReactLoopAgent`` 的简化版：一次 ``turn()`` 打开会话边界，
-循环 step——组装请求 → LLM 流式输出 → 有工具调用则执行并写回会话 → 再
-请求；直到模型不再调用工具或达到 ``max_steps``，关闭边界并广播
-``agent/turn-end`` 事件。
-"""
+"""Agent factory plugin, shaped after dsh ``ctx.agents``."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
-from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from examples.agentloop_demo.plugins.system_prompt import SystemPromptService
-from javis.plugins import PluginContext
+from examples.agentloop_demo.contracts import (
+    AGENTS_SERVICE,
+    LLM_SERVICE,
+    SESSION_SERVICE,
+    SYSTEM_PROMPT_SERVICE,
+    TOOLS_SERVICE,
+    AgentsService,
+)
+
+name = "agents"
+inject = [LLM_SERVICE, TOOLS_SERVICE, SESSION_SERVICE, SYSTEM_PROMPT_SERVICE]
+provides = [AGENTS_SERVICE]
 
 
 class Config(BaseModel):
-    """插件配置模型（对应 dsh AgentLoop 的 Config）。"""
-
-    max_steps: int = Field(
-        default=3,
-        ge=1,
-        le=50,
-        description="单个 turn 内允许的最大 step 数（防止死循环）",
-    )
+    max_steps: int = Field(default=3, ge=1, le=50)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     max_tokens: int = Field(default=2048, ge=1)
 
 
-# 声明依赖：这四个服务分别由 llm / session / tools / system_prompt 插件
-# 在各自 apply 中 ctx.provide()。agent_loop 会等待它们全部就绪才激活。
-inject = ["llm", "session", "tools", "system_prompt"]
-
-
 class AgentHandle:
-    """一次会话对应的 agent（简化版 ReactLoopAgent）。"""
+    """One session-scoped agent handle with dsh-like followup/when_idle."""
 
-    def __init__(
-        self,
-        *,
-        session_id: str,
-        get: Callable[[str], Any],
-        emit: Callable[[str, Any], None],
-        config: Config,
-        cwd: str | None,
-    ) -> None:
+    def __init__(self, *, ctx: Any, session_id: str, cwd: str | None, config: Config) -> None:
+        self.ctx = ctx
         self.session_id = session_id
-        self._get = get
-        self._emit = emit
-        self._config = config
         self.cwd = cwd
+        self.config = config
         self.turn_no = 0
+        self.final_text = ""
+        self._turn_task: asyncio.Task[str] | None = None
 
-    async def turn(self, prompt: str) -> str:
-        """运行一轮 turn：直到模型不再调用工具或达到 max_steps。"""
-        session = self._get("session")
-        system_prompt:SystemPromptService = self._get("system_prompt")
-        tools = self._get("tools")
-        llm = self._get("llm")
+    async def followup(self, prompt: str) -> None:
+        if self._turn_task is not None:
+            raise RuntimeError("agent is busy; call when_idle() before followup()")
+        self._turn_task = asyncio.create_task(self._run_turn(prompt))
+
+    async def when_idle(self) -> None:
+        task = self._turn_task
+        if task is None:
+            return
+        self._turn_task = None
+        await task
+
+    async def _run_turn(self, prompt: str) -> str:
+        session = self.ctx.session
+        system_prompt = self.ctx.system_prompt
+        tools = self.ctx.tools
+        llm = self.ctx.llm
 
         self.turn_no += 1
         turn = self.turn_no
@@ -82,19 +73,19 @@ class AgentHandle:
         step = 0
         while True:
             step += 1
-            if step > self._config.max_steps:
+            if step > self.config.max_steps:
                 reason = "max-steps"
                 break
             session.append(self.session_id, "step/start", {"turn": turn, "step": step})
 
-            system = system_prompt.assemble(
+            assembled = system_prompt.assemble(
                 {"cwd": self.cwd, "date": time.strftime("%Y-%m-%d %H:%M:%S %Z")}
             )
             request = {
-                "messages": session.derive_messages(self.session_id, system_prompt=system),
+                "messages": session.derive_messages(self.session_id, system_prompt=assembled),
                 "tools": tools.snapshot(),
-                "temperature": self._config.temperature,
-                "max_tokens": self._config.max_tokens,
+                "temperature": self.config.temperature,
+                "max_tokens": self.config.max_tokens,
             }
             assistant_message, tool_calls, _usage = await self._collect(
                 turn, step, session, llm, request
@@ -122,8 +113,9 @@ class AgentHandle:
                 )
 
         session.append(self.session_id, "turn/end", {"turn": turn, "reason": reason})
-        self._emit(
-            "agent/turn-end",
+        self.final_text = final_text
+        self.ctx.emit(
+            "agents/turn-end",
             {"session_id": self.session_id, "turn": turn, "reason": reason},
         )
         return final_text
@@ -136,7 +128,6 @@ class AgentHandle:
         llm: Any,
         request: dict[str, Any],
     ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
-        """流式收集 LLM 输出：每块先落日志，末尾折叠成 assistant 消息。"""
         text_parts: list[str] = []
         calls: dict[str, dict[str, Any]] = {}
         usage: dict[str, Any] = {}
@@ -177,32 +168,21 @@ class AgentHandle:
         return message, tool_calls, usage
 
 
-class AgentLoopService:
-    """插件通过 ``ctx.provide("agentLoop", ...)`` 注册的服务。"""
-
-    def __init__(
-        self,
-        *,
-        get: Callable[[str], Any],
-        emit: Callable[[str, Any], None],
-        config: Config,
-    ) -> None:
-        self._get = get
-        self._emit = emit
-        self._config = config
+class DemoAgentsService(AgentsService):
+    def __init__(self, ctx: Any, config: Config) -> None:
+        self.ctx = ctx
+        self.config = config
         self._handles: dict[str, AgentHandle] = {}
 
-    def create(self, options: dict[str, Any]) -> AgentHandle:
-        """创建会话与 agent（对应 dsh ``ctx.agentLoop.create``）。"""
+    async def create(self, options: dict[str, Any]) -> AgentHandle:
         session_id = str(options["sessionId"])
         cwd = options.get("cwd")
-        self._get("session").create(session_id, cwd=cwd)
+        self.ctx.session.create(session_id, cwd=cwd)
         handle = AgentHandle(
+            ctx=self.ctx,
             session_id=session_id,
-            get=self._get,
-            emit=self._emit,
-            config=self._config,
             cwd=cwd,
+            config=self.config,
         )
         self._handles[session_id] = handle
         return handle
@@ -214,19 +194,16 @@ class AgentLoopService:
         self._handles.clear()
 
 
-def apply(ctx: PluginContext, config: Config) -> Any:
-    """激活入口：此时所有 inject 依赖都已就绪，config 已通过校验。"""
-    service = AgentLoopService(get=ctx.get, emit=ctx.emit, config=config)
-    ctx.provide("agentLoop", service)
+def apply(ctx: Any, config: Config) -> Any:
+    service = DemoAgentsService(ctx, config)
+    ctx.provide(AGENTS_SERVICE, service)
 
     def on_start() -> None:
-        """应用启动钩子（dsh start() 阶段）。"""
-        print(f"  [agent_loop] ready (max_steps={config.max_steps})")
+        print(f"  [agents] ready (max_steps={config.max_steps})")
 
     ctx.on_start(on_start)
 
     def disposer() -> None:
-        """卸载清理：终止所有由本插件创建的 agent。"""
         service.dispose()
 
     return disposer

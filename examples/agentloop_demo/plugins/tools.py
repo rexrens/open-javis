@@ -1,12 +1,4 @@
-"""工具注册表插件（仿 ``@deepseek-ai/dsh-tools``）。
-
-dsh 的 tools 是一个注册表：插件注册「schema + execute」两步；模型请求
-下发 ``snapshot()`` 生成的 schema，执行时 ``execute()`` 查找并运行。
-本示例内置三个真实工具：``read_file`` / ``list_files`` / ``bash``。
-
-注意：这是教学示例，没有 dsh 的 sandbox 层，``bash`` 直接在示例
-工作区执行（cwd = harness 配置的 workspace_root）。
-"""
+"""Tool registry plugin for the dsh-style demo."""
 
 from __future__ import annotations
 
@@ -14,37 +6,38 @@ import asyncio
 import os
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-ToolFn = Callable[..., Any]
+from pydantic import BaseModel
+
+from examples.agentloop_demo.contracts import TOOLS_SERVICE, Tool, ToolRegistry
+
+name = "tools"
+inject: list[str] = []
+provides = [TOOLS_SERVICE]
 
 
-@dataclass(frozen=True)
-class Tool:
-    """一个工具 = 元数据（schema）+ 执行函数（对应 dsh 的 Tool）。"""
-
-    name: str
-    description: str
-    parameters: dict[str, Any]
-    fn: ToolFn
+class Config(BaseModel):
+    workspace_root: str | None = None
 
 
-class ToolsService:
-    """插件通过 ``ctx.provide("tools", ...)`` 注册的服务。"""
-
+class DemoToolsService(ToolRegistry):
     def __init__(self, workspace_root: Path) -> None:
         self._tools: dict[str, Tool] = {}
         self._workspace_root = workspace_root
 
-    def register(self, tool: Tool) -> None:
+    def register(self, tool: Tool) -> Callable[[], None]:
         if tool.name in self._tools:
             raise ValueError(f"duplicate tool {tool.name!r}")
         self._tools[tool.name] = tool
 
+        def unregister() -> None:
+            self._tools.pop(tool.name, None)
+
+        return unregister
+
     def snapshot(self) -> list[dict[str, Any]]:
-        """OpenAI function-calling schema（随请求下发，按名排序保证前缀稳定）。"""
         schemas = [
             {
                 "type": "function",
@@ -56,10 +49,9 @@ class ToolsService:
             }
             for tool in self._tools.values()
         ]
-        return sorted(schemas, key=lambda s: s["function"]["name"])
+        return sorted(schemas, key=lambda schema: schema["function"]["name"])
 
     async def execute(self, name: str, arguments: dict[str, Any]) -> str:
-        """执行一次工具调用；错误以文本返回给模型（工具错误不中断循环）。"""
         tool = self._tools.get(name)
         if tool is None:
             return f"Error: unknown tool {name!r}"
@@ -68,13 +60,8 @@ class ToolsService:
             if asyncio.iscoroutine(result):
                 result = await result
             return str(result)
-        except Exception as exc:  # noqa: BLE001 — 工具错误是给模型看的结果
+        except Exception as exc:  # noqa: BLE001
             return f"Error: {exc}"
-
-
-# ---------------------------------------------------------------------------
-# 内置工具实现（dsh 中它们分散在 fs / shell 等插件族，这里合并演示）
-# ---------------------------------------------------------------------------
 
 
 def _resolve(root: Path, raw: str) -> Path:
@@ -85,7 +72,6 @@ def _resolve(root: Path, raw: str) -> Path:
 
 
 def read_file(root: Path, file_path: str, offset: int = 1, limit: int = 2000) -> str:
-    """读取文件并带行号输出（与 javis 内建 read 工具同款行为）。"""
     path = _resolve(root, file_path)
     if not path.exists():
         return f"Error: {file_path} not found"
@@ -103,7 +89,6 @@ def read_file(root: Path, file_path: str, offset: int = 1, limit: int = 2000) ->
 
 
 def list_files(root: Path, max_entries: int = 50) -> str:
-    """列出工作区文件（跳过 .git/.venv/__pycache__ 等目录）。"""
     skip = {".git", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
     entries: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -117,10 +102,6 @@ def list_files(root: Path, max_entries: int = 50) -> str:
 
 
 async def bash(root: Path, command: str, timeout: float = 30.0) -> str:
-    """在示例工作区执行命令，返回 stdout+stderr（截断到 20000 字符）。"""
-    # 让子进程里的 `python` 解析到运行本示例的 venv（sys.prefix 的 bin
-    # 目录），而不是 PATH 上随机的系统 python。用 sys.prefix 而非
-    # sys.executable 的 resolve()，因为 venv 里的 python 可能是软链。
     env = dict(os.environ)
     interpreter_dir = str(Path(sys.prefix) / "bin")
     env["PATH"] = interpreter_dir + os.pathsep + env.get("PATH", "")
@@ -143,10 +124,9 @@ async def bash(root: Path, command: str, timeout: float = 30.0) -> str:
     return output[-20000:] if len(output) > 20000 else output or "(no output)"
 
 
-def apply(ctx: Any, config: Any) -> Any:
-    """激活入口：注册工具服务并登记三个真实工具。"""
-    root = Path(ctx.javis_config.workspace_root).resolve()
-    service = ToolsService(workspace_root=root)
+def apply(ctx: Any, config: Config) -> Any:
+    root = Path(config.workspace_root or Path(__file__).resolve().parents[1]).resolve()
+    service = DemoToolsService(root)
     service.register(
         Tool(
             name="read_file",
@@ -163,7 +143,7 @@ def apply(ctx: Any, config: Any) -> Any:
                 },
                 "required": ["file_path"],
             },
-            fn=lambda **kw: read_file(root, **kw),
+            fn=lambda **kwargs: read_file(root, **kwargs),
         )
     )
     service.register(
@@ -179,7 +159,7 @@ def apply(ctx: Any, config: Any) -> Any:
                     }
                 },
             },
-            fn=lambda **kw: list_files(root, **kw),
+            fn=lambda **kwargs: list_files(root, **kwargs),
         )
     )
     service.register(
@@ -197,7 +177,7 @@ def apply(ctx: Any, config: Any) -> Any:
                 },
                 "required": ["command"],
             },
-            fn=lambda **kw: bash(root, **kw),
+            fn=lambda **kwargs: bash(root, **kwargs),
         )
     )
-    ctx.provide("tools", service)
+    ctx.provide(TOOLS_SERVICE, service)

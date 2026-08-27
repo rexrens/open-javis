@@ -1,20 +1,21 @@
-"""示例自带的最小测试：验证会话日志折叠逻辑。
-
-在示例目录下直接运行 `python -m pytest -q test_agentloop.py` 即可；
-这样 demo 的「运行测试」场景不依赖整个仓库的测试套件。
-"""
+"""Tests for the dsh-style mock demo."""
 
 from __future__ import annotations
 
-import sys
+import asyncio
 from pathlib import Path
 
-import pytest
+from examples.agentloop_demo.contracts import (
+    AGENTS_SERVICE,
+    SESSION_SERVICE,
+    AgentsService,
+    SessionStore,
+)
+from examples.agentloop_demo.mock_dsh import DshRuntime
+from examples.agentloop_demo.plugins.agents import AgentHandle
+from examples.agentloop_demo.plugins.session import DemoSessionService, Session
 
-# 让测试文件从仓库根目录导入示例插件（python -m pytest 时 cwd 是示例目录）。
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from examples.agentloop_demo.plugins.session import Session, SessionService
+SETTINGS_PATH = Path(__file__).resolve().parent / "settings.json"
 
 
 def test_derive_messages_folds_session_events() -> None:
@@ -36,7 +37,33 @@ def test_derive_messages_folds_session_events() -> None:
 
 
 def test_unknown_event_type_rejected() -> None:
-    service = SessionService(emit=lambda *_args: None)
+    class FakeCtx:
+        def emit(self, _event: str, _payload: object = None) -> None:
+            pass
+
+    service = DemoSessionService(FakeCtx())
     service.create("t")
-    with pytest.raises(ValueError):
+    try:
         service.append("t", "nope/event", {})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unknown event type should be rejected")
+
+
+def test_runtime_mounts_settings_and_runs_turn() -> None:
+    async def run() -> None:
+        async with DshRuntime(SETTINGS_PATH) as ctx:
+            agents = ctx.get(AGENTS_SERVICE, AgentsService)
+            handle = await agents.create(
+                {"sessionId": "test-session", "cwd": str(SETTINGS_PATH.parent)}
+            )
+            assert isinstance(handle, AgentHandle)
+            await handle.followup("hello")
+            await handle.when_idle()
+            assert handle.final_text
+
+            session = ctx.get(SESSION_SERVICE, SessionStore).get("test-session")
+            assert any(event.type == "turn/end" for event in session.events)
+
+    asyncio.run(run())
