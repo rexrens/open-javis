@@ -57,8 +57,23 @@ class CommandRegistry:
     def __init__(self) -> None:
         self._commands: dict[str, Command] = {}
 
-    def register(self, command: Command) -> None:
+    def register(self, command: Command) -> Callable[[], None]:
+        """Register a command; returns a disposer that undoes the registration.
+
+        Overwrite restores the previous command when the disposer runs, so an
+        unloaded plugin never leaves a hole where a built-in command used to be.
+        """
+        previous = self._commands.get(command.name)
         self._commands[command.name] = command
+
+        def unregister() -> None:
+            if self._commands.get(command.name) is command:
+                if previous is not None:
+                    self._commands[command.name] = previous
+                else:
+                    self._commands.pop(command.name, None)
+
+        return unregister
 
     def lookup(self, line: str) -> tuple[Command, str] | None:
         """Return ``(command, args)`` if ``line`` is a registered slash command."""

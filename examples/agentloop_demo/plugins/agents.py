@@ -1,22 +1,30 @@
-"""Agent factory plugin, shaped after dsh ``ctx.agents``."""
+"""Agent factory plugin, built on the javis LLM contract.
+
+Injects the real contracts — ``LLMProvider`` (javis.contracts) and
+``ToolRegistry`` (javis.engines.corecoder.tools) — plus the demo-local
+session / system-prompt services, runs the agent loop, and provides the
+``agents`` service. The loop drives ``achat_stream`` with an ``LLMRequest``,
+aggregates ``LLMResponse`` deltas, and executes ``ToolCall`` results through
+the tool registry.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import time
+from abc import ABC, abstractmethod
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from examples.agentloop_demo.contracts import (
-    AGENTS_SERVICE,
-    LLM_SERVICE,
-    SESSION_SERVICE,
-    SYSTEM_PROMPT_SERVICE,
-    TOOLS_SERVICE,
-    AgentsService,
-)
+from javis.contracts import LLM_SERVICE, TOOLS_SERVICE, LLMProvider, LLMRequest, ToolCall
+from javis.engines.corecoder.tools import ToolRegistry
+
+from .session import SESSION_SERVICE, SessionStore
+from .system_prompt import SYSTEM_PROMPT_SERVICE, SystemPromptService
+
+AGENTS_SERVICE = "agents"
 
 name = "agents"
 inject = [LLM_SERVICE, TOOLS_SERVICE, SESSION_SERVICE, SYSTEM_PROMPT_SERVICE]
@@ -27,6 +35,14 @@ class Config(BaseModel):
     max_steps: int = Field(default=3, ge=1, le=50)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     max_tokens: int = Field(default=2048, ge=1)
+
+
+class AgentsService(ABC):
+    """Agent factory service, shaped after dsh ``ctx.agents``."""
+
+    @abstractmethod
+    async def create(self, options: dict[str, Any]) -> Any:
+        raise NotImplementedError
 
 
 class AgentHandle:
@@ -54,10 +70,10 @@ class AgentHandle:
         await task
 
     async def _run_turn(self, prompt: str) -> str:
-        session = self.ctx.session
-        system_prompt = self.ctx.system_prompt
-        tools = self.ctx.tools
-        llm = self.ctx.llm
+        session: SessionStore = self.ctx.session
+        system_prompt: SystemPromptService = self.ctx.system_prompt
+        tools: ToolRegistry = self.ctx.tools
+        llm: LLMProvider = self.ctx.llm
 
         self.turn_no += 1
         turn = self.turn_no
@@ -81,12 +97,12 @@ class AgentHandle:
             assembled = system_prompt.assemble(
                 {"cwd": self.cwd, "date": time.strftime("%Y-%m-%d %H:%M:%S %Z")}
             )
-            request = {
-                "messages": session.derive_messages(self.session_id, system_prompt=assembled),
-                "tools": tools.snapshot(),
-                "temperature": self.config.temperature,
-                "max_tokens": self.config.max_tokens,
-            }
+            request = LLMRequest(
+                messages=session.derive_messages(self.session_id, system_prompt=assembled),
+                tools=[tool.schema() for tool in tools.all()],
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+            )
             assistant_message, tool_calls, _usage = await self._collect(
                 turn, step, session, llm, request
             )
@@ -101,13 +117,17 @@ class AgentHandle:
                 final_text = assistant_message.get("content") or ""
                 break
             for call in tool_calls:
-                result = await tools.execute(call["name"], call["arguments"])
+                tool = tools.get(call.name)
+                if tool is None:
+                    result = f"Error: unknown tool {call.name!r}"
+                else:
+                    result = tool.execute(**call.arguments)
                 session.append(
                     self.session_id,
                     "tool/result",
                     {
-                        "tool_call_id": call["id"],
-                        "name": call["name"],
+                        "tool_call_id": call.id,
+                        "name": call.name,
                         "content": result,
                     },
                 )
@@ -124,31 +144,38 @@ class AgentHandle:
         self,
         turn: int,
         step: int,
-        session: Any,
-        llm: Any,
-        request: dict[str, Any],
-    ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+        session: SessionStore,
+        llm: LLMProvider,
+        request: LLMRequest,
+    ) -> tuple[dict[str, Any], list[ToolCall], dict[str, int]]:
         text_parts: list[str] = []
-        calls: dict[str, dict[str, Any]] = {}
-        usage: dict[str, Any] = {}
-        async for chunk in llm.stream(request):
+        calls: dict[str, ToolCall] = {}
+        prompt_tokens = 0
+        completion_tokens = 0
+
+        async for delta in llm.achat_stream(request):
             session.append(
                 self.session_id,
                 "assistant/chunk",
-                {"turn": turn, "step": step, "chunk": chunk},
+                {
+                    "turn": turn,
+                    "step": step,
+                    "chunk": {
+                        "content": delta.content,
+                        "reasoning_content": delta.reasoning_content,
+                        "tool_calls": [
+                            {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
+                            for tc in delta.tool_calls
+                        ],
+                    },
+                },
             )
-            chunk_type = chunk.get("type")
-            if chunk_type == "text":
-                text_parts.append(str(chunk.get("text", "")))
-            elif chunk_type == "tool-call":
-                call_id = str(chunk.get("id") or f"call_{len(calls)}")
-                calls[call_id] = {
-                    "id": call_id,
-                    "name": str(chunk.get("name", "")),
-                    "arguments": dict(chunk.get("arguments", {})),
-                }
-            elif chunk_type == "usage":
-                usage = dict(chunk)
+            if delta.content:
+                text_parts.append(delta.content)
+            for tc in delta.tool_calls:
+                calls[tc.id] = tc
+            prompt_tokens = delta.prompt_tokens or prompt_tokens
+            completion_tokens = delta.completion_tokens or completion_tokens
 
         content = "".join(text_parts)
         tool_calls = list(calls.values())
@@ -156,16 +183,19 @@ class AgentHandle:
         if tool_calls:
             message["tool_calls"] = [
                 {
-                    "id": call["id"],
+                    "id": call.id,
                     "type": "function",
                     "function": {
-                        "name": call["name"],
-                        "arguments": json.dumps(call["arguments"], ensure_ascii=False),
+                        "name": call.name,
+                        "arguments": json.dumps(call.arguments, ensure_ascii=False),
                     },
                 }
                 for call in tool_calls
             ]
-        return message, tool_calls, usage
+        return message, tool_calls, {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+        }
 
 
 class DemoAgentsService(AgentsService):

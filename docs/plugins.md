@@ -66,17 +66,28 @@ javis 借鉴 DeepSeek Harness 的 cordis 模型实现了轻量插件内核：
 
 内核本身不认识"工具/命令/引擎"等任何领域概念——注册表只是普通服务。
 **内建服务**（宿主接线时提供，owner=None 永不撤销；未接入核心时不提供）：
+服务名常量集中在 `javis/contracts/services.py`（`TOOLS_SERVICE` /
+`COMMANDS_SERVICE` / `CONFIG_SERVICE` / `LLM_SERVICE`，
+`ENGINE_SERVICE` 为引擎接缝预留），类型即契约：插件用
+`ctx.get(name, Type)` 取值并校验。
 
 | 服务名 | 类型 | 说明 |
 |---|---|---|
-| `tools` | `javis.engines.corecoder.tools.ToolRegistry` | 工具注册表；`register(tool)` 返回 disposer |
-| `commands` | `javis.commands.registry.CommandRegistry` | 斜杠命令注册表；`register(cmd)` 返回 disposer |
-| `engines` | `javis.engines.EngineRegistry` | 引擎注册表；`register(name, factory)` 返回 disposer |
+| `tools` | `javis.engines.corecoder.tools.ToolRegistry` | 已类化；`register(tool)` 返回 disposer（覆盖时恢复旧条目），模块级 `register_tool/all_tools` 委托默认实例 `TOOL_REGISTRY` |
+| `commands` | `javis.commands.registry.CommandRegistry` | `register(cmd)` 返回 disposer（覆盖时恢复旧命令） |
 | `config` | `JavisConfig` | 只读全局配置 |
+| `llm` | `javis.contracts.llm.LLMProvider`（预留） | 契约已稳定：SDK-free，插件只实现 `achat_stream` 一个抽象方法；宿主尚未接线，未来提供内建 provider 或允许插件覆盖 |
 
-> 注：`ToolRegistry` / `EngineRegistry` 类型化注册表类是插件系统的服务契约；
-> 核心当前使用纯函数注册表（`register_tool` / `register_engine`），未来接入时
-> 可恢复类化注册表提供为服务。
+> 注：`EngineRegistry` 已随引擎简化删除（引擎不再按名注册）；未来引擎插件化
+> 的接缝是单个 `engine` 服务（插件 `ctx.provide("engine", impl)` 替换内建
+> `CoreCoderEngine`），服务名已预留，尚未接线。`llm` 同理：`LLMProvider`
+> 契约与数据模型已在 `javis/contracts/llm.py` 稳定（`corecoder/llm.py`
+> re-export 保持旧导入路径），provider 插件化（TODO F1.4 FallbackProvider）
+> 在接线阶段接入。
+
+服务契约生效后，插件也可以直接用属性访问取服务（对齐 demo 的
+`ctx.tools` 风格）：`ctx.tools` ≡ `ctx.get("tools")`；真实属性
+（`ctx.name` / `ctx.config` / `ctx.logger`）优先，不会被遮蔽。
 
 注册扩展的标准姿势是"取服务 → 注册 → 把 disposer 交给 effect"：
 

@@ -1,20 +1,34 @@
-"""Ordered system-prompt plugin for the dsh-style demo."""
+"""Ordered system-prompt plugin — owns its demo-local contract."""
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from examples.agentloop_demo.contracts import SYSTEM_PROMPT_SERVICE, SystemPromptService
+SYSTEM_PROMPT_SERVICE = "system_prompt"
+
+SectionText = str | Callable[[dict[str, Any]], str]
+
+
+class SystemPromptService(ABC):
+    """Ordered system-prompt section registry (demo-local contract)."""
+
+    @abstractmethod
+    def section(self, name: str, order: int, text: SectionText) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def assemble(self, context: dict[str, Any] | None = None) -> str:
+        raise NotImplementedError
+
 
 name = "system_prompt"
 inject: list[str] = []
 provides = [SYSTEM_PROMPT_SERVICE]
-
-SectionText = str | Callable[[dict[str, Any]], str]
 
 
 class Config(BaseModel):
@@ -57,7 +71,7 @@ class DemoSystemPromptService(SystemPromptService):
         return result
 
 
-def apply(ctx: Any, config: Config) -> Any:
+def apply(ctx: Any, config: Config) -> None:
     service = DemoSystemPromptService()
     service.section("identity", -100, config.persona)
     service.section(

@@ -13,13 +13,9 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from examples.agentloop_demo.contracts import (
-    AGENTS_SERVICE,
-    SESSION_SERVICE,
-    AgentsService,
-    SessionStore,
-)
 from examples.agentloop_demo.mock_dsh import DshRuntime
+from examples.agentloop_demo.plugins.agents import AGENTS_SERVICE, AgentsService
+from examples.agentloop_demo.plugins.session import SESSION_SERVICE, SessionStore
 
 console = Console()
 

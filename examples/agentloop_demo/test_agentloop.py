@@ -5,15 +5,14 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from examples.agentloop_demo.contracts import (
-    AGENTS_SERVICE,
+from examples.agentloop_demo.mock_dsh import DshRuntime
+from examples.agentloop_demo.plugins.agents import AGENTS_SERVICE, AgentHandle, AgentsService
+from examples.agentloop_demo.plugins.session import (
     SESSION_SERVICE,
-    AgentsService,
+    DemoSessionService,
+    Session,
     SessionStore,
 )
-from examples.agentloop_demo.mock_dsh import DshRuntime
-from examples.agentloop_demo.plugins.agents import AgentHandle
-from examples.agentloop_demo.plugins.session import DemoSessionService, Session
 
 SETTINGS_PATH = Path(__file__).resolve().parent / "settings.json"
 

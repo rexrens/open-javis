@@ -1,6 +1,11 @@
 # LLM Provider 层设计 v2
 
 > 状态：待审核。参考 agno `models/base.py`、nanobot `providers/base.py`、OpenAI SDK 2.53.0 实际实现。
+>
+> 2026-08-28：`LLMProvider` + 数据模型（`LLMRequest` / `LLMResponse` /
+> `ToolCall`）+ `estimated_cost` 已上提为稳定契约，位于
+> `javis/contracts/llm.py`（stdlib-only，无 SDK 依赖）；`corecoder/llm.py`
+> 保留 SDK 相关实现（`is_fallback_trigger` / 具体 provider）并 re-export。
 
 ## 0. 调研结论（三家设计对比）
 

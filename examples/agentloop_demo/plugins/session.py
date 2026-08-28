@@ -1,12 +1,48 @@
-"""Event-sourced session plugin for the dsh-style demo."""
+"""Event-sourced session plugin — owns its demo-local contract.
+
+javis has no session contract; the demo defines one here so the plugin is
+self-contained: ``SESSION_SERVICE`` and the ``SessionStore`` interface live
+with the plugin that provides them.
+"""
 
 from __future__ import annotations
 
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-from examples.agentloop_demo.contracts import SESSION_SERVICE, SessionStore
+SESSION_SERVICE = "session"
+
+
+class SessionStore(ABC):
+    """Append-only event-sourced session store (demo-local contract)."""
+
+    @abstractmethod
+    def create(self, session_id: str, *, cwd: str | None = None, title: str = "") -> Any:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get(self, session_id: str) -> Any:
+        raise NotImplementedError
+
+    @abstractmethod
+    def append(
+        self,
+        session_id: str,
+        event_type: str,
+        data: dict[str, Any] | None = None,
+    ) -> Any:
+        raise NotImplementedError
+
+    @abstractmethod
+    def derive_messages(
+        self,
+        session_id: str,
+        system_prompt: str | None = None,
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
 
 name = "session"
 inject: list[str] = []
@@ -118,15 +154,6 @@ class DemoSessionService(SessionStore):
         return dict(self._sessions)
 
 
-def apply(ctx: Any, config: Any) -> Any:
+def apply(ctx: Any, config: Any) -> None:
     service = DemoSessionService(ctx)
     ctx.provide(SESSION_SERVICE, service)
-
-    def on_turn_end(payload: Any) -> None:
-        session = service.get(payload["session_id"])
-        print(
-            f"  [session] {payload['session_id']} turn {payload['turn']} "
-            f"结束（reason={payload['reason']}），共记录 {len(session.events)} 条事件"
-        )
-
-    ctx.on("agents/turn-end", on_turn_end)

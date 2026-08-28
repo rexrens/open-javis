@@ -127,6 +127,12 @@ def test_get_unknown_service_raises(ctx):
         ctx.get("nope")
 
 
+def test_attribute_access_to_services(ctx):
+    assert ctx.tools is ctx.get("tools")
+    with pytest.raises(AttributeError):
+        _ = ctx.definitely_not_a_service
+
+
 def test_plugin_reaches_registry_service_with_type_check(ctx):
     tools = ctx.get("tools", FakeTools)
     assert isinstance(tools, FakeTools)

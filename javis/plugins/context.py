@@ -331,6 +331,19 @@ class PluginContext:
             return cast(T | None, value)
         return _validate_service(name, value, value_type)
 
+    def __getattr__(self, name: str) -> Any:
+        """Attribute access to services: ``ctx.tools`` ≡ ``ctx.get("tools")``.
+
+        Only called when normal attribute lookup fails, so real attributes
+        (``name`` / ``config`` / ``logger`` / …) are never shadowed.
+        """
+        if name.startswith("_"):
+            raise AttributeError(name)
+        try:
+            return self.get(name)
+        except KeyError:
+            raise AttributeError(name) from None
+
     # ---- events ---------------------------------------------------------
     def on(
         self,
