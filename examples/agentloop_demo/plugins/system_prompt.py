@@ -9,8 +9,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-SYSTEM_PROMPT_SERVICE = "system_prompt"
-
 SectionText = str | Callable[[dict[str, Any]], str]
 
 
@@ -28,7 +26,7 @@ class SystemPromptService(ABC):
 
 name = "system_prompt"
 inject: list[str] = []
-provides = [SYSTEM_PROMPT_SERVICE]
+provides = [SystemPromptService]
 
 
 class Config(BaseModel):
@@ -91,4 +89,4 @@ def apply(ctx: Any, config: Config) -> None:
             "Read files before summarizing them; run tests before reporting results."
         ),
     )
-    ctx.provide(SYSTEM_PROMPT_SERVICE, service)
+    ctx.provide(SystemPromptService, service)

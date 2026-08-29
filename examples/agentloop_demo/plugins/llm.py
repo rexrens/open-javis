@@ -15,11 +15,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from javis.contracts import LLM_SERVICE, LLMProvider, LLMRequest, LLMResponse, ToolCall
+from javis.contracts import LLMProvider, LLMRequest, LLMResponse, ToolCall
 
 name = "llm"
 inject: list[str] = []
-provides = [LLM_SERVICE]
+provides = [LLMProvider]
 
 
 class Config(BaseModel):
@@ -94,7 +94,7 @@ def apply(ctx: Any, config: Config) -> None:
     if config.provider != "scripted":
         raise ValueError(f"mock demo supports only provider='scripted', got {config.provider!r}")
     provider = DemoScriptedProvider(config.model)
-    ctx.provide(LLM_SERVICE, provider)
+    ctx.provide(LLMProvider, provider)
 
     def on_start() -> None:
         print(f"  [llm] provider={provider.model}")

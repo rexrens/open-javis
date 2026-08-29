@@ -2,7 +2,9 @@
 
 This is intentionally a mock: it does not use the javis plugin kernel. It
 provides just enough Cordis-like surface to demonstrate declarative plugin
-composition, inject/provides, typed services, and a thin host.
+composition, inject/provides, typed services, and a thin host. Services are
+keyed by their contract type (dsh_like standard): ``ctx.services[BaseLLM]``,
+``inject = [BaseLLM, ...]``, ``provides = [BaseAgentLoop]``.
 """
 
 from __future__ import annotations
@@ -42,31 +44,37 @@ class DshPluginContext:
         self._disposers: list[Disposer] = []
         self._start_hooks: list[Callable[[], Awaitable[None] | None]] = []
 
-    def get(self, name: str, value_type: type[T] | None = None) -> T:
-        value = self._runtime.get(name)
-        if value_type is not None and not isinstance(value, value_type):
+    @property
+    def services(self) -> dict[Any, Any]:
+        """Read access to the shared service store (dsh_like ``ctx.services``).
+
+        Registration still goes through ``ctx.provide`` so ownership/unprovide
+        bookkeeping stays intact; this property is for consumers.
+        """
+        return self._runtime.services
+
+    def get(self, key: Any, value_type: type[T] | None = None) -> T:
+        """Fetch a service. dsh standard: the key IS the contract type, so
+        isinstance validation is implicit (``ctx.get(LLMProvider)`` checks
+        the value against the key). String keys are tolerated with an
+        explicit ``value_type``."""
+        value = self._runtime.get(key)
+        expected = value_type if value_type is not None else (key if isinstance(key, type) else None)
+        if expected is not None and not isinstance(value, expected):
             raise TypeError(
-                f"service {name!r} has type {type(value).__name__}, "
-                f"expected {value_type.__name__}"
+                f"service {key!r} has type {type(value).__name__}, "
+                f"expected {expected.__name__}"
             )
         return value
 
-    def provide(self, name: str, value: Any) -> Disposer:
-        self._runtime.provide(name, value, owner=self.name)
+    def provide(self, key: Any, value: Any) -> Disposer:
+        self._runtime.provide(key, value, owner=self.name)
 
         def unprovide() -> None:
-            self._runtime.unprovide(name, value)
+            self._runtime.unprovide(key, value)
 
         self.effect(unprovide)
         return unprovide
-
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("_"):
-            raise AttributeError(name)
-        try:
-            return self._runtime.get(name)
-        except KeyError as exc:
-            raise AttributeError(name) from exc
 
     def on(self, event: str, handler: Callable[..., Any]) -> Callable[[], bool]:
         return self._runtime.on(event, handler, owner=self)
@@ -115,8 +123,8 @@ class DshPluginContext:
 class PluginSpec:
     id: str
     module: str
-    inject: list[str]
-    provides: list[str]
+    inject: list[Any]
+    provides: list[Any]
     config: Any
     apply: Callable[[DshPluginContext, Any], Any]
 
@@ -126,8 +134,8 @@ class DshRuntime:
 
     def __init__(self, settings_path: str | Path | None = None) -> None:
         self._settings_path = Path(settings_path) if settings_path else None
-        self._services: dict[str, Any] = {}
-        self._owners: dict[str, str] = {}
+        self.services: dict[Any, Any] = {}
+        self._owners: dict[Any, str] = {}
         self._events: dict[str, list[tuple[DshPluginContext, Callable[..., Any]]]] = defaultdict(list)
         self._loaded: list[tuple[PluginSpec, DshPluginContext]] = []
         self.settings: dict[str, Any] = {}
@@ -199,7 +207,7 @@ class DshRuntime:
         )
 
     def _topological_order(self, specs: list[PluginSpec]) -> list[str]:
-        provider_by_service: dict[str, str] = {}
+        provider_by_service: dict[Any, Any] = {}
         for spec in specs:
             for service in spec.provides:
                 if service in provider_by_service:
@@ -233,34 +241,27 @@ class DshRuntime:
             raise RuntimeError(f"cyclic demo plugin dependency: {sorted(missing)}")
         return order
 
-    def get(self, name: str, value_type: type[T] | None = None) -> T:
-        if name not in self._services:
-            raise KeyError(f"demo service {name!r} is not provided")
-        value = self._services[name]
-        if value_type is not None and not isinstance(value, value_type):
+    def get(self, key: Any, value_type: type[T] | None = None) -> T:
+        if key not in self.services:
+            raise KeyError(f"demo service {key!r} is not provided")
+        value = self.services[key]
+        expected = value_type if value_type is not None else (key if isinstance(key, type) else None)
+        if expected is not None and not isinstance(value, expected):
             raise TypeError(
-                f"service {name!r} has type {type(value).__name__}, "
-                f"expected {value_type.__name__}"
+                f"service {key!r} has type {type(value).__name__}, "
+                f"expected {expected.__name__}"
             )
         return value
 
-    def provide(self, name: str, value: Any, owner: str | None = None) -> None:
-        self._services[name] = value
+    def provide(self, key: Any, value: Any, owner: str | None = None) -> None:
+        self.services[key] = value
         if owner is not None:
-            self._owners[name] = owner
+            self._owners[key] = owner
 
-    def unprovide(self, name: str, value: Any) -> None:
-        if self._services.get(name) is value:
-            self._services.pop(name, None)
-            self._owners.pop(name, None)
-
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("_"):
-            raise AttributeError(name)
-        try:
-            return self.get(name)
-        except KeyError as exc:
-            raise AttributeError(name) from exc
+    def unprovide(self, key: Any, value: Any) -> None:
+        if self.services.get(key) is value:
+            self.services.pop(key, None)
+            self._owners.pop(key, None)
 
     def on(self, event: str, handler: Callable[..., Any], owner: DshPluginContext | None = None) -> Callable[[], bool]:
         handlers = self._events[event]
@@ -298,7 +299,7 @@ class DshRuntime:
             await ctx.close()
         self._loaded.clear()
         self._events.clear()
-        self._services.clear()
+        self.services.clear()
         self._owners.clear()
 
 

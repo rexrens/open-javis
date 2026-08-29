@@ -6,9 +6,8 @@ import asyncio
 from pathlib import Path
 
 from examples.agentloop_demo.mock_dsh import DshRuntime
-from examples.agentloop_demo.plugins.agents import AGENTS_SERVICE, AgentHandle, AgentsService
+from examples.agentloop_demo.plugins.agents import AgentHandle, AgentsService
 from examples.agentloop_demo.plugins.session import (
-    SESSION_SERVICE,
     DemoSessionService,
     Session,
     SessionStore,
@@ -53,7 +52,7 @@ def test_unknown_event_type_rejected() -> None:
 def test_runtime_mounts_settings_and_runs_turn() -> None:
     async def run() -> None:
         async with DshRuntime(SETTINGS_PATH) as ctx:
-            agents = ctx.get(AGENTS_SERVICE, AgentsService)
+            agents = ctx.get(AgentsService)
             handle = await agents.create(
                 {"sessionId": "test-session", "cwd": str(SETTINGS_PATH.parent)}
             )
@@ -62,7 +61,7 @@ def test_runtime_mounts_settings_and_runs_turn() -> None:
             await handle.when_idle()
             assert handle.final_text
 
-            session = ctx.get(SESSION_SERVICE, SessionStore).get("test-session")
+            session = ctx.get(SessionStore).get("test-session")
             assert any(event.type == "turn/end" for event in session.events)
 
     asyncio.run(run())

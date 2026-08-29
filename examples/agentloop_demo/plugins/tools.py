@@ -16,12 +16,11 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel
 
-from javis.contracts import TOOLS_SERVICE
 from javis.engines.corecoder.tools import Tool, ToolRegistry
 
 name = "tools"
 inject: list[str] = []
-provides = [TOOLS_SERVICE]
+provides = [ToolRegistry]
 
 
 class Config(BaseModel):
@@ -152,4 +151,4 @@ def apply(ctx: Any, config: Config) -> None:
         DemoBashTool(root),
     ):
         ctx.effect(registry.register(tool))  # disposer → unload removes the tool
-    ctx.provide(TOOLS_SERVICE, registry)
+    ctx.provide(ToolRegistry, registry)

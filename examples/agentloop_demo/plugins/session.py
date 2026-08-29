@@ -12,8 +12,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-SESSION_SERVICE = "session"
-
 
 class SessionStore(ABC):
     """Append-only event-sourced session store (demo-local contract)."""
@@ -46,7 +44,7 @@ class SessionStore(ABC):
 
 name = "session"
 inject: list[str] = []
-provides = [SESSION_SERVICE]
+provides = [SessionStore]
 
 KNOWN_EVENT_TYPES: tuple[str, ...] = (
     "turn/start",
@@ -156,4 +154,4 @@ class DemoSessionService(SessionStore):
 
 def apply(ctx: Any, config: Any) -> None:
     service = DemoSessionService(ctx)
-    ctx.provide(SESSION_SERVICE, service)
+    ctx.provide(SessionStore, service)

@@ -18,23 +18,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from javis.contracts import LLM_SERVICE, TOOLS_SERVICE, LLMProvider, LLMRequest, ToolCall
+from javis.contracts import LLMProvider, LLMRequest, ToolCall
 from javis.engines.corecoder.tools import ToolRegistry
 
-from .session import SESSION_SERVICE, SessionStore
-from .system_prompt import SYSTEM_PROMPT_SERVICE, SystemPromptService
-
-AGENTS_SERVICE = "agents"
-
-name = "agents"
-inject = [LLM_SERVICE, TOOLS_SERVICE, SESSION_SERVICE, SYSTEM_PROMPT_SERVICE]
-provides = [AGENTS_SERVICE]
-
-
-class Config(BaseModel):
-    max_steps: int = Field(default=3, ge=1, le=50)
-    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=2048, ge=1)
+from .session import SessionStore
+from .system_prompt import SystemPromptService
 
 
 class AgentsService(ABC):
@@ -43,6 +31,17 @@ class AgentsService(ABC):
     @abstractmethod
     async def create(self, options: dict[str, Any]) -> Any:
         raise NotImplementedError
+
+
+name = "agents"
+inject = [LLMProvider, ToolRegistry, SessionStore, SystemPromptService]
+provides = [AgentsService]
+
+
+class Config(BaseModel):
+    max_steps: int = Field(default=3, ge=1, le=50)
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=2048, ge=1)
 
 
 class AgentHandle:
@@ -70,10 +69,10 @@ class AgentHandle:
         await task
 
     async def _run_turn(self, prompt: str) -> str:
-        session: SessionStore = self.ctx.session
-        system_prompt: SystemPromptService = self.ctx.system_prompt
-        tools: ToolRegistry = self.ctx.tools
-        llm: LLMProvider = self.ctx.llm
+        session: SessionStore = self.ctx.services[SessionStore]
+        system_prompt: SystemPromptService = self.ctx.services[SystemPromptService]
+        tools: ToolRegistry = self.ctx.services[ToolRegistry]
+        llm: LLMProvider = self.ctx.services[LLMProvider]
 
         self.turn_no += 1
         turn = self.turn_no
@@ -207,7 +206,7 @@ class DemoAgentsService(AgentsService):
     async def create(self, options: dict[str, Any]) -> AgentHandle:
         session_id = str(options["sessionId"])
         cwd = options.get("cwd")
-        self.ctx.session.create(session_id, cwd=cwd)
+        self.ctx.services[SessionStore].create(session_id, cwd=cwd)
         handle = AgentHandle(
             ctx=self.ctx,
             session_id=session_id,
@@ -226,7 +225,7 @@ class DemoAgentsService(AgentsService):
 
 def apply(ctx: Any, config: Config) -> Any:
     service = DemoAgentsService(ctx, config)
-    ctx.provide(AGENTS_SERVICE, service)
+    ctx.provide(AgentsService, service)
 
     def on_start() -> None:
         print(f"  [agents] ready (max_steps={config.max_steps})")

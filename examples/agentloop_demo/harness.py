@@ -14,8 +14,8 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 
 from examples.agentloop_demo.mock_dsh import DshRuntime
-from examples.agentloop_demo.plugins.agents import AGENTS_SERVICE, AgentsService
-from examples.agentloop_demo.plugins.session import SESSION_SERVICE, SessionStore
+from examples.agentloop_demo.plugins.agents import AgentsService
+from examples.agentloop_demo.plugins.session import SessionStore
 
 console = Console()
 
@@ -35,7 +35,7 @@ def _say(message: str) -> None:
 async def main() -> int:
     async with DshRuntime(SETTINGS_PATH) as ctx:
         _say(f"mounted composition from {SETTINGS_PATH.name}")
-        agents = ctx.get(AGENTS_SERVICE, AgentsService)
+        agents = ctx.get(AgentsService)
         handle = await agents.create(
             {"sessionId": "demo-session", "cwd": str(WORKSPACE_ROOT)}
         )
@@ -46,7 +46,7 @@ async def main() -> int:
             await handle.when_idle()
             console.print(Panel(Markdown(handle.final_text), title="最终回答", border_style="green"))
 
-        session = ctx.get(SESSION_SERVICE, SessionStore).get("demo-session")
+        session = ctx.get(SessionStore).get("demo-session")
         _say(f"session log ({len(session.events)} events)")
         for event in session.events:
             brief = str(event.data)[:120]
