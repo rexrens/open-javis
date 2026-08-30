@@ -159,6 +159,118 @@ async def test_hmr_debounce_coalesces_rapid_rewrites(tmp_path):
     assert lines == ["v1", "v3"]
 
 
+async def test_hmr_recovers_after_syntax_error(tmp_path):
+    """A broken module must stay watchable so a later fix retries the mount."""
+    plugin_file = tmp_path / "hello.py"
+    plugin_file.write_text(
+        "name = 'hello'\ndef apply(ctx):\n    print('hello')\n", encoding="utf-8"
+    )
+    ctx = await _load_with_hmr(tmp_path, "- id: hello\n  name: './hello.py'\n")
+    loader = ctx.get("loader")
+    fiber = loader.fibers()["hello"]
+    assert fiber.state == FiberState.ACTIVE
+    assert "hello" in loader.module_paths()
+
+    # Break the module: the reload fails, but the entry must not vanish from
+    # the watcher (otherwise the fixed save below would never trigger).
+    plugin_file.write_text(
+        "name = 'hello'\ndef apply(ctx):\n    syntax error here\n", encoding="utf-8"
+    )
+    stamp = os.path.getmtime(plugin_file) + 2
+    os.utime(plugin_file, (stamp, stamp))
+    await asyncio.sleep(1.0)
+
+    assert "hello" in loader.module_paths()  # HMR still watches it
+    assert "hello" not in loader.fibers()
+
+    # Fix the module: HMR retries and remounts it.
+    plugin_file.write_text(
+        "name = 'hello'\ndef apply(ctx):\n    print('fixed')\n", encoding="utf-8"
+    )
+    stamp = os.path.getmtime(plugin_file) + 2
+    os.utime(plugin_file, (stamp, stamp))
+    await asyncio.sleep(1.0)
+
+    new_fiber = loader.fibers().get("hello")
+    assert new_fiber is not None
+    assert new_fiber is not fiber
+    assert new_fiber.state == FiberState.ACTIVE
+
+
+async def test_reload_keeps_broken_module_watchable(tmp_path):
+    """Loader-level: a failed `reload()` restores the module path so HMR can
+    retry; a later successful reload mounts a fresh fiber."""
+    plugin_file = tmp_path / "hello.py"
+    plugin_file.write_text(
+        "name = 'hello'\ndef apply(ctx):\n    print('hello')\n", encoding="utf-8"
+    )
+    comp = tmp_path / "cordis.yml"
+    comp.write_text("- id: hello\n  name: './hello.py'\n", encoding="utf-8")
+    ctx = Context()
+    ctx.baseUrl = str(tmp_path)
+    await ctx.plugin(Loader, {"file": str(comp)})
+    loader = ctx.get("loader")
+    assert "hello" in loader.module_paths()
+
+    plugin_file.write_text(
+        "name = 'hello'\ndef apply(ctx):\n    syntax error here\n", encoding="utf-8"
+    )
+    result = loader.reload("hello")
+    if result is not None:
+        await result
+
+    assert "hello" in loader.module_paths()  # still trackable by HMR
+    assert "hello" not in loader.fibers()
+
+    plugin_file.write_text(
+        "name = 'hello'\ndef apply(ctx):\n    print('fixed')\n", encoding="utf-8"
+    )
+    loader.reload("hello")
+    new_fiber = loader.fibers().get("hello")
+    assert new_fiber is not None
+    await new_fiber
+    assert new_fiber.state == FiberState.ACTIVE
+
+
+async def test_recompose_broken_module_does_not_abort_other_mounts(tmp_path):
+    """A structurally changed entry whose module fails to import must neither
+    vanish from the watcher nor prevent the remaining entries from mounting."""
+    (tmp_path / "a.py").write_text(
+        "name = 'a'\ndef apply(ctx):\n    print('a')\n", encoding="utf-8"
+    )
+    (tmp_path / "b.py").write_text(
+        "name = 'b'\ndef apply(ctx):\n    print('b')\n", encoding="utf-8"
+    )
+    comp = tmp_path / "cordis.yml"
+    comp.write_text("- id: a\n  name: './a.py'\n", encoding="utf-8")
+    ctx = Context()
+    ctx.baseUrl = str(tmp_path)
+    await ctx.plugin(Loader, {"file": str(comp)})
+    loader = ctx.get("loader")
+    assert "a" in loader.fibers()
+
+    # `a` is structurally changed (forces a remount) and its module is broken;
+    # `b` is a new entry that must still mount.
+    (tmp_path / "a.py").write_text(
+        "name = 'a'\ndef apply(ctx):\n    syntax error here\n", encoding="utf-8"
+    )
+    comp.write_text(
+        "- id: a\n  name: './a.py'\n  inject: ['never-satisfied']\n"
+        "- id: b\n  name: './b.py'\n",
+        encoding="utf-8",
+    )
+    result = loader.recompose()
+    if result is not None:
+        await result
+
+    assert "a" in loader.module_paths()  # still trackable by HMR
+    assert "a" not in loader.fibers()
+    assert "b" in loader.fibers()
+    fiber_b = loader.fibers()["b"]
+    await fiber_b
+    assert fiber_b.state == FiberState.ACTIVE
+
+
 async def test_registry_diagnostics_pending():
     ctx = Context()
 

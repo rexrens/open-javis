@@ -224,6 +224,31 @@ class Loader(Service):
         mount_ctx = ctx.isolate(entry.isolate) if entry.isolate else ctx
         return mount_ctx.plugin(plugin, entry.config)
 
+    def _mount_guarded(self, entry_id: str, entry: Entry) -> Fiber | None:
+        """Mount an entry without losing HMR tracking when the module fails.
+
+        A module that fails to import (e.g. a syntax error mid-edit) must
+        still be registered in ``_entry_paths`` so the watcher keeps polling
+        it and retries on the next save; otherwise the entry silently drops
+        out of HMR and can never recover without a full recompose.
+        """
+        try:
+            return self._mount(self.ctx, entry, entry_id)
+        except BaseException as error:
+            self.ctx.logger.error(error)
+            self._entry_paths[entry_id] = self._expected_module_path(entry)
+            return None
+
+    def _expected_module_path(self, entry: Entry) -> str | None:
+        """Resolve the path HMR should keep watching for a file-based entry."""
+        if entry.group:
+            return None
+        name = entry.name
+        if "/" in name or name.endswith(".py") or name.startswith("."):
+            path = name if os.path.isabs(name) else os.path.join(self.base_url or os.getcwd(), name)
+            return os.path.normpath(path)
+        return None
+
     def _mount_group(self, ctx: "Context", entries: list[Entry], group_id: str) -> None:
         for entry in entries:
             if entry.disabled:
@@ -279,12 +304,16 @@ class Loader(Service):
                 except BaseException:
                     pass
             if entry_id not in self._entry_fibers and not entry.disabled:
-                self._entry_fibers[entry_id] = self._mount(self.ctx, entry, entry_id)
+                fiber = self._mount_guarded(entry_id, entry)
+                if fiber is not None:
+                    self._entry_fibers[entry_id] = fiber
 
         if old is not None:
             return _reload()
         if not entry.disabled:
-            self._entry_fibers[entry_id] = self._mount(self.ctx, entry, entry_id)
+            fiber = self._mount_guarded(entry_id, entry)
+            if fiber is not None:
+                self._entry_fibers[entry_id] = fiber
         return None
 
     def recompose(self) -> Any:
@@ -365,7 +394,9 @@ class Loader(Service):
             for entry_id, entry in new.items():
                 if entry_id in self._entry_fibers or entry.disabled:
                     continue
-                self._entry_fibers[entry_id] = self._mount(self.ctx, entry, entry_id)
+                fiber = self._mount_guarded(entry_id, entry)
+                if fiber is not None:
+                    self._entry_fibers[entry_id] = fiber
 
         return _recompose()
 

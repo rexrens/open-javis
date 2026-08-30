@@ -67,10 +67,13 @@ async def test_accessor():
 
     fiber = ctx.plugin(apply)
     await fiber
-    assert ctx.get("computed") == 42
+    # Accessors are scoped to the declaring context (the fiber's context), so
+    # reads resolve there rather than leaking onto the root context.
+    assert fiber.ctx.get("computed") == 42
     assert getter_calls == [1]
     await fiber.dispose()
-    assert ctx.get("computed") is None  # accessor removed with its fiber
+    assert fiber.ctx.get("computed") is None  # accessor removed with its fiber
+    assert ctx.get("computed") is None  # and never leaked to the root
 
 
 async def test_accessor_conflicts_with_service():
@@ -101,10 +104,54 @@ async def test_mixin_forwards_service_members():
     fiber = ctx.plugin(provider)
     await fiber
     # mixed-in members resolve through ctx.get (no proxy attribute access)
-    assert ctx.get("greet")("there") == "Hi there"
-    assert ctx.get("value") == 7
+    assert fiber.ctx.get("greet")("there") == "Hi there"
+    assert fiber.ctx.get("value") == 7
     await fiber.dispose()
-    assert ctx.get("greet") is None
+    assert fiber.ctx.get("greet") is None
+
+
+async def test_sibling_plugins_have_independent_accessors():
+    """Two plugins mounted on the same context may declare the same accessor
+    name; each fiber's context resolves its own declaration."""
+    ctx = Context()
+
+    def apply_a(c):
+        c.accessor("computed", lambda ctx_: "A")
+
+    def apply_b(c):
+        c.accessor("computed", lambda ctx_: "B")
+
+    fiber_a = ctx.plugin(apply_a)
+    fiber_b = ctx.plugin(apply_b)
+    await fiber_a
+    await fiber_b
+
+    assert fiber_a.ctx.get("computed") == "A"
+    assert fiber_b.ctx.get("computed") == "B"
+    assert ctx.get("computed") is None
+
+
+async def test_sibling_extend_contexts_are_independent_and_shadow_ancestors():
+    """Direct `extend()` siblings do not conflict, dispose independently, and
+    children shadow ancestor declarations (prototype semantics)."""
+    ctx = Context()
+    dispose_root = ctx.accessor("computed", lambda ctx_: "root")
+    child_a = ctx.extend()
+    child_b = ctx.extend()
+    dispose_a = child_a.accessor("computed", lambda ctx_: "A")
+    dispose_b = child_b.accessor("computed", lambda ctx_: "B")
+
+    assert child_a.get("computed") == "A"  # own declaration shadows root's
+    assert child_b.get("computed") == "B"
+    assert ctx.get("computed") == "root"
+
+    await dispose_a()
+    assert child_a.get("computed") == "root"  # back to the inherited one
+    assert child_b.get("computed") == "B"  # sibling unaffected
+
+    await dispose_b()
+    await dispose_root()
+    assert child_b.get("computed") is None
 
 
 async def test_ctx_inject_with_intercept_config():

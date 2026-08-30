@@ -49,7 +49,22 @@ class ReflectService:
     def __init__(self, ctx: "Context"):
         self.ctx = ctx
         self.store: dict[object, Impl] = {}  # isolation label -> Impl
-        self.props: dict[str, dict[str, Any]] = {}  # name -> {'type': ...} declaration
+
+    @staticmethod
+    def _find_prop(ctx: "Context", name: str) -> dict[str, Any] | None:
+        """Find the nearest declaration of ``name`` on ``ctx`` or its ancestors.
+
+        Accessors are scoped to the context that declared them: children
+        inherit ancestor declarations (own properties shadow inherited ones)
+        while sibling contexts stay independent.
+        """
+        current: Context | None = ctx
+        while current is not None:
+            prop = current._props.get(name)
+            if prop is not None:
+                return prop
+            current = current._parent
+        return None
 
     # -- reads --------------------------------------------------------------
 
@@ -70,7 +85,7 @@ class ReflectService:
         Returns ``None`` when not (yet) provided. With ``strict`` (default),
         only implementations whose providing fiber is ACTIVE are returned.
         """
-        prop = self.props.get(name)
+        prop = self._find_prop(ctx, name)
         if prop is not None and prop["type"] == "accessor":
             return prop["get"](ctx)
         impl = self._get_impl(ctx, name, strict)
@@ -86,7 +101,7 @@ class ReflectService:
         ``set`` hook when one is declared (without the proxy, this is the only
         write path for accessors); a setter-less accessor raises.
         """
-        prop = self.props.get(name)
+        prop = self._find_prop(ctx, name)
         if prop is not None and prop["type"] == "accessor":
             setter = prop.get("set")
             if setter is None:
@@ -127,10 +142,9 @@ class ReflectService:
         value: Any,
         check: Callable[[Any], bool] | None,
     ) -> Callable[[], Any]:
-        prop = self.props.get(name)
+        prop = self._find_prop(ctx, name)
         if prop is not None and prop["type"] != "service":
             raise RuntimeError(f'property "{name}" is already declared as {prop["type"]}')
-        self.props[name] = {"type": "service"}
 
         ctx.root._isolate.ensure(name)
         label = ctx._isolate.get(name)
@@ -173,12 +187,18 @@ class ReflectService:
         get: Callable[["Context"], Any],
         set: Callable[["Context", Any], bool] | None,
     ) -> Callable[[], bool]:
-        if name in self.props:
-            raise RuntimeError(f'property "{name}" is already declared as {self.props[name]["type"]}')
-        self.props[name] = {"type": "accessor", "get": get, "set": set}
+        # Same-context redeclaration conflicts; an ancestor declaration is
+        # shadowed by this own property (JS `defineProperty` semantics).
+        if name in ctx._props:
+            raise RuntimeError(f'property "{name}" is already declared as {ctx._props[name]["type"]}')
+        # A service currently visible in this scope also conflicts, matching
+        # the provide/accessor symmetry of the original reflect service.
+        if self.store.get(ctx._isolate.get(name)) is not None:
+            raise RuntimeError(f'property "{name}" is already declared as service')
+        ctx._props[name] = {"type": "accessor", "get": get, "set": set}
 
         def disposer() -> bool:
-            return self.props.pop(name, None) is not None
+            return ctx._props.pop(name, None) is not None
 
         return disposer
 
@@ -267,5 +287,16 @@ class ReflectService:
             impl = self._get_impl(ctx, name, strict=False)
             if impl is not None:
                 value = impl.value
-            self.ctx.events.emit(_ServiceFilterCtx(lambda target: filter_fn(target, name)), "internal/service", name, value)
+
+            # Bind `name` at definition time (default argument) so the filter
+            # closure does not capture the loop variable by reference.
+            def emit_filter(target: Context, _name: str = name) -> bool:
+                return filter_fn(target, _name)
+
+            self.ctx.events.emit(
+                _ServiceFilterCtx(emit_filter),
+                "internal/service",
+                name,
+                value,
+            )
         return affected

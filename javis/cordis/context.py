@@ -38,6 +38,10 @@ class Context:
         self._isolate = IsolationMap()
         self._intercept = InterceptMap()
         self._meta: dict[str, Any] = {}
+        # Accessor/mixin property declarations scoped to this context; child
+        # contexts resolve them through the `_parent` chain (children shadow
+        # ancestors, siblings are independent).
+        self._props: dict[str, dict[str, Any]] = {}
 
         self.registry = RegistryService(self)
         self.fiber = Fiber(self, {}, {}, None)  # root fiber (runtime = None)
@@ -66,6 +70,7 @@ class Context:
         obj.reflect = parent.reflect
         obj.logger = parent.logger
         obj.fiber = parent.fiber
+        obj._props = {}  # own declarations only; ancestors resolve via _parent
         obj._meta = dict(meta or {})
         for key, value in (meta or {}).items():
             setattr(obj, key, value)

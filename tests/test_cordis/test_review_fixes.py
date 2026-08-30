@@ -165,9 +165,10 @@ async def test_accessor_setter_reachable():
 
     fiber = ctx.plugin(apply)
     await fiber
-    assert ctx.set("computed", 99) is True
+    # Accessors are scoped to the declaring fiber's context.
+    assert fiber.ctx.set("computed", 99) is True
     assert stored == [99]
-    assert ctx.get("computed") == 99
+    assert fiber.ctx.get("computed") == 99
     await fiber.dispose()
 
 
@@ -180,7 +181,7 @@ async def test_accessor_without_setter_raises():
     fiber = ctx.plugin(apply)
     await fiber
     with pytest.raises(RuntimeError):
-        ctx.set("ro", 2)
+        fiber.ctx.set("ro", 2)
 
 
 async def test_mixin_write_path_works():
@@ -197,9 +198,10 @@ async def test_mixin_write_path_works():
 
     fiber = ctx.plugin(provider)
     await fiber
-    assert ctx.get("value") == 1
-    assert ctx.set("value", 7) is True
-    assert ctx.get("value") == 7
+    # Mixins are per-context accessors, readable on the declaring context.
+    assert fiber.ctx.get("value") == 1
+    assert fiber.ctx.set("value", 7) is True
+    assert fiber.ctx.get("value") == 7
     await fiber.dispose()
 
 
