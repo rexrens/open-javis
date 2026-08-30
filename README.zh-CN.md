@@ -8,7 +8,7 @@
 
 - **前端** — 基于 **openharness** 的 React/Ink 终端界面，并持续为 javis 定制改造。你不需要写 TypeScript：前端由 AI 维护，你只管 Python。
 - **后端** — **自研的 Python AgentLoop**（`corecoder/`）：LLM 工具调用循环、并行工具执行、上下文压缩、重试/退避和成本统计。
-- **可扩展性** — **插件系统（规划中）**，借鉴 DeepSeek Harness 的思路，通过可插拔的插件承载各类扩展方案。
+- **可扩展性** — **Cordis 风格插件系统**（借鉴 DeepSeek Harness）：工具、斜杠命令、甚至 Agent 引擎本体都可通过 `cordis.yml` 组合文件插件化。
 
 由两层组成：
 
@@ -19,7 +19,7 @@
 
 - **基于 openharness 前端** — React/Ink TUI 从 openharness fork 而来，并针对 javis 持续定制；前端改动由 AI 协助完成，你永远不需要写 TypeScript。
 - **自研 AgentLoop** — Python 智能体引擎（`corecoder/`）从零编写：工具循环、并行执行、上下文压缩、重试、成本统计。
-- **插件系统（规划中）** — 借鉴 DeepSeek Harness **"一切皆插件"** 的理念：模型适配器、工具注册表，甚至 Agent 循环本身都将可插拔、可替换。
+- **插件系统** — 借鉴 DeepSeek Harness **"一切皆插件"** 的理念：工具注册表、斜杠命令、甚至 Agent 循环本身都可插拔、可替换（Cordis 服务机制）。
 - **任意 OpenAI 兼容模型** — DeepSeek、Qwen、Kimi、GLM、Ollama 等。修改 `base_url` + `api_key` 即可切换供应商。非 OpenAI 兼容供应商（Bedrock、Vertex 等）可通过内置的 LiteLLM 后端使用。
 - **智能体工具循环** — `bash`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`，以及嵌套的子 `agent` 工具。多个工具调用**并行执行**（基于线程池，灵感来自 Claude Code 的 `StreamingToolExecutor`）。
 - **流式 TUI** — React + Ink 终端前端，支持 Markdown 渲染、工具记录、权限/编辑确认弹窗、主题/权限/轮次选择器，以及图片附件。
@@ -84,8 +84,6 @@ uv run javis -p "解释一下这个仓库"
 
 ## 配置
 
-代理引擎固定为内建 `corecoder` backend（见 `javis/engines/registry.py`）。旧的 `--engine` / `JAVIS_ENGINE` / `config.json` 的 `engine` 选择层已移除；引擎 backend 未来以插件提供服务的方式回归（插件化）。
-
 `config.json` 位于 javis 工作区（默认 `~/.javis`，可通过 `JAVIS_WORKSPACE` 或 `--workspace` 覆盖）：
 
 ```json
@@ -111,6 +109,56 @@ uv run javis -p "解释一下这个仓库"
 | `CORECODER_MAX_TOKENS`、`CORECODER_TEMPERATURE`、`CORECODER_MAX_CONTEXT` | 生成参数 |
 | `CORECODER_PROVIDER=litellm` | 通过 LiteLLM 路由（支持 100+ 供应商） |
 | `JAVIS_WORKSPACE` | 工作区根目录（默认 `~/.javis`） |
+
+## 插件
+
+插件是 Cordis 风格的 `apply(ctx, config)` 模块，通过 **`cordis.yml` 组合文件**
+声明——默认位于 `<workspace>/cordis.yml`（缺失时自动创建）。每次会话启动时
+runtime 都会挂载组合文件，等所有插件 settle 后再读取引擎。
+
+组合文件解析顺序：`--plugins <file>` > `JAVIS_PLUGINS` > `config.json`
+`pluginsFile` > `<workspace>/cordis.yml`。entry 的 `name:` 相对组合文件所在
+目录解析，也支持绝对路径。
+
+```yaml
+# ~/.javis/cordis.yml
+- id: engine
+  name: './my_engine.py'
+  inject: ['config', 'tools', 'host']
+- id: extra-tools
+  name: './extra_tools.py'
+  inject: ['tools']
+```
+
+```python
+# my_engine.py — 替换内建 CoreCoderEngine 的引擎插件
+from javis.contracts import ENGINE_SERVICE
+
+
+def apply(ctx):
+    cfg = ctx.get('config')       # JavisConfig
+    tools = ctx.get('tools')      # ToolRegistry
+    host = ctx.get('host')        # HostContext（cwd/session_id/tool_metadata/…）
+    engine = build_my_engine(cfg, tools=tools.all(), host=host)
+    ctx.provide(ENGINE_SERVICE, engine)
+```
+
+内建服务：`config`（`JavisConfig`）、`tools`（`ToolRegistry`）、`commands`
+（`CommandRegistry`）、`host`（`HostContext`）由宿主提供、不可撤销；`engine`
+由插件提供——首个成功提供者生效，缺失/非法引擎回退到内建 corecoder。`llm`
+接缝保留给后续里程碑。
+
+工具/命令插件使用 disposer 模式，卸载时自动清理：
+
+```python
+def apply(ctx):
+    tools = ctx.get('tools')
+    ctx.effect(tools.register(MyTool()))          # 卸载时自动反注册
+    commands = ctx.get('commands')
+    ctx.effect(commands.register(Command('hello', 'Say hello', handler)))
+```
+
+完整契约参考 [docs/plugins.md](docs/plugins.md)。
 
 ## 使用方法
 

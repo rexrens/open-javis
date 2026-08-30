@@ -3,8 +3,9 @@
 The host (runtime / TUI / commands) talks to exactly one object: an
 ``AgentEngine`` that owns conversation history and usage, and yields
 ``AgentEvent`` streams per turn. The built-in implementation is
-``javis.engines.corecoder.engine.CoreCoderEngine``; future engine
-replacements (e.g. via the plugin system) implement this same protocol.
+``javis.engines.corecoder.engine.CoreCoderEngine``; engine plugins provide an
+instance of this protocol under the ``engine`` service (see
+``javis.contracts.services``) to replace it.
 
 This replaces the old two-level seam (``AgentBackend`` protocol + a
 ``QueryEngine`` shell) with a single contract.
@@ -32,6 +33,14 @@ class AgentEngine(Protocol):
 
         def clear_history(self) -> None:
             '''Clear engine-internal history.'''
+
+        def set_permission_checker(self, checker) -> None:
+            '''Attach the host's async permission hook
+            ``checker(tool_name, arguments) -> "allow" | deny-reason``.
+            The host calls this on startup when present; implementations that
+            execute tools (e.g. corecoder's agent loop) forward it to their
+            tool-execution path so the TUI's ask/deny flow keeps working.
+            '''
     """
 
     @property

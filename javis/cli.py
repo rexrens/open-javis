@@ -32,6 +32,7 @@ def main(
     model: str | None = typer.Option(None, "--model", help="Model override for this session"),
     workspace: str | None = typer.Option(None, "--workspace", help="Path to the javis workspace (defaults to ~/.javis)"),
     max_turns: int | None = typer.Option(None, "--max-turns", help="Override max turns"),
+    plugins: str | None = typer.Option(None, "--plugins", help="Plugin composition file (cordis.yml); defaults to <workspace>/cordis.yml"),
     cwd: str = typer.Option(str(Path.cwd()), "--cwd", help="Working directory"),
     backend_only: bool = typer.Option(False, "--backend-only", hidden=True),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
@@ -69,6 +70,7 @@ def main(
                     workspace=workspace_root,
                     model=model,
                     max_turns=max_turns,
+                    plugins=plugins,
                 )
             )
         )
@@ -82,6 +84,7 @@ def main(
                     workspace=workspace_root,
                     model=model,
                     max_turns=max_turns,
+                    plugins=plugins,
                 )
             )
         )
@@ -93,6 +96,7 @@ def main(
                 workspace=workspace_root,
                 model=model,
                 max_turns=max_turns,
+                plugins=plugins,
             )
         )
     )

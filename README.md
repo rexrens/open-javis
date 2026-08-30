@@ -8,7 +8,7 @@ You use Claude Code every day, but it's a closed box — you can't shape it to y
 
 - **Frontend** — built on the **openharness** React/Ink terminal UI and continuously customized for javis. You never need to write TypeScript: the frontend is AI-maintained, while you stay in Python.
 - **Backend** — a **self-developed AgentLoop in Python** (`corecoder/`): LLM tool-calling loop, parallel tool execution, context compression, retry/backoff and cost tracking.
-- **Extensibility** — a **plugin system is planned**, following the DeepSeek Harness approach, to deliver a wide range of extensions through pluggable plugins.
+- **Extensibility** — a **Cordis-style plugin system** (following the DeepSeek Harness approach): tools, slash commands, and even the agent engine itself are pluggable through a `cordis.yml` composition.
 
 Two layers:
 
@@ -19,7 +19,7 @@ Two layers:
 
 - **Built on the openharness frontend** — the React/Ink TUI is forked from openharness and customized for javis; frontend changes are AI-assisted, so you never have to write TypeScript.
 - **Self-developed AgentLoop** — the Python agent engine (`corecoder/`) is written from scratch: tool loop, parallel execution, context compression, retries, cost tracking.
-- **Plugin system (planned)** — following the DeepSeek Harness **"everything is a plugin"** philosophy: model adapters, tool registry, even the agent loop itself will be pluggable and swappable.
+- **Plugin system** — following the DeepSeek Harness **"everything is a plugin"** philosophy: the tool registry, slash commands, and even the agent loop itself are pluggable and swappable via Cordis services.
 - **Any OpenAI-compatible model** — DeepSeek, Qwen, Kimi, GLM, Ollama, etc. Switch providers by changing `base_url` + `api_key`. Non-OpenAI providers (Bedrock, Vertex, …) work via the built-in LiteLLM backend.
 - **Agentic tool loop** — `bash`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, plus a nested sub-`agent` tool. Multiple tool calls execute **in parallel** (thread-pool based, inspired by Claude Code's `StreamingToolExecutor`).
 - **Streaming TUI** — React + Ink terminal frontend with markdown rendering, tool transcripts, permission/edit modals, theme/permission/turns selectors, and image attachments.
@@ -84,8 +84,6 @@ uv run javis -p "explain this repo"
 
 ## Configuration
 
-The agent engine is fixed to the built-in `corecoder` backend (see `javis/engines/registry.py`). The old `--engine` / `JAVIS_ENGINE` / `config.json` `engine` selection layer was removed; engine backends are expected to come back as plugin-provided services (pluginization).
-
 `config.json` lives in the javis workspace (default `~/.javis`, override with `JAVIS_WORKSPACE` or `--workspace`):
 
 ```json
@@ -111,6 +109,59 @@ Alternatively, use environment variables (read from `.env` in the working direct
 | `CORECODER_MAX_TOKENS`, `CORECODER_TEMPERATURE`, `CORECODER_MAX_CONTEXT` | Generation settings |
 | `CORECODER_PROVIDER=litellm` | Route through LiteLLM (100+ providers) |
 | `JAVIS_WORKSPACE` | Workspace root (default `~/.javis`) |
+
+## Plugins
+
+Plugins are Cordis-style `apply(ctx, config)` modules declared in a
+**`cordis.yml` composition** — by default `<workspace>/cordis.yml` (auto-created
+when missing). The runtime mounts the composition on every session and waits
+for all plugins to settle before reading the engine.
+
+Resolution order: `--plugins <file>` > `JAVIS_PLUGINS` > `config.json`
+`pluginsFile` > `<workspace>/cordis.yml`. Entry `name:` paths resolve against
+the composition file's directory; absolute paths also work.
+
+```yaml
+# ~/.javis/cordis.yml
+- id: engine
+  name: './my_engine.py'
+  inject: ['config', 'tools', 'host']
+- id: extra-tools
+  name: './extra_tools.py'
+  inject: ['tools']
+```
+
+```python
+# my_engine.py — a plugin that replaces the built-in CoreCoderEngine
+from javis.contracts import ENGINE_SERVICE
+
+
+def apply(ctx):
+    cfg = ctx.get('config')       # JavisConfig
+    tools = ctx.get('tools')      # ToolRegistry
+    host = ctx.get('host')        # HostContext (cwd/session_id/tool_metadata/…)
+    engine = build_my_engine(cfg, tools=tools.all(), host=host)
+    ctx.provide(ENGINE_SERVICE, engine)
+```
+
+Built-in services: `config` (`JavisConfig`), `tools` (`ToolRegistry`),
+`commands` (`CommandRegistry`) and `host` (`HostContext`) are provided by the
+host and never revoked; `engine` is provided by a plugin — the first successful
+provider wins, a missing/invalid engine falls back to the built-in corecoder
+engine. `llm` stays reserved for a later milestone.
+
+Tools/commands plugins follow the disposer pattern so unloads clean up
+automatically:
+
+```python
+def apply(ctx):
+    tools = ctx.get('tools')
+    ctx.effect(tools.register(MyTool()))          # unregister on unload
+    commands = ctx.get('commands')
+    ctx.effect(commands.register(Command('hello', 'Say hello', handler)))
+```
+
+See [docs/plugins.md](docs/plugins.md) for the full contract reference.
 
 ## Usage
 

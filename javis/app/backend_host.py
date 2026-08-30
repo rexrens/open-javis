@@ -478,12 +478,18 @@ class BackendHost:
         return "allow" if allowed else "deny"
 
     def _inject_permission_checker(self) -> None:
-        """Wire the modal permission channel into the agent's tool loop.
+        """Wire the modal permission channel into the engine's tool loop.
 
-        Only corecoder-backed engines expose a ``permission_checker`` on their
-        inner agent; test doubles simply skip injection.
+        Contract-level hook first (``AgentEngine.set_permission_checker``);
+        legacy corecoder path (``engine.agent.permission_checker``) as a
+        fallback. Test doubles that implement neither simply skip injection.
         """
-        agent = getattr(self._bundle.engine, "agent", None)
+        engine = self._bundle.engine
+        setter = getattr(engine, "set_permission_checker", None)
+        if callable(setter):
+            setter(self._check_permission)
+            return
+        agent = getattr(engine, "agent", None)
         if agent is not None and hasattr(agent, "permission_checker"):
             agent.permission_checker = self._check_permission
 
@@ -599,6 +605,7 @@ async def run_backend_mode(
     max_turns: int | None = None,
     restore_messages: list[dict[str, Any]] | None = None,
     restore_tool_metadata: dict[str, object] | None = None,
+    plugins: str | Path | None = None,
 ) -> int:
     """Run the structured React backend host."""
     import os
@@ -611,9 +618,13 @@ async def run_backend_mode(
         restore_messages=restore_messages,
         restore_tool_metadata=restore_tool_metadata,
         workspace=workspace,
+        plugins=plugins,
     )
     host = BackendHost(bundle=bundle)
-    return await host.run()
+    try:
+        return await host.run()
+    finally:
+        await bundle.close()
 
 
 __all__ = ["decide_permission", "run_backend_mode"]

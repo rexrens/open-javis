@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_ENGINE = "corecoder"
 CONFIG_FILENAME = "config.json"
+COMPOSITION_FILENAME = "cordis.yml"
 
 
 def _to_camel(name: str) -> str:
@@ -94,6 +95,7 @@ class JavisConfig(BaseModel):
 
     provider: str | None = None
     model: str | None = None
+    plugins_file: str | None = None  # cordis.yml composition (CLI/env override it)
     fallback_provider: str | None = None  # reserved — not implemented yet
     fallback_model: str | None = None  # reserved — not implemented yet
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
@@ -170,6 +172,17 @@ def ensure_default_config(workspace: str | Path | None = None) -> Path:
     return path
 
 
+def ensure_default_composition(workspace: str | Path | None = None) -> Path:
+    """Create ``<workspace>/cordis.yml`` with an empty composition if missing."""
+    root = get_workspace_root(workspace)
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / COMPOSITION_FILENAME
+    if not path.exists():
+        path.write_text("[]\n", encoding="utf-8")
+        log.info("Created default plugin composition at %s", path)
+    return path
+
+
 def load_config(
     cwd: str | Path | None = None,
     workspace: str | Path | None = None,
@@ -240,6 +253,7 @@ def resolve_provider_and_model(
 
 
 __all__ = [
+    "COMPOSITION_FILENAME",
     "CONFIG_FILENAME",
     "DEFAULT_ENGINE",
     "DEFAULT_TEMPLATE",
@@ -253,6 +267,7 @@ __all__ = [
     "ProviderConfig",
     "SessionConfig",
     "deep_merge",
+    "ensure_default_composition",
     "ensure_default_config",
     "load_config",
     "resolve_provider_and_model",

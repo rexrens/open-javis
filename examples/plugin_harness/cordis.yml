@@ -1,0 +1,14 @@
+# 插件化 standalone harness 示例组合文件
+#
+# 加载顺序由 cordis 依赖驱动（inject），但引擎插件在 apply 内快照
+# tools.all()，所以工具插件条目要排在引擎插件之前。
+
+- id: extra-tools
+  name: ./extra_tools.py
+  inject: [tools, host]
+
+- id: harness-engine
+  name: ./harness_plugin.py
+  inject: [config, tools, commands, host]
+  config:
+    provider: auto   # auto | scripted | openai（也可用环境变量 HARNESS_PROVIDER 覆盖）

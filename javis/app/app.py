@@ -22,7 +22,7 @@ from pathlib import Path
 
 from javis.app.backend_host import run_backend_mode
 from javis.app.react_launcher import launch_react_tui
-from javis.app.runtime import build_runtime, handle_line
+from javis.app.runtime import RuntimeBundle, build_runtime, handle_line
 from javis.contracts.messages import ConversationMessage
 from javis.contracts.types import (
     AgentError,
@@ -39,6 +39,7 @@ async def run_tui_mode(
     workspace: str | Path | None = None,
     model: str | None = None,
     max_turns: int | None = None,
+    plugins: str | Path | None = None,
     backend_only: bool = False,
 ) -> int:
     """Run the interactive React TUI, or the JSON-lines backend it spawns.
@@ -52,12 +53,14 @@ async def run_tui_mode(
             workspace=workspace,
             model=model,
             max_turns=max_turns,
+            plugins=plugins,
         )
     return await launch_react_tui(
         cwd=cwd,
         workspace=workspace,
         model=model,
         max_turns=max_turns,
+        plugins=plugins,
     )
 
 
@@ -68,18 +71,21 @@ async def run_print_mode(
     workspace: str | Path | None = None,
     model: str | None = None,
     max_turns: int | None = None,
+    plugins: str | Path | None = None,
 ) -> int:
     """Run a single prompt and print the assistant output to stdout."""
     cwd_path = str(Path(cwd or Path.cwd()).resolve())
     previous_cwd = Path.cwd()
     os.chdir(cwd_path)
 
+    bundle: RuntimeBundle | None = None
     try:
         bundle = await build_runtime(
             cwd=cwd_path,
             model=model,
             max_turns=max_turns,
             workspace=workspace,
+            plugins=plugins,
         )
 
         async def _print_system(message: str) -> None:
@@ -116,6 +122,8 @@ async def run_print_mode(
         )
         return 1 if saw_error else 0
     finally:
+        if bundle is not None:
+            await bundle.close()
         os.chdir(previous_cwd)
 
 

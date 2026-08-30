@@ -1,15 +1,16 @@
 """Runtime assembly and request dispatch for javis.
 
-This is the javis equivalent of ``openharness.ui.runtime`` — but stripped of
-MCP, hooks, permissions, bridge, tasks, coordinator, auth, sandbox, plugins,
-themes and output-styles. What remains:
+What remains:
 
 - ``RuntimeBundle`` — engine + commands + app_state + session_backend
 - ``build_runtime`` — assembles a bundle with an ``AgentEngine``
 - ``handle_line`` — the single dispatch point (slash commands + agent turns)
 
-Configuration lives in ``javis.session.config`` (spec/config.md v2); the
-system-prompt builder (``build_system_prompt``) lives here.
+Plugin wiring lives in ``build_runtime``: a fresh Cordis context provides the
+built-in services (``config`` / ``tools`` / ``commands`` / ``host``), mounts
+the plugin composition via the Cordis loader, and picks the engine from the
+``engine`` service when a plugin provided one (falling back to the built-in
+``CoreCoderEngine`` otherwise).
 
 ``handle_line`` yields ``AgentEvent`` straight through to the host's
 ``render_event`` callback — no ``StreamEvent`` translation layer.
@@ -17,6 +18,9 @@ system-prompt builder (``build_system_prompt``) lives here.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,12 +29,25 @@ from uuid import uuid4
 
 from javis.commands.registry import CommandContext, CommandRegistry, create_default_command_registry
 from javis.contracts.engine import AgentEngine
+from javis.contracts.host import HostContext
 from javis.contracts.messages import ConversationMessage, sanitize_conversation_messages
+from javis.contracts.services import (
+    COMMANDS_SERVICE,
+    CONFIG_SERVICE,
+    ENGINE_SERVICE,
+    HOST_SERVICE,
+    TOOLS_SERVICE,
+)
 from javis.contracts.types import AgentEvent, AgentTextDelta, AgentTurnEnd
-from javis.session.config import JavisConfig
+from javis.cordis import Context
+from javis.cordis.loader import Loader
+from javis.cordis.registry import settle
+from javis.session.config import JavisConfig, ensure_default_composition
 from javis.session.session_storage import JavisSessionBackend
 from javis.session.state import AppState, AppStateStore
 from javis.session.workspace import initialize_workspace
+
+log = logging.getLogger(__name__)
 
 SystemPrinter = Callable[[str], Awaitable[None]]
 StreamRenderer = Callable[[AgentEvent], Awaitable[None]]
@@ -64,6 +81,31 @@ class RuntimeBundle:
     session_id: str
     system_prompt: str = ""
     settings_overrides: dict[str, Any] = field(default_factory=dict)
+    context: Context | None = None
+
+    async def close(self) -> None:
+        """Dispose every plugin fiber: effects unwind, provided services revoke.
+
+        Idempotent — after the first call the registry no longer tracks
+        fibers. Teardown errors are logged, never raised.
+        """
+        if self.context is None:
+            return
+        fibers = [
+            fiber
+            for runtime in list(self.context.registry.values())
+            for fiber in list(runtime.fibers)
+        ]
+        disposals: list[Any] = []
+        for fiber in reversed(fibers):
+            try:
+                result = fiber.dispose()
+                if result is not None:
+                    disposals.append(result)
+            except BaseException as exc:  # noqa: BLE001 — teardown must not raise
+                log.warning("error disposing plugin fiber %s: %s", fiber.name, exc)
+        if disposals:
+            await asyncio.gather(*disposals, return_exceptions=True)
 
 
 def _build_default_engine(
@@ -125,12 +167,17 @@ async def build_runtime(
     restore_tool_metadata: dict[str, object] | None = None,
     session_backend: JavisSessionBackend | None = None,
     workspace: str | Path | None = None,
+    plugins: str | Path | None = None,
 ) -> RuntimeBundle:
     """Assemble a ``RuntimeBundle`` backed by an ``AgentEngine``.
 
-    The engine is built from config by ``_build_default_engine`` — engine
-    selection lives in that one seam (tests patch it with a fake; the future
-    plugin system provides an engine there).
+    Plugin wiring: a fresh Cordis context provides the built-in services
+    (``config`` / ``tools`` / ``commands`` / ``host``), mounts the plugin
+    composition — CLI ``--plugins`` > ``JAVIS_PLUGINS`` > ``pluginsFile`` >
+    ``<workspace>/cordis.yml`` — and waits for every fiber to settle. A
+    plugin that provided ``engine`` supplies the engine object; otherwise
+    ``_build_default_engine`` builds the built-in ``CoreCoderEngine`` (the
+    seam tests patch with a fake).
     """
     cwd_resolved = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd())
     workspace_root = initialize_workspace(workspace)
@@ -154,15 +201,59 @@ async def build_runtime(
     cfg = load_config(cwd=cwd_resolved, workspace=workspace_root)
     commands = create_default_command_registry()
 
-    engine_obj = _build_default_engine(
+    composition = _resolve_composition_path(
         cfg=cfg,
-        model=model,
-        system_prompt=system_prompt_text,
+        workspace_root=workspace_root,
+        plugins=plugins,
         cwd=cwd_resolved,
-        max_turns=max_turns,
-        tool_metadata=tool_metadata,
-        workspace=workspace_root,
     )
+
+    ctx = Context()
+    ctx.baseUrl = str(workspace_root)
+    # Built-in services: owner is the root fiber, so they are never revoked.
+    ctx.provide(CONFIG_SERVICE, cfg)
+    from javis.engines.corecoder.tools import create_default_tool_registry
+
+    ctx.provide(TOOLS_SERVICE, create_default_tool_registry())
+    ctx.provide(COMMANDS_SERVICE, commands)
+    ctx.provide(
+        HOST_SERVICE,
+        HostContext(
+            cwd=cwd_resolved,
+            workspace=str(workspace_root),
+            session_id=session_id,
+            tool_metadata=tool_metadata,
+            model_override=model,
+            max_turns_override=max_turns,
+            system_prompt=system_prompt_text,
+        ),
+    )
+
+    loader_fiber = ctx.plugin(Loader, {"file": str(composition)})
+    try:
+        await loader_fiber
+        await settle(ctx)
+    except BaseException:
+        log.exception("Plugin composition %s failed to load", composition)
+        raise
+
+    engine_obj = ctx.get(ENGINE_SERVICE)
+    if engine_obj is None or not isinstance(engine_obj, AgentEngine):
+        if engine_obj is not None:
+            log.warning(
+                "engine service from plugin is not an AgentEngine (%s); "
+                "falling back to the built-in engine",
+                type(engine_obj).__name__,
+            )
+        engine_obj = _build_default_engine(
+            cfg=cfg,
+            model=model,
+            system_prompt=system_prompt_text,
+            cwd=cwd_resolved,
+            max_turns=max_turns,
+            tool_metadata=tool_metadata,
+            workspace=workspace_root,
+        )
     # Explicit CLI overrides win over the engine's resolved defaults.
     if model is not None:
         engine_obj.set_model(model)
@@ -199,7 +290,39 @@ async def build_runtime(
         session_backend=session_backend or JavisSessionBackend(workspace_root),
         session_id=session_id,
         system_prompt=system_prompt_text,
+        context=ctx,
     )
+
+
+def _resolve_composition_path(
+    *,
+    cfg: JavisConfig,
+    workspace_root: str | Path,
+    plugins: str | Path | None,
+    cwd: str,
+) -> Path:
+    """Resolve the plugin composition file: CLI > env > config > default.
+
+    CLI-supplied paths resolve against ``cwd``; env/config values against the
+    workspace root; the default is ``<workspace>/cordis.yml`` (created when
+    missing). An explicitly referenced but missing file is a hard error.
+    """
+    explicit: str | Path | None = plugins
+    base = Path(cwd)
+    if explicit is None:
+        explicit = os.environ.get("JAVIS_PLUGINS")
+        base = Path(workspace_root)
+    if not explicit:
+        explicit = cfg.plugins_file
+        base = Path(workspace_root)
+    if explicit:
+        path = Path(explicit).expanduser()
+        if not path.is_absolute():
+            path = base / path
+        if not path.exists():
+            raise ValueError(f"Plugin composition file not found: {path}")
+        return path.resolve()
+    return ensure_default_composition(workspace_root)
 
 
 def _save_session(bundle: RuntimeBundle) -> None:

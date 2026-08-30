@@ -1,10 +1,9 @@
-"""Minimal slash-command registry for javis.
+"""Slash-command registry for javis.
 
-Forked conceptually from openharness.commands but trimmed to the essentials:
-register commands, look them up by ``/name``, dispatch. No plugin hooks, no
-skill lookup, no memory backend — just built-in commands.
-
-To add a command: register it in ``create_default_command_registry``.
+Register commands, look them up by ``/name``, dispatch. The registry is also
+the plugin system's ``commands`` service: plugins register commands with
+``ctx.get("commands").register(...)`` and hand the returned disposer to
+``ctx.effect`` so unloads restore the previous command.
 """
 
 from __future__ import annotations

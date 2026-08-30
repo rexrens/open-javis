@@ -203,6 +203,14 @@ class CoreCoderEngine(AgentEngine):
         if self._max_turns is not None:
             self._agent.max_rounds = self._max_turns
 
+    def set_permission_checker(
+        self,
+        checker: Any,
+    ) -> None:
+        """Optional AgentEngine hook: forward the host's permission hook to
+        the inner agent loop (called before each tool execution)."""
+        self._agent.permission_checker = checker
+
     def clear(self) -> None:
         self._messages.clear()
         self._usage = UsageSnapshot()

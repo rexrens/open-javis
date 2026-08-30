@@ -78,6 +78,7 @@ def _build_backend_command(
     workspace: str | Path | None = None,
     model: str | None = None,
     max_turns: int | None = None,
+    plugins: str | Path | None = None,
 ) -> list[str]:
     """Return the command the React frontend will spawn to start the backend."""
     command = [sys.executable, "-m", "javis", "--backend-only"]
@@ -89,6 +90,8 @@ def _build_backend_command(
         command.extend(["--model", model])
     if max_turns is not None:
         command.extend(["--max-turns", str(max_turns)])
+    if plugins:
+        command.extend(["--plugins", str(plugins)])
     return command
 
 
@@ -98,6 +101,7 @@ async def launch_react_tui(
     workspace: str | Path | None = None,
     model: str | None = None,
     max_turns: int | None = None,
+    plugins: str | Path | None = None,
 ) -> int:
     """Launch the React terminal frontend."""
     frontend_dir = _get_frontend_dir()
@@ -122,11 +126,12 @@ async def launch_react_tui(
     env["OPENHARNESS_FRONTEND_CONFIG"] = json.dumps(
         {
             "backend_command": _build_backend_command(
-                cwd=cwd_path,
-                workspace=workspace,
-                model=model,
-                max_turns=max_turns,
-            ),
+            cwd=cwd_path,
+            workspace=workspace,
+            model=model,
+            max_turns=max_turns,
+            plugins=plugins,
+        ),
             "initial_prompt": None,
             "theme": _resolve_theme(),
         }

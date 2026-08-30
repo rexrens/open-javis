@@ -20,28 +20,7 @@ from typing import Any
 
 from . import Context, FiberState
 from .loader import Loader
-
-
-async def settle(ctx: Context) -> None:
-    """Wait until every fiber has settled into a stable state."""
-    while True:
-        in_flight = [
-            fiber.inertia
-            for runtime in ctx.registry.values()
-            for fiber in list(runtime.fibers)
-            if fiber.inertia is not None
-        ]
-        if not in_flight:
-            await asyncio.sleep(0.05)
-            in_flight = [
-                fiber.inertia
-                for runtime in ctx.registry.values()
-                for fiber in list(runtime.fibers)
-                if fiber.inertia is not None
-            ]
-            if not in_flight:
-                return
-        await asyncio.gather(*in_flight, return_exceptions=True)
+from .registry import settle
 
 
 def collect_fibers(ctx: Context) -> list[Any]:
