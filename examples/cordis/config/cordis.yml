@@ -1,0 +1,3 @@
+- name: './config-demo.py'
+  config:
+    targets: ['alpha', 'beta']
