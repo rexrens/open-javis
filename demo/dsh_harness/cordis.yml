@@ -1,0 +1,33 @@
+# Harness demo composition — the whole harness is plugins.
+#
+# Load order is decided by the dependency graph (Cordis), not by this list:
+# the driver stays PENDING until llm / tools / systemPrompt / agentLoop are
+# all ACTIVE. Run it with `demo/cli.py` (drives the scenarios) or the
+# generic Cordis runner: `python -m javis.cordis.cli run <this file>`.
+
+- id: agent-loop-config
+  name: './plugins/agent_loop_config.py'
+  config:
+    max_parallel_tool_calls: 2
+
+- id: system-prompt
+  name: './plugins/system_prompt.py'
+
+- id: llm
+  name: './plugins/llm.py'
+  config:
+    # null → $HARNESS_DEMO_SCENARIO (set by demo/cli.py) → "text"
+    scenario: null
+
+- id: demo-tools
+  name: './plugins/demo_tools.py'
+
+- id: middleware
+  name: './plugins/middleware.py'
+
+- id: observer
+  name: './plugins/observer.py'
+
+- id: driver
+  name: './plugins/driver.py'
+  inject: [llm, tools, systemPrompt, agentLoop]
