@@ -190,6 +190,3 @@ tests/                 # tutorial 1-6 + scope/update/hmr/coverage/loader (85 tes
 - [x] M1 Cordis core (context/events/fiber/registry/reflect/service)
 - [x] M2 config (pydantic), loader, CLI, examples
 - [x] M3 HMR + diagnostics
-- [ ] M4 harness services on top of Cordis (llm/session/agent/tools, model
-      routing, approval/sandbox) — architecture reserved for `dshlike.harness`
-- [ ] Web GUI / client

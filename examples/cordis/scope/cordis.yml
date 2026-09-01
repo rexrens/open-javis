@@ -1,0 +1,2 @@
+# Chapter 8 — ctx.isolate: per-scope service isolation
+- name: './scope.py'

@@ -1,5 +1,13 @@
 # 插件化 standalone harness 示例
 
+> **在 Cordis 插件方案下接入一个独立实现的引擎**（“AgentEngine 接缝可替换”）。
+>
+> 与 [`examples/cordis`](../cordis/README.md)（插件系统接口教程）、
+> [`examples/dsh_harness`](../dsh_harness/README.md)（引擎由插件装配的 dsh 示例）
+> 三目录互补：dsh_harness 的引擎**是插件组成的**（dsh 哲学
+> "everything is a plugin"）；本示例的引擎**是独立写好的**，插件只做组合根
+> 把它接进 javis 宿主——对比表见 dsh_harness 的 README。
+
 这是一个完全独立于 javis 内建 harness（`HarnessEngine`）的
 `AgentEngine` 实现，通过 cordis 插件机制接入 javis。它演示了"单独写一个
 harness"的完整姿势：harness 本体只依赖 `javis.contracts`，装配发生在插件

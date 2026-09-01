@@ -1,0 +1,2 @@
+# Chapter 7 — Service subclasses: constructor auto-registration + inject
+- name: './service.py'
