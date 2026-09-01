@@ -16,8 +16,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from .contracts import InboxTarget, UserMessage
 from .session import Session
+from .types import InboxTarget, UserMessage
 
 Callback = Callable[..., Any]
 

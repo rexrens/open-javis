@@ -1,8 +1,8 @@
-"""HarnessEngine factory — end-to-end assembly (dsh adapter + real provider).
+"""HarnessEngine factory — end-to-end assembly (dsh-style LLMAdapter).
 
 Mirrors the old ``CoreCoderEngine.build``: config parsing stays in the caller
 (the runtime resolves provider/model/api_key from ``JavisConfig``); this
-method owns assembly — the OpenAI-compatible provider (DeepSeek/Qwen/Kimi/
+method owns assembly — the OpenAI-compatible adapter (DeepSeek/Qwen/Kimi/
 Ollama/…), the javis tool registry snapshot (built-ins + plugin tools), and
 the ``HarnessEngine`` shell.
 """
@@ -10,9 +10,11 @@ the ``HarnessEngine`` shell.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from javis.contracts.llm import LLMProvider
+if TYPE_CHECKING:
+    from javis.llm import LLMAdapter
+
 from javis.contracts.tools import ToolRegistry as JavisToolRegistry
 
 from .compression import HISTORY_MAX_MESSAGES, MAX_TOOL_OUTPUT_CHARS
@@ -37,27 +39,27 @@ def build(
     max_steps_per_turn: int = 20,
     history_max_messages: int = HISTORY_MAX_MESSAGES,
     tool_output_max_chars: int = MAX_TOOL_OUTPUT_CHARS,
-    provider: LLMProvider | None = None,
+    adapter: LLMAdapter | None = None,
 ) -> HarnessEngine:
     """Build the harness engine end-to-end.
 
-    Pass ``provider`` to inject an existing LLM provider (tests/demos use
-    ``ScriptedProvider``); otherwise an ``OpenAICompatProvider`` is built
+    Pass ``adapter`` to inject an existing LLM adapter (tests/demos use
+    ``ScriptedAdapter``); otherwise an ``OpenAICompatAdapter`` is built
     from ``model`` / ``api_key`` / ``base_url`` / ``max_tokens``.
     """
-    if provider is None:
-        from javis.llm.providers import OpenAICompatProvider
+    if adapter is None:
+        from javis.llm import OpenAICompatAdapter
 
-        provider_kwargs: dict[str, Any] = {
+        adapter_kwargs: dict[str, Any] = {
             "model": model,
             "api_key": api_key,
             "base_url": base_url,
         }
         if max_tokens is not None:
-            provider_kwargs["max_tokens"] = max_tokens
-        provider = OpenAICompatProvider(**provider_kwargs)
+            adapter_kwargs["max_tokens"] = max_tokens
+        adapter = OpenAICompatAdapter(**adapter_kwargs)
     return HarnessEngine(
-        provider=provider,
+        adapter=adapter,
         provider_name=provider_name,
         model=model,
         system_prompt=system_prompt,

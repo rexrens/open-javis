@@ -2,8 +2,7 @@
 #
 # Load order is decided by the dependency graph (Cordis), not by this list:
 # the driver stays PENDING until llm / tools / systemPrompt / agentLoop are
-# all ACTIVE. Run it with `examples/dsh_harness/cli.py` (drives the scenarios) or the
-# generic Cordis runner: `python -m javis.cordis.cli run <this file>`.
+# all ACTIVE. Run it with `examples/dsh_harness/cli.py` (drives the scenarios).
 
 - id: agent-loop-config
   name: './plugins/agent_loop_config.py'
@@ -16,7 +15,7 @@
 - id: llm
   name: './plugins/llm.py'
   config:
-    # null → $HARNESS_DEMO_SCENARIO (set by demo/cli.py) → "text"
+    # null → $HARNESS_DEMO_SCENARIO (set by cli.py) → "text"
     scenario: null
 
 - id: demo-tools

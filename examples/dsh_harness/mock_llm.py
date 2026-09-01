@@ -1,11 +1,12 @@
-"""MockLLM: a scripted model provider for the demo (dsh adapter stand-in).
+"""MockAdapter: a scripted model provider for the demo (dsh LLMAdapter).
 
-Implements the :class:`~javis.dsh.llm.LLM` seam exactly like a real adapter:
-``prepare_call`` resolves exact-model adapter defaults (``adapterDefaults``
-into the request header, ``contextWindow`` into the request context), and
-``stream`` emits the raw streaming protocol — ``block-start`` /
-``*-delta`` / ``block-end`` / ``usage`` / ``finish`` chunks — one response
-per model call.
+Implements the :class:`~javis.llm.LLMAdapter` seam exactly like a real
+adapter: ``resolve_model`` advertises exact-model defaults (``contextWindow``
+/ ``defaultMaxTokens`` — the ``LlmRuntime`` materializes them into the
+request header/context), ``provider_retry_policy`` declares the provider's
+retry policy, and ``stream`` emits the raw streaming protocol —
+``block-start`` / ``*-delta`` / ``block-end`` / ``usage`` / ``finish``
+chunks — one response per model call.
 
 The *script* is a list of :class:`MockResponse`, consumed one per
 ``stream()`` call (the retry scenario's first response is an ``error``
@@ -23,15 +24,15 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from javis.dsh.contracts import (
+from javis.harness.llm import chunk_response
+from javis.harness.types import (
     AbortSignal,
-    LlmCallConfig,
     LlmError,
     LlmFailure,
     MaxTokensFinish,
     ToolCallBlock,
 )
-from javis.dsh.llm import PreparedCall, chunk_response
+from javis.llm.adapter import LLMAdapter, LlmProviderInfo, LlmResolvedModelInfo
 
 
 @dataclass
@@ -54,47 +55,59 @@ def _call(call_id: str, name: str, arguments: dict[str, Any]) -> ToolCallBlock:
     return ToolCallBlock(id=call_id, name=name, arguments=json.dumps(arguments, ensure_ascii=False))
 
 
-class MockLLM:
+class MockAdapter(LLMAdapter):
     """A scripted adapter over the LLM contract (no SDK at the seam)."""
 
-    def __init__(self, script: list[MockResponse], model: str = "mock-mini") -> None:
+    def __init__(
+        self,
+        script: list[MockResponse],
+        model: str = "mock-mini",
+        *,
+        max_context_tokens: int = 8192,
+        max_tokens: int = 4096,
+    ) -> None:
         self._script = list(script)
         self._model = model
+        self.max_context_tokens = max_context_tokens
+        self.max_tokens = max_tokens
         self.call_count = 0
         #: Scenario hook: ``on_tool_call(name, arguments)`` before a call is emitted.
         self.on_tool_call: Callable[[str, Any], Any] | None = None
         #: Scenario hook: ``on_call(request)`` at the start of every stream.
         self.on_call: Callable[[Any], Any] | None = None
 
-    # -- LLM service surface --------------------------------------------------
+    # -- LLMAdapter surface ---------------------------------------------------
 
-    def prepare_call(self, config: LlmCallConfig, signal: AbortSignal | None = None) -> PreparedCall:
+    def set_model(self, model: str) -> None:
+        self._model = model
+
+    def provider_info(self, provider: str) -> LlmProviderInfo:
+        return LlmProviderInfo(id=provider, name=provider)
+
+    def provider_retry_policy(self, provider: str) -> dict[str, Any] | None:
+        del provider
+        return {"retries": 1, "codes": ["TRANSIENT"]}
+
+    async def resolve_model(
+        self,
+        provider: str,
+        model: str,
+        signal: AbortSignal | None = None,
+    ) -> LlmResolvedModelInfo:
         """Exact-model adapter resolution: defaults for ``mock-mini``.
 
         The adapter owns ``maxTokens`` for this model (4096) and advertises a
-        context window — both surface as ``adapterDefaults`` / request
-        context in the loop's request-header logging.
+        context window — the ``LlmRuntime`` surfaces both as
+        ``adapterDefaults`` / request context in the loop's request-header
+        logging.
         """
-        if signal is not None:
-            signal.throw_if_aborted()
-        resolved = config
-        defaults: dict[str, bool] = {}
-        if config.model.startswith("mock-mini") and config.max_tokens is None:
-            resolved = LlmCallConfig(
-                provider=config.provider,
-                model=config.model,
-                reasoning_effort=config.reasoning_effort,
-                temperature=config.temperature,
-                max_tokens=4096,
-                stop=config.stop,
-            )
-            defaults["maxTokens"] = True
-        return PreparedCall(
-            config=resolved,
-            adapter_defaults=defaults,
-            context={"contextWindow": 8192},
-            retry_policy={"retries": 1, "codes": ["TRANSIENT"]},
-            stream=self.stream,  # the adapter binds its own stream for this registration
+        del signal
+        return LlmResolvedModelInfo(
+            provider=provider,
+            id=model,
+            name=model,
+            context_window=self.max_context_tokens,
+            default_max_tokens=self.max_tokens if model.startswith("mock-mini") else None,
         )
 
     async def stream(self, options: Any) -> AsyncIterator[Any]:
@@ -105,11 +118,11 @@ class MockLLM:
         if response.failure is not None:
             # A provider-level failure mid-stream: the adapter throws; the
             # LLM runtime normalizes it to a terminal ``error`` finish.
-            from javis.dsh.contracts import StopFinish
+            from javis.harness.types import StopFinish
 
             del StopFinish
             # Stream a partial block first so interruption semantics are real.
-            from javis.dsh.contracts import BlockStartChunk, TextDeltaChunk
+            from javis.harness.types import BlockStartChunk, TextDeltaChunk
 
             yield BlockStartChunk(index=0, block_type="text")
             yield TextDeltaChunk(index=0, text="…")
@@ -148,7 +161,7 @@ class MockLLM:
 
 
 def _usage(response: MockResponse) -> Any:
-    from javis.dsh.contracts import TokenUsage
+    from javis.harness.types import TokenUsage
 
     return TokenUsage(input_tokens=response.usage[0], output_tokens=response.usage[1])
 
@@ -157,10 +170,10 @@ def _finish(response: MockResponse) -> Any:
     if response.max_tokens:
         return MaxTokensFinish()
     if response.tool_calls:
-        from javis.dsh.contracts import ToolCallsFinish
+        from javis.harness.types import ToolCallsFinish
 
         return ToolCallsFinish()
-    from javis.dsh.contracts import StopFinish
+    from javis.harness.types import StopFinish
 
     return StopFinish()
 
@@ -171,7 +184,7 @@ def _finish(response: MockResponse) -> Any:
 
 
 def scenario_script(name: str) -> list[MockResponse]:
-    """The four built-in demo scenarios (see ``demo/cli.py --scenario``)."""
+    """The four built-in demo scenarios (see ``cli.py --scenario``)."""
     if name == "text":
         return [
             MockResponse(
@@ -237,7 +250,7 @@ def steer_hook(agent: Any) -> Callable[[str, Any], Any]:
     steering message lands in the next-step inbox *before* the step's tool
     calls execute, so the next step's pre-step claims it deterministically.
     """
-    from javis.dsh.contracts import UserMessage
+    from javis.harness.types import UserMessage
 
     fired = False
 
@@ -251,4 +264,7 @@ def steer_hook(agent: Any) -> Callable[[str, Any], Any]:
     return on_tool_call
 
 
-__all__ = ["MockLLM", "MockResponse", "scenario_script", "steer_hook"]
+__all__ = ["MockAdapter", "MockResponse", "scenario_script", "steer_hook"]
+
+# Backwards-compatible alias (pre-2026-09-01 name).
+MockLLM = MockAdapter

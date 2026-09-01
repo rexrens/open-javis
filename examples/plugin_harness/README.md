@@ -14,7 +14,7 @@ harness"的完整姿势：harness 本体只依赖 `javis.contracts`，装配发�
    这个契约，不知道你的循环长什么样。
 2. **定义自己的 provider 层**（[providers.py](providers.py)）——引擎不碰
    OpenAI SDK 或任何 vendor，只认 `ChatProvider` 这一个抽象。示例带两个
-   实现：离线 `ScriptedProvider`（demo/测试用，无需 API key）和流式
+   实现：离线 `ScriptedChatProvider`（demo/测试用，无需 API key）和流式
    `OpenAICompatChatProvider`（DeepSeek/Qwen/Kimi/Ollama 等）。
 3. **插件入口做组合根**（[harness_plugin.py](harness_plugin.py)）——在
    `apply(ctx, config)` 里读内建服务：`config`（模型/provider 解析）、
@@ -87,7 +87,7 @@ provider 选择：`cordis.yml` 的 `config.provider`（`auto` | `scripted` |
 |---|---|---|
 | 引擎契约 | `AgentEngine` | `AgentEngine`（同一条缝） |
 | 装配 | `runtime._build_default_engine` 直构 | 插件 `apply` + `ctx.provide("engine")` |
-| provider | `javis.engines.harness`（JavisLLMAdapter 桥接 OpenAICompat/Scripted） | 自持 `providers.py`，引擎 SDK-free |
+| provider | `javis.llm`（LlmRuntime 注册表 + OpenAICompatAdapter/ScriptedAdapter） | 自持 `providers.py`，引擎 SDK-free |
 | 工具来源 | 运行时插件化 `ToolRegistry` | 会话级 `ToolRegistry` 快照 |
 | 权限 | `tools/execute` middleware（经 `set_permission_checker`） | `set_permission_checker` 契约钩子 |
 | 卸载 | 无 | `bundle.close()` 逆序 dispose 插件 fiber |
@@ -95,6 +95,6 @@ provider 选择：`cordis.yml` 的 `config.provider`（`auto` | `scripted` |
 ## 扩展方向
 
 - 接 `llm` 预留服务（provider 由插件提供，宿主统一注入引擎）。
-- HMR（`--watch`）：改 `cordis.yml` 或插件源码热重载。
+- HMR：Loader 内置热重载（组合条目挂 `apply = Hmr` 包装模块即可）；CLI 暂未暴露 `--watch` 开关。
 - session 事件化：把消息镜像升级为 append-only 事件日志 + 投影（dsh
   `ctx.sessions` 路线）。

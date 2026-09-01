@@ -9,17 +9,60 @@ from __future__ import annotations
 
 import pytest
 
-from javis.contracts.llm import LLMResponse, ToolCall
 from javis.contracts.messages import ConversationMessage
 from javis.contracts.usage import UsageSnapshot
-from javis.engines.harness.engine import HarnessEngine
-from javis.llm.providers import ScriptedProvider
+from javis.harness.engine import HarnessEngine
+from javis.harness.llm import chunk_response
+from javis.harness.types import (
+    MaxTokensFinish,
+    StopFinish,
+    TokenUsage,
+    ToolCallBlock,
+    ToolCallsFinish,
+)
+from javis.llm import ScriptedAdapter
 from javis.tools import create_default_tool_registry
 
 
-def _engine(script: list[LLMResponse], **kwargs: object) -> HarnessEngine:
+def _tc(id: str, name: str, arguments: dict) -> ToolCallBlock:
+    """Build a ToolCallBlock (arguments are a JSON string on the wire)."""
+    import json as _json
+
+    return ToolCallBlock(id=id, name=name, arguments=_json.dumps(arguments, ensure_ascii=False))
+
+
+def _resp(
+    content: str | None = None,
+    tool_calls: list[ToolCallBlock] | None = None,
+    reasoning: str | None = None,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    finish_reason: str = "stop",
+) -> list:
+    """One scripted model turn: a chunk sequence built via chunk_response."""
+    finish = StopFinish()
+    if finish_reason == "tool_calls":
+        finish = ToolCallsFinish()
+    elif finish_reason == "length":
+        finish = MaxTokensFinish()
+    usage = (
+        TokenUsage(input_tokens=prompt_tokens, output_tokens=completion_tokens)
+        if (prompt_tokens or completion_tokens)
+        else None
+    )
+    return chunk_response(
+        text=content,
+        reasoning=reasoning,
+        tool_calls=tool_calls or None,
+        usage=usage,
+        finish=finish,
+    )
+
+
+
+def _engine(script: list[object], **kwargs: object) -> HarnessEngine:
     return HarnessEngine(
-        provider=ScriptedProvider(script=script),
+        adapter=ScriptedAdapter(script=script),
         provider_name="scripted",
         model="scripted-demo",
         system_prompt="test prompt",
@@ -36,7 +79,7 @@ async def _drain(engine: HarnessEngine, prompt: str) -> list[object]:
 
 
 def test_initial_state():
-    engine = _engine([LLMResponse(content="x")])
+    engine = _engine([_resp(content="x")])
     assert engine.messages == []
     assert engine.total_usage == UsageSnapshot()
     assert engine.model == "scripted-demo"
@@ -46,10 +89,10 @@ def test_initial_state():
 
 
 def test_setters():
-    engine = _engine([LLMResponse(content="x")])
+    engine = _engine([_resp(content="x")])
     engine.set_model("other-model")
     assert engine.model == "other-model"
-    assert engine._provider.model == "other-model"
+    assert engine._adapter.model == "other-model"
     engine.set_system_prompt("new prompt")
     assert engine.system_prompt == "new prompt"
     engine.set_max_turns(5)
@@ -64,7 +107,7 @@ def test_setters():
 @pytest.mark.asyncio
 async def test_load_messages_restores_history():
     engine = _engine(
-        [LLMResponse(content="restored and answered", prompt_tokens=3, completion_tokens=2)]
+        [_resp(content="restored and answered", prompt_tokens=3, completion_tokens=2)]
     )
     saved = [
         ConversationMessage.from_user_text("previous question"),
@@ -79,7 +122,7 @@ async def test_load_messages_restores_history():
 
 @pytest.mark.asyncio
 async def test_clear_resets_inner_loop():
-    engine = _engine([LLMResponse(content="hi", prompt_tokens=1, completion_tokens=1)])
+    engine = _engine([_resp(content="hi", prompt_tokens=1, completion_tokens=1)])
     await _drain(engine, "one")
     assert engine.total_usage.input_tokens == 1
     engine.clear()
@@ -93,8 +136,8 @@ async def test_clear_resets_inner_loop():
 async def test_usage_accumulates_across_turns():
     engine = _engine(
         [
-            LLMResponse(content="first", prompt_tokens=10, completion_tokens=2),
-            LLMResponse(content="second", prompt_tokens=20, completion_tokens=4),
+            _resp(content="first", prompt_tokens=10, completion_tokens=2),
+            _resp(content="second", prompt_tokens=20, completion_tokens=4),
         ]
     )
     await _drain(engine, "one")
@@ -105,7 +148,7 @@ async def test_usage_accumulates_across_turns():
 
 @pytest.mark.asyncio
 async def test_submit_message_with_conversation_message_object():
-    engine = _engine([LLMResponse(content="handled", prompt_tokens=2, completion_tokens=1)])
+    engine = _engine([_resp(content="handled", prompt_tokens=2, completion_tokens=1)])
     message = ConversationMessage.from_user_text("as an object")
     events = [event async for event in engine.submit_message(message)]
     assert any(getattr(e, "text", "") == "handled" for e in events)
@@ -114,7 +157,7 @@ async def test_submit_message_with_conversation_message_object():
 
 @pytest.mark.asyncio
 async def test_tool_metadata_is_mutable():
-    engine = _engine([LLMResponse(content="x")], tool_metadata={"permission_mode": "default"})
+    engine = _engine([_resp(content="x")], tool_metadata={"permission_mode": "default"})
     assert engine.tool_metadata["permission_mode"] == "default"
     engine.tool_metadata["permission_mode"] = "acceptEdits"
     assert engine.tool_metadata["permission_mode"] == "acceptEdits"
@@ -126,11 +169,11 @@ async def test_tool_call_round_through_engine(tmp_path):
     target.write_text("payload", encoding="utf-8")
     engine = _engine(
         [
-            LLMResponse(
-                tool_calls=[ToolCall(id="c1", name="read_file", arguments={"file_path": str(target)})],
+            _resp(
+                tool_calls=[_tc(id="c1", name="read_file", arguments={"file_path": str(target)})],
                 finish_reason="tool_calls",
             ),
-            LLMResponse(content="done reading"),
+            _resp(content="done reading"),
         ]
     )
     events = await _drain(engine, "read it")

@@ -20,7 +20,7 @@ it vetoes the rest.
 
 from dataclasses import replace
 
-from javis.dsh.contracts import (
+from javis.harness.types import (
     Events,
     PreStepEnter,
     PreStepReject,

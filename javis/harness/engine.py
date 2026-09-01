@@ -4,17 +4,19 @@
 contract (the host's single seam): it owns the javis conversation mirror
 (``ConversationMessage``), accumulates usage, and yields ``AgentEvent``
 streams per turn — exactly like the old ``CoreCoderEngine`` did, but driven
-by the dsh-style loop from ``javis.dsh`` (phase state
+by the dsh-style loop from ``javis.harness`` (phase state
 machine, inbox, session event log, exclusive/parallel tool scheduling,
 ``agent/*`` waterfalls).
 
 Assembly (mirrors the demo's ``driver`` plugin, in-engine):
 
-- a private loop context provides the four dsh services: ``llm`` (the
-  :class:`JavisLLMAdapter` over a real ``javis.contracts.llm.LLMProvider``),
-  ``tools`` (the core registry adapted from the javis tool registry the
-  runtime provided — plugins included), ``systemPrompt`` (the runtime's
-  system prompt + session context) and ``agentLoop`` (loop config);
+- a private loop context provides the four dsh services: ``llm`` (a
+  ``javis.llm.LlmRuntime`` adapter registry with the engine's
+  ``OpenAICompatAdapter``/``ScriptedAdapter`` registered under
+  ``provider_name``), ``tools`` (the core registry adapted from the javis
+  tool registry the runtime provided — plugins included), ``systemPrompt``
+  (the runtime's system prompt + session context) and ``agentLoop`` (loop
+  config);
 - middleware registered on the loop context: ``tools/execute`` permission
   checker (``AgentEngine.set_permission_checker``), ``tools/post-execute``
   tool-output snip (compression), ``agent/request`` model routing so
@@ -41,11 +43,13 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+if TYPE_CHECKING:
+    from javis.llm import LLMAdapter
+
 from javis.contracts.engine import AgentEngine
-from javis.contracts.llm import LLMProvider
 from javis.contracts.messages import (
     ConversationMessage,
     ToolUseBlock,
@@ -69,8 +73,19 @@ from javis.contracts.types import (
 )
 from javis.contracts.usage import UsageSnapshot
 from javis.cordis import Context
-from javis.dsh.agent import ReactLoopAgent
-from javis.dsh.contracts import (
+
+from .agent import ReactLoopAgent
+from .compression import (
+    HISTORY_MAX_MESSAGES,
+    MAX_TOOL_OUTPUT_CHARS,
+    HistoryCompressor,
+    make_snip_listener,
+)
+from .prompt import HarnessPromptService
+from .session import Session
+from .tool_adapter import adapt_registry
+from .tools import ToolRegistry as CoreToolRegistry
+from .types import (
     AgentLoop,
     AgentOptions,
     Events,
@@ -80,33 +95,21 @@ from javis.dsh.contracts import (
     ToolCallBlock,
     ToolExecutionResult,
 )
-from javis.dsh.contracts import (
+from .types import (
     AssistantMessage as DshAssistantMessage,
 )
-from javis.dsh.contracts import (
+from .types import (
     TextBlock as DshTextBlock,
 )
-from javis.dsh.contracts import (
+from .types import (
     ToolResultBlock as DshToolResultBlock,
 )
-from javis.dsh.contracts import (
+from .types import (
     ToolResultMessage as DshToolResultMessage,
 )
-from javis.dsh.contracts import (
+from .types import (
     UserMessage as DshUserMessage,
 )
-from javis.dsh.session import Session
-from javis.dsh.tools import ToolRegistry as CoreToolRegistry
-
-from .compression import (
-    HISTORY_MAX_MESSAGES,
-    MAX_TOOL_OUTPUT_CHARS,
-    HistoryCompressor,
-    make_snip_listener,
-)
-from .llm_adapter import JavisLLMAdapter
-from .prompt import HarnessPromptService
-from .tool_adapter import adapt_registry
 
 _IMAGE_PLACEHOLDER = "[image omitted: engine does not process images]"
 
@@ -137,7 +140,7 @@ class HarnessEngine(AgentEngine):
     def __init__(
         self,
         *,
-        provider: LLMProvider,
+        adapter: LLMAdapter,
         provider_name: str,
         model: str,
         system_prompt: str = "",
@@ -152,7 +155,7 @@ class HarnessEngine(AgentEngine):
         history_max_messages: int = HISTORY_MAX_MESSAGES,
         tool_output_max_chars: int = MAX_TOOL_OUTPUT_CHARS,
     ) -> None:
-        self._provider = provider
+        self._adapter = adapter
         self._provider_name = provider_name
         self._model = model
         self._system_prompt = system_prompt
@@ -174,8 +177,10 @@ class HarnessEngine(AgentEngine):
 
         # -- inner loop context: the four dsh services ----------------------
         self._loop_ctx = Context()
-        self._adapter = JavisLLMAdapter(provider)
-        self._loop_ctx.provide("llm", self._adapter)
+        from javis.llm import LlmRuntime
+
+        self._llm = LlmRuntime(self._loop_ctx)
+        self._llm.register_adapter([provider_name or "javis"], adapter)
         if javis_tools is not None:
             self._core_tools = adapt_registry(
                 javis_tools, self._loop_ctx, sub_agent_factory=self._run_sub_agent

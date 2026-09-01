@@ -3,7 +3,7 @@
 The host (runtime / TUI / commands) talks to exactly one object: an
 ``AgentEngine`` that owns conversation history and usage, and yields
 ``AgentEvent`` streams per turn. The built-in implementation is
-``javis.engines.harness.engine.HarnessEngine``; engine plugins provide an
+``javis.harness.engine.HarnessEngine``; engine plugins provide an
 instance of this protocol under the ``engine`` service (see
 ``javis.contracts.services``) to replace it.
 

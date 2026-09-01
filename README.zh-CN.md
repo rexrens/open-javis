@@ -45,18 +45,18 @@
 └───────────────────────────▲───────────────────────────────────┘
                             │ AgentEvent 事件流
 ┌───────────────────────────┴───────────────────────────────────┐
-│  javis.runtime.handle_line (斜杠命令 + 智能体回合)              │
-│  javis.core.query_engine.QueryEngine (对话历史)                │
+│  javis.runtime.handle_line (斜杠命令 + 智能体回合)                 │
 └───────────────────────────▲───────────────────────────────────┘
                             │ AgentBackend 协议（唯一的接缝）
 ┌───────────────────────────┴───────────────────────────────────┐
-│  javis.engines.corecoder_backend.CoreCoderBackend             │
+│  javis.harness.HarnessEngine (dsh 风格循环)                        │
 └───────────────────────────▲───────────────────────────────────┘
                             │
 ┌───────────────────────────┴───────────────────────────────────┐
-│  corecoder.Agent.achat — 工具循环、并行执行、上下文压缩          │
-│  corecoder.llm.AsyncLLM — 流式请求、重试、token/成本统计         │
-│  corecoder.tools — bash/read/write/edit/glob/grep/agent       │
+│  ReactLoopAgent — turn/step 循环、exclusive/parallel 工具          │
+│  javis.llm.LlmRuntime — adapter 注册表、llm/stream waterfall        │
+│  javis.llm — OpenAICompatAdapter / ScriptedAdapter                  │
+│  javis.tools — bash/read/write/edit/glob/grep/agent                │
 └────────────────────────────────────────────────────────────────┘
 ```
 

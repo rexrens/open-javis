@@ -67,7 +67,7 @@ def apply(ctx):
 
 - 插件 settle 后宿主读 `ctx.get("engine")`；首个成功提供者生效
   （Cordis `provide` 对同名服务抛错，后续提供者 FAILED 隔离）。
-- 未提供 / 不是 `AgentEngine` → 告警并回退内建 `CoreCoderEngine`。
+- 未提供 / 不是 `AgentEngine` → 告警并回退内建 `HarnessEngine`。
 - 工具快照发生在引擎插件 `apply` 内，因此**工具插件条目要排在引擎条目之前**
   （同步 `apply` 按组合顺序执行；异步 `apply` 需自行保证注册先于引擎构建）。
 - 宿主随后统一执行 CLI 覆盖（`set_model` / `set_system_prompt`）与

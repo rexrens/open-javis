@@ -8,8 +8,8 @@ MockLLM 按脚本流式返回 `StreamChunk`，mock 工具返回固定文本。
 
 整个 harness **全部由 Cordis 插件系统装配**（`javis.cordis`）：7 个插件 +
 一份 `cordis.yml` 组合文件，宿主零改动即可驱动。主流程本身（
-`ReactLoopAgent` / Inbox / Session / 工具调度）在 **`javis.dsh`**——与生产
-引擎 `javis.engines.harness` **共享同一份单一来源**，不再有重复拷贝。
+`ReactLoopAgent` / Inbox / Session / 工具调度）就在 **`javis.harness`**（生产
+引擎包本身）——生产引擎与 demo **共享同一份单一来源**，不再有重复拷贝。
 
 ```
 examples/dsh_harness/
@@ -27,7 +27,7 @@ examples/dsh_harness/
                                # create Session + ReactLoopAgent → provide session/agent
 ```
 
-架构层（`javis.dsh`）的契约面：`contracts.py`（blocks/chunks/messages/
+架构层（`javis.harness`）的契约面：`types.py`（blocks/chunks/messages/
 usage/failure、LlmCallConfig/GenerateOptions、工具执行类型、事件名常量）、
 `session.py`（事件日志）、`inbox.py`（双队列）、`llm.py`（LLM 服务契约 +
 BlockAssembler）、`tools.py`（ToolRegistry + exclusive/parallel 调度）、
@@ -40,9 +40,6 @@ BlockAssembler）、`tools.py`（ToolRegistry + exclusive/parallel 调度）、
 ```bash
 uv run python examples/dsh_harness/cli.py                    # 全部 4 个场景
 uv run python examples/dsh_harness/cli.py --scenario tools   # 单场景
-
-# 通用 Cordis 运行器也可以加载同一份组合（只装配、不驱动）：
-uv run python -m javis.cordis.cli run examples/dsh_harness/cordis.yml
 ```
 
 冒烟测试：
@@ -93,16 +90,16 @@ examples/dsh_harness/cli.py
 
 | dsh | 本 demo |
 |---|---|
-| `ReactLoopAgent`（`packages/core/agent-loop/src/agent.ts`） | `javis/dsh/agent.py::ReactLoopAgent` |
-| `Inbox`（next-turn / next-step + splice 日志） | `javis/dsh/inbox.py`（`agent/inbox/spliced` 记入 session） |
-| `Session` 事件日志 + `deriveMessages` | `javis/dsh/session.py`（同一套事件词汇表） |
-| `LlmRuntime.stream` / `prepareCall` / `BlockAssembler` | `javis/dsh/llm.py`（`normalized_stream` 把异常归一化为 `error`/`aborted` finish） |
-| `executeToolCalls`（exclusive barrier / parallel pool / `concludesTurn` / abort 合成结果） | `javis/dsh/tools.py`（`maxParallelToolCalls` 读 `agentLoop.config`） |
-| 事件：`agent/status|error|inbox/*`、`agent/pre-step|request|request-error`（waterfall）、`agent/turn-stopping`（serial） | `javis/dsh/contracts.py::Events`（javis cordis 的 emit/waterfall/serial 一一对应） |
-| `StreamChunk` / `FinishReason` / `TokenUsage` / `LlmFailure` / `GenerateOptions` | `javis/dsh/contracts.py`（dataclass，命名对齐） |
-| `LlmCallConfig` + `callConfigEquals` + `canonicalHeader` | `javis/dsh/contracts.py` + `javis/dsh/agent.py::_canonical_header` |
+| `ReactLoopAgent`（`packages/core/agent-loop/src/agent.ts`） | `javis/harness/agent.py::ReactLoopAgent` |
+| `Inbox`（next-turn / next-step + splice 日志） | `javis/harness/inbox.py`（`agent/inbox/spliced` 记入 session） |
+| `Session` 事件日志 + `deriveMessages` | `javis/harness/session.py`（同一套事件词汇表） |
+| `LlmRuntime.stream` / `prepareCall` / `BlockAssembler` | `javis/harness/llm.py`（`normalized_stream` 把异常归一化为 `error`/`aborted` finish） |
+| `executeToolCalls`（exclusive barrier / parallel pool / `concludesTurn` / abort 合成结果） | `javis/harness/tools.py`（`maxParallelToolCalls` 读 `agentLoop.config`） |
+| 事件：`agent/status|error|inbox/*`、`agent/pre-step|request|request-error`（waterfall）、`agent/turn-stopping`（serial） | `javis/harness/types.py::Events`（javis cordis 的 emit/waterfall/serial 一一对应） |
+| `StreamChunk` / `FinishReason` / `TokenUsage` / `LlmFailure` / `GenerateOptions` | `javis/harness/types.py`（dataclass，命名对齐） |
+| `LlmCallConfig` + `callConfigEquals` + `canonicalHeader` | `javis/harness/types.py` + `javis/harness/agent.py::_canonical_header` |
 
-## 契约面速览（`javis/dsh/contracts.py`）
+## 契约面速览（`javis/harness/types.py`）
 
 - **内容**：`TextBlock` / `ReasoningBlock` / `ToolCallBlock` / `ToolResultBlock`
 - **流**：`StreamChunk` = `block-start | text-delta | reasoning-delta | tool-call-delta | block-end | usage | finish`
@@ -128,6 +125,6 @@ examples/dsh_harness/cli.py
 
 ## 扩展方向
 
-- 把 `plugins/llm.py` 换成真实 adapter（实现 `javis.dsh.llm.LLM` 契约即可，引擎零改动）。
+- 把 `plugins/llm.py` 换成真实 adapter（实现 `javis.harness.llm.LLM` 契约即可，引擎零改动）。
 - 接 `additional_contexts`（工具结果附带上下文注入 next-step）——契约已就位。
-- HMR：`javis.cordis` 的 Loader 支持 `--watch` 热重载同一份组合。
+- HMR：`javis.cordis` 的 Loader 内置热重载——在组合里挂一个 `apply = Hmr` 的包装条目即可（CLI 暂未暴露 `--watch` 开关）。

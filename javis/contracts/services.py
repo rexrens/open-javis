@@ -19,7 +19,7 @@ CONFIG_SERVICE = "config"
 LLM_SERVICE = "llm"
 HOST_SERVICE = "host"
 
-# A plugin that provides "engine" replaces the built-in CoreCoderEngine
+# A plugin that provides "engine" replaces the built-in HarnessEngine
 # (see javis.app.runtime.build_runtime).
 ENGINE_SERVICE = "engine"
 

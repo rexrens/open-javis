@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from javis.dsh.contracts import (
+from javis.harness.compression import (
+    HistoryCompressor,
+    make_snip_listener,
+)
+from javis.harness.types import (
     PostToolDecision,
     TextBlock,
     ToolExecutionResult,
-)
-from javis.engines.harness.compression import (
-    HistoryCompressor,
-    make_snip_listener,
 )
 
 
@@ -38,7 +38,7 @@ def test_snip_passthrough_short_output():
 
 def test_snip_non_text_blocks_kept():
     listener = make_snip_listener(max_chars=10)
-    from javis.dsh.contracts import ToolResultBlock
+    from javis.harness.types import ToolResultBlock
 
     block = ToolResultBlock(tool_call_id="c1", content=(TextBlock(text="tool block"),))
     result = ToolExecutionResult(content=[block, TextBlock(text="z" * 50)])
@@ -49,7 +49,7 @@ def test_snip_non_text_blocks_kept():
 
 def test_history_compressor_keeps_last_n():
     compressor = HistoryCompressor(max_messages=3)
-    from javis.dsh.contracts import UserMessage
+    from javis.harness.types import UserMessage
 
     messages = [UserMessage.from_text(f"m{i}") for i in range(6)]
     kept = compressor(messages)
@@ -59,7 +59,7 @@ def test_history_compressor_keeps_last_n():
 
 def test_history_compressor_never_leads_with_tool_message():
     compressor = HistoryCompressor(max_messages=4)
-    from javis.dsh.contracts import (
+    from javis.harness.types import (
         AssistantMessage,
         ToolResultMessage,
         UserMessage,
@@ -80,7 +80,7 @@ def test_history_compressor_never_leads_with_tool_message():
 
 def test_history_compressor_small_history_passthrough():
     compressor = HistoryCompressor(max_messages=10)
-    from javis.dsh.contracts import UserMessage
+    from javis.harness.types import UserMessage
 
     messages = [UserMessage.from_text("a"), UserMessage.from_text("b")]
     assert compressor(messages) == messages

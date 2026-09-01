@@ -23,7 +23,8 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from .contracts import (
+from .session import Session, create_tool_result_message
+from .types import (
     TOOL_ABORTED_BEFORE_DISPATCH,
     AbortError,
     AbortSignal,
@@ -38,7 +39,6 @@ from .contracts import (
     ToolSchema,
     UserMessage,
 )
-from .session import Session, create_tool_result_message
 
 
 class Tool:

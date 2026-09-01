@@ -9,7 +9,7 @@ consumes:
   producer failure into a terminal ``error``/``aborted`` finish so consumers
   always see a well-formed stream.
 - **``BlockAssembler``** (dsh ``BlockAssembler``) — folds
-  :class:`~javis.dsh.contracts.StreamChunk` deltas into assembled content
+  :class:`~javis.harness.types.StreamChunk` deltas into assembled content
   blocks, usage, and the terminal finish reason.
 """
 
@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-from .contracts import (
+from .types import (
     AbortError,
     AbortSignal,
     BlockEndChunk,
@@ -114,7 +114,7 @@ async def normalized_stream(
 
 
 def _aborted_finish(signal: AbortSignal) -> FinishReason:
-    from .contracts import AbortedFinish
+    from .types import AbortedFinish
 
     cause = signal.reason
     return AbortedFinish(
@@ -189,7 +189,7 @@ class BlockAssembler:
             if block_type == "text" and state["text"]:
                 out.append(TextBlock(text=state["text"]))
             elif block_type == "reasoning" and state["text"]:
-                from .contracts import ReasoningBlock
+                from .types import ReasoningBlock
 
                 out.append(ReasoningBlock(text=state["text"]))
             elif block_type == "tool-call" and state["name"]:
@@ -243,7 +243,7 @@ def chunk_response(
         ]
         index += 1
     if usage is not None:
-        from .contracts import UsageChunk
+        from .types import UsageChunk
 
         chunks.append(UsageChunk(usage=usage))
     if finish is None:
@@ -259,7 +259,7 @@ def chunk_response(
 
 
 def _reasoning_block(text: str) -> Any:
-    from .contracts import ReasoningBlock
+    from .types import ReasoningBlock
 
     return ReasoningBlock(text=text)
 

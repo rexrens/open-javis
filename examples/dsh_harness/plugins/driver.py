@@ -14,9 +14,9 @@ over its ``Context`` services.
 import os as _os
 import uuid
 
-from javis.dsh.agent import ReactLoopAgent
-from javis.dsh.contracts import AgentOptions
-from javis.dsh.session import Session
+from javis.harness.agent import ReactLoopAgent
+from javis.harness.session import Session
+from javis.harness.types import AgentOptions
 
 name = "driver"
 

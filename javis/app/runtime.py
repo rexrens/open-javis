@@ -129,7 +129,7 @@ def _build_default_engine(
     ``javis_tools`` is the runtime's plugin-populated javis tool registry; the
     harness engine adapts it (built-ins + plugin tools) into its own registry.
     """
-    from javis.engines.harness import build
+    from javis.harness import build
     from javis.session.config import resolve_provider_and_model
     from javis.session.credentials import resolve_api_key
 

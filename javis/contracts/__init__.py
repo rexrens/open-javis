@@ -6,8 +6,6 @@ Only pure definitions live here — no runtime logic, no side effects:
   object owns history + usage and yields ``AgentEvent`` streams)
 - ``host.py`` — the ``HostContext`` runtime facts the host injects as the
   ``host`` service (cwd / session_id / tool_metadata / CLI overrides)
-- ``llm.py`` — the ``LLMProvider`` contract + data models (``LLMRequest`` /
-  ``LLMResponse`` / ``ToolCall``); SDK-free, implementable by any provider
 - ``services.py`` — stable service names for the plugin system's typed
   service contracts (``tools`` / ``commands`` / ``config`` / ``host`` /
   ``engine``)
@@ -23,7 +21,6 @@ package; it depends on nothing within javis.
 
 from javis.contracts.engine import AgentEngine
 from javis.contracts.host import HostContext
-from javis.contracts.llm import LLMProvider, LLMRequest, LLMResponse, ToolCall
 from javis.contracts.messages import ConversationMessage, ImageBlock, TextBlock, ToolResultBlock
 from javis.contracts.services import (
     COMMANDS_SERVICE,
@@ -63,12 +60,8 @@ __all__ = [
     "ConversationMessage",
     "HostContext",
     "ImageBlock",
-    "LLMProvider",
-    "LLMRequest",
-    "LLMResponse",
     "TextBlock",
     "Tool",
-    "ToolCall",
     "ToolRegistry",
     "ToolResultBlock",
     "UsageSnapshot",

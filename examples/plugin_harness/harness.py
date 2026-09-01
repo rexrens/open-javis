@@ -3,10 +3,10 @@
 This is the "write your own harness" story made concrete: it implements the
 ``javis.contracts`` seam (``AgentEngine``) with *its own* agent loop, *its
 own* provider abstraction (``providers.ChatProvider``), *its own* tool
-execution and permission path. It imports nothing from ``javis.engines``:
+execution and permission path. It imports nothing from ``javis.harness``:
 the plugin composition root (``harness_plugin.py``) wires it to javis via the
 built-in services (``config`` / ``tools`` / ``commands`` / ``host``), and the
-host drives it exactly like the built-in ``CoreCoderEngine``.
+host drives it exactly like the built-in ``HarnessEngine``.
 
 Turn loop::
 
@@ -231,7 +231,7 @@ class HarnessEngine(AgentEngine):
         """Run one provider call, bridging its callbacks to the event stream.
 
         Producer-consumer over an asyncio.Queue (same pattern as the built-in
-        CoreCoderEngine): the provider task is the producer, this generator is
+        HarnessEngine): the provider task is the producer, this generator is
         the consumer, and cancellation of the consumer cancels the producer.
         """
         queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()

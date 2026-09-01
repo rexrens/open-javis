@@ -2,7 +2,7 @@
 
 Port of ``packages/core/agent-loop/src/agent.ts`` (dsh ``ReactLoopAgent``).
 Every request is derived from the session log; the agent owns a phase
-state machine (idle / maintenance / running), an :class:`~javis.dsh.inbox.Inbox`,
+state machine (idle / maintenance / running), an :class:`~javis.harness.inbox.Inbox`,
 and the live event dispatch surface:
 
 ======================  ============  =====================================================
@@ -40,7 +40,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, NoReturn
 
-from .contracts import (
+from .inbox import Inbox
+from .llm import BlockAssembler, assemble_finish, normalized_stream
+from .session import Session
+from .tools import execute_tool_calls
+from .types import (
     AbortController,
     AbortedFinish,
     AbortError,
@@ -69,10 +73,6 @@ from .contracts import (
     TurnMaxTokens,
     UserMessage,
 )
-from .inbox import Inbox
-from .llm import BlockAssembler, assemble_finish, normalized_stream
-from .session import Session
-from .tools import execute_tool_calls
 
 # ---------------------------------------------------------------------------
 # Phase state machine (dsh Phase)

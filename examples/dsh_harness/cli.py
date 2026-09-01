@@ -5,8 +5,8 @@ The demo harness (``examples/dsh_harness``) is a dsh-style agent loop — phase
 state machine, inbox, session event log, exclusive/parallel tool scheduling,
 and the agent/* waterfalls — composed entirely out of Cordis plugins
 (``examples/dsh_harness/cordis.yml``). The loop itself is the shared
-``javis.dsh`` architecture layer (the same source the production
-``javis.engines.harness`` engine runs on). This entry point:
+``javis.harness`` architecture layer (the same source the production
+``javis.harness`` engine runs on). This entry point:
 
 1. boots a root context and mounts the composition on the ``Loader``
    (dependency-driven load order, fiber lifecycle, reversible services);
@@ -40,7 +40,7 @@ if str(DEMO_ROOT) not in sys.path:
 from javis.cordis import Context, FiberState
 from javis.cordis.loader import Loader
 from javis.cordis.registry import settle
-from javis.dsh.contracts import UserMessage
+from javis.harness.types import UserMessage
 
 COMPOSITION = DEMO_ROOT / "cordis.yml"
 SCENARIOS = ("text", "tools", "retry", "steer")
@@ -54,7 +54,7 @@ PROMPTS = {
 
 
 # ---------------------------------------------------------------------------
-# Composition boot (mirrors javis/cordis/cli.py)
+# Composition boot
 # ---------------------------------------------------------------------------
 
 
@@ -170,7 +170,7 @@ def check(scenario: str, ctx: Context, session: Any) -> list[str]:
 def _result_text(data: dict[str, Any]) -> str:
     message = data["message"]
     block = message.content[0]
-    from javis.dsh.contracts import TextBlock
+    from javis.harness.types import TextBlock
 
     return "".join(b.text for b in block.content if isinstance(b, TextBlock))
 
@@ -186,7 +186,7 @@ async def run_scenario(scenario: str, verbose: bool) -> bool:
     if scenario == "steer":
         from mock_llm import steer_hook
 
-        ctx.get("llm").on_tool_call = steer_hook(agent)
+        ctx.get("mock-adapter").on_tool_call = steer_hook(agent)
 
     agent.followup(UserMessage.from_text(PROMPTS[scenario]))
     await agent.when_idle()

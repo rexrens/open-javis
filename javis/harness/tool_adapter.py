@@ -1,9 +1,9 @@
-"""Tool adapter — javis ``Tool`` (``javis.contracts.tools``) → harness-core ``Tool``.
+"""Tool adapter — javis ``Tool`` (``javis.contracts.tools``) → dsh ``Tool``.
 
 The javis tool contract is ``execute(*args, **kwargs) -> str`` (sync, runs on
-the event-loop thread in the old corecoder via ``asyncio.to_thread``); the
-harness core's scheduler executes async bodies with ``exclusive`` /
-``parallel`` modes and ``tools/execute`` waterfalls.
+the event-loop thread via ``asyncio.to_thread``); the dsh scheduler executes
+async bodies with ``exclusive`` / ``parallel`` modes and ``tools/execute``
+waterfalls.
 
 Mapping:
 
@@ -25,9 +25,10 @@ from typing import Any
 
 from javis.contracts.tools import Tool as JavisTool
 from javis.contracts.tools import ToolRegistry as JavisToolRegistry
-from javis.dsh.contracts import ToolExecutionResult
-from javis.dsh.tools import Tool as CoreTool
-from javis.dsh.tools import ToolRegistry as CoreToolRegistry
+
+from .tools import Tool as CoreTool
+from .tools import ToolRegistry as CoreToolRegistry
+from .types import ToolExecutionResult
 
 
 def _invoke(javis_tool: JavisTool, arguments: Any) -> ToolExecutionResult:

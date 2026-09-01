@@ -17,7 +17,7 @@ tool messages, turn outcomes, usage) — the part a UI bridge would replay.
 """
 
 
-from javis.dsh.contracts import (
+from javis.harness.types import (
     Events,
     TextBlock,
     ToolCallBlock,

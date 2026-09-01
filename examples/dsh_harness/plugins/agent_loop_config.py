@@ -7,7 +7,7 @@ scheduler; here the ``tools`` service reads it the same way.
 
 from pydantic import BaseModel, Field
 
-from javis.dsh.contracts import AgentLoop, AgentLoopConfig
+from javis.harness.types import AgentLoop, AgentLoopConfig
 
 name = "agent-loop-config"
 

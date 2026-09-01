@@ -2,7 +2,7 @@
 
 A shared service for the whole host (runtime ``tools`` service, plugin
 registrations, engine consumption), independent of any engine implementation
-(previously ``javis.engines.tools``; promoted 2026-09-01).
+(promoted out of the harness engine 2026-09-01).
 
 The registry itself lives in ``javis.contracts.tools`` (the typed ``tools``
 service contract for the plugin system): ``register(tool)`` returns a
@@ -16,7 +16,7 @@ registered at import time. ``create_default_tool_registry()`` builds a fresh
 per-session registry (the runtime's ``tools`` service) so plugin tool
 registrations never leak across sessions.
 
-Migrated from ``javis.engines.corecoder.tools`` (2026-09-01): the
+Migrated from the corecoder engine's ``tools`` module (2026-09-01): the
 ``AgentTool`` sub-agent dependency is now injected via
 ``AgentTool.sub_agent_factory`` instead of constructing the old corecoder
 Agent directly.

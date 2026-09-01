@@ -1,6 +1,6 @@
 """Plugin: system-prompt service (dsh ``ctx.systemPrompt``).
 
-``assemble()`` returns a :class:`~javis.dsh.contracts.PromptAssembly` — the
+``assemble()`` returns a :class:`~javis.harness.types.PromptAssembly` — the
 ordered sections **plus the tool schemas** (dsh: tools are part of the
 prompt assembly). ``render_prompt`` renders the ``persona`` sections into
 the system slot; ``render_context`` renders the ``context`` sections into
@@ -9,7 +9,7 @@ injects.
 """
 
 
-from javis.dsh.contracts import PromptAssembly, PromptSection
+from javis.harness.types import PromptAssembly, PromptSection
 
 name = "system-prompt"
 

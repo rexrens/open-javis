@@ -273,19 +273,31 @@ class LlmCallConfig:
     stop: tuple[str, ...] | None = None
 
 
+def _cfg_field(obj: Any, name: str) -> Any:
+    """Field access tolerant of the request object's shape.
+
+    ``GenerateOptions`` (the dispatch payload) carries no ``reasoning_effort``
+    or ``stop``; treat them as ``None`` so prepared-call config drift checks
+    work against either object type (dsh ``callConfigEquals``).
+    """
+    return getattr(obj, name, None)
+
+
 def call_config_equals(a: LlmCallConfig, b: LlmCallConfig) -> bool:
     """Field-wise equality over :class:`LlmCallConfig` (dsh ``callConfigEquals``)."""
     if (
         a.provider != b.provider
         or a.model != b.model
-        or a.reasoning_effort != b.reasoning_effort
+        or _cfg_field(a, "reasoning_effort") != _cfg_field(b, "reasoning_effort")
         or a.temperature != b.temperature
         or a.max_tokens != b.max_tokens
     ):
         return False
-    if a.stop is None or b.stop is None:
-        return a.stop == b.stop
-    return list(a.stop) == list(b.stop)
+    a_stop = _cfg_field(a, "stop")
+    b_stop = _cfg_field(b, "stop")
+    if a_stop is None or b_stop is None:
+        return a_stop == b_stop
+    return list(a_stop) == list(b_stop)
 
 
 class LlmError(Exception):

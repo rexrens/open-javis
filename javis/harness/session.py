@@ -6,7 +6,7 @@ an immutable :class:`SessionEvent` with a monotonically increasing ``seq``.
 The agent loop *appends*; consumers (UI bridges, replay, tests) read the log
 and rebuild state with :meth:`Session.derive_messages`.
 
-Only the vocabulary in ``contracts.SESSION_EVENT_TYPES`` is accepted — the
+Only the vocabulary in ``types.SESSION_EVENT_TYPES`` is accepted — the
 per-event ``ignorable`` guard of dsh is subsumed by this whitelist for the
 demo (unknown event types fail at append time, not at read time).
 """
@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from .contracts import (
+from .types import (
     SESSION_EVENT_TYPES,
     SESSION_FORMAT_VERSION,
     SessionId,

@@ -1,6 +1,6 @@
 """Plugin: the ``"tools"`` service + the demo's mock tools.
 
-Provides a :class:`~javis.dsh.tools.ToolRegistry` and registers four tools
+Provides a :class:`~javis.harness.tools.ToolRegistry` and registers four tools
 covering the scheduler's semantics:
 
 - ``now``         — parallel mode, trivial body
@@ -13,8 +13,8 @@ the plugin fiber, so unloading the fiber restores an empty registry.
 """
 
 
-from javis.dsh.contracts import TextBlock, ToolExecutionResult
-from javis.dsh.tools import Tool, ToolRegistry
+from javis.harness.tools import Tool, ToolRegistry
+from javis.harness.types import TextBlock, ToolExecutionResult
 
 name = "demo-tools"
 

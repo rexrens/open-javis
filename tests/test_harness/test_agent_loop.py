@@ -12,17 +12,60 @@ from typing import Any
 
 import pytest
 
-from javis.contracts.llm import LLMResponse, ToolCall
 from javis.contracts.messages import ToolResultBlock
-from javis.engines.harness.engine import HarnessEngine
-from javis.llm.providers import ScriptedProvider
+from javis.harness.engine import HarnessEngine
+from javis.harness.llm import chunk_response
+from javis.harness.types import (
+    MaxTokensFinish,
+    StopFinish,
+    TokenUsage,
+    ToolCallBlock,
+    ToolCallsFinish,
+)
+from javis.llm import ScriptedAdapter
 from javis.tools import create_default_tool_registry
 
 
-def _make_engine(script: list[LLMResponse], **kwargs: Any) -> HarnessEngine:
+def _tc(id: str, name: str, arguments: dict) -> ToolCallBlock:
+    """Build a ToolCallBlock (arguments are a JSON string on the wire)."""
+    import json as _json
+
+    return ToolCallBlock(id=id, name=name, arguments=_json.dumps(arguments, ensure_ascii=False))
+
+
+def _resp(
+    content: str | None = None,
+    tool_calls: list[ToolCallBlock] | None = None,
+    reasoning: str | None = None,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    finish_reason: str = "stop",
+) -> list:
+    """One scripted model turn: a chunk sequence built via chunk_response."""
+    finish = StopFinish()
+    if finish_reason == "tool_calls":
+        finish = ToolCallsFinish()
+    elif finish_reason == "length":
+        finish = MaxTokensFinish()
+    usage = (
+        TokenUsage(input_tokens=prompt_tokens, output_tokens=completion_tokens)
+        if (prompt_tokens or completion_tokens)
+        else None
+    )
+    return chunk_response(
+        text=content,
+        reasoning=reasoning,
+        tool_calls=tool_calls or None,
+        usage=usage,
+        finish=finish,
+    )
+
+
+
+def _make_engine(script: list[object], **kwargs: Any) -> HarnessEngine:
     tools = create_default_tool_registry()
     return HarnessEngine(
-        provider=ScriptedProvider(script=script),
+        adapter=ScriptedAdapter(script=script),
         provider_name="scripted",
         model="scripted-demo",
         system_prompt="test",
@@ -59,7 +102,7 @@ def _tool_results(engine: HarnessEngine) -> list[ToolResultBlock]:
 
 @pytest.mark.asyncio
 async def test_plain_text_reply():
-    engine = _make_engine([LLMResponse(content="hello world", prompt_tokens=3, completion_tokens=2)])
+    engine = _make_engine([_resp(content="hello world", prompt_tokens=3, completion_tokens=2)])
     events = await _run(engine, "hi")
 
     turn_end = events[-1]
@@ -75,11 +118,11 @@ async def test_tool_call_round(tmp_path):
     target.write_text("line one\nline two\n", encoding="utf-8")
 
     engine = _make_engine([
-        LLMResponse(
-            tool_calls=[ToolCall(id="call_1", name="read_file", arguments={"file_path": str(target)})],
+        _resp(
+            tool_calls=[_tc(id="call_1", name="read_file", arguments={"file_path": str(target)})],
             finish_reason="tool_calls",
         ),
-        LLMResponse(content="file read done"),
+        _resp(content="file read done"),
     ])
     await _run(engine, "read the file")
 
@@ -93,8 +136,8 @@ async def test_tool_call_round(tmp_path):
 async def test_tool_error_is_reported(tmp_path):
     missing = tmp_path / "nope.txt"
     engine = _make_engine([
-        LLMResponse(tool_calls=[ToolCall(id="c1", name="read_file", arguments={"file_path": str(missing)})], finish_reason="tool_calls"),
-        LLMResponse(content="nothing found"),
+        _resp(tool_calls=[_tc(id="c1", name="read_file", arguments={"file_path": str(missing)})], finish_reason="tool_calls"),
+        _resp(content="nothing found"),
     ])
     await _run(engine, "read missing file")
 
@@ -106,8 +149,8 @@ async def test_tool_error_is_reported(tmp_path):
 @pytest.mark.asyncio
 async def test_unknown_tool_is_reported():
     engine = _make_engine([
-        LLMResponse(tool_calls=[ToolCall(id="c1", name="nope", arguments={})], finish_reason="tool_calls"),
-        LLMResponse(content="done"),
+        _resp(tool_calls=[_tc(id="c1", name="nope", arguments={})], finish_reason="tool_calls"),
+        _resp(content="done"),
     ])
     await _run(engine, "call an unknown tool")
 
@@ -123,11 +166,11 @@ async def test_parallel_tool_calls(tmp_path):
     b.write_text("beta", encoding="utf-8")
 
     engine = _make_engine([
-        LLMResponse(tool_calls=[
-            ToolCall(id="c1", name="read_file", arguments={"file_path": str(a)}),
-            ToolCall(id="c2", name="read_file", arguments={"file_path": str(b)}),
+        _resp(tool_calls=[
+            _tc(id="c1", name="read_file", arguments={"file_path": str(a)}),
+            _tc(id="c2", name="read_file", arguments={"file_path": str(b)}),
         ], finish_reason="tool_calls"),
-        LLMResponse(content="read both"),
+        _resp(content="read both"),
     ])
     await _run(engine, "read both files")
 
@@ -139,7 +182,7 @@ async def test_parallel_tool_calls(tmp_path):
 
 @pytest.mark.asyncio
 async def test_llm_failure_yields_agent_error():
-    engine = _make_engine([LLMResponse(content="first reply")])
+    engine = _make_engine([_resp(content="first reply")])
     await _run(engine, "turn one")
 
     events = await _run(engine, "turn two that runs out of script")
@@ -153,8 +196,8 @@ async def test_max_steps_guard_ends_turn_with_status():
     from javis.contracts.types import AgentStatus
 
     script = [
-        LLMResponse(
-            tool_calls=[ToolCall(id=f"c{i}", name="glob", arguments={"pattern": "*.py"})],
+        _resp(
+            tool_calls=[_tc(id=f"c{i}", name="glob", arguments={"pattern": "*.py"})],
             finish_reason="tool_calls",
         )
         for i in range(5)
@@ -170,7 +213,7 @@ async def test_max_steps_guard_ends_turn_with_status():
 
 @pytest.mark.asyncio
 async def test_usage_is_tracked():
-    engine = _make_engine([LLMResponse(content="some words here", prompt_tokens=7, completion_tokens=3)])
+    engine = _make_engine([_resp(content="some words here", prompt_tokens=7, completion_tokens=3)])
     await _run(engine, "hi")
     assert engine.total_usage.input_tokens == 7
     assert engine.total_usage.output_tokens == 3
@@ -178,7 +221,7 @@ async def test_usage_is_tracked():
 
 @pytest.mark.asyncio
 async def test_clear_resets_history():
-    engine = _make_engine([LLMResponse(content="hello world")])
+    engine = _make_engine([_resp(content="hello world")])
     await _run(engine, "hi")
     assert engine.messages
     engine.clear()
@@ -188,6 +231,6 @@ async def test_clear_resets_history():
 
 @pytest.mark.asyncio
 async def test_default_tools_include_core_set():
-    engine = _make_engine([LLMResponse(content="ok")])
+    engine = _make_engine([_resp(content="ok")])
     names = {tool.name for tool in engine._core_tools.all()}
     assert {"read_file", "write_file", "edit_file", "bash", "glob", "grep", "agent"} <= names
