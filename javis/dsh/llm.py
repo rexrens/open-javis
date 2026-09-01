@@ -9,7 +9,7 @@ consumes:
   producer failure into a terminal ``error``/``aborted`` finish so consumers
   always see a well-formed stream.
 - **``BlockAssembler``** (dsh ``BlockAssembler``) — folds
-  :class:`~dsh_harness.contracts.StreamChunk` deltas into assembled content
+  :class:`~javis.dsh.contracts.StreamChunk` deltas into assembled content
   blocks, usage, and the terminal finish reason.
 """
 

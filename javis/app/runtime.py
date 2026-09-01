@@ -219,7 +219,7 @@ async def build_runtime(
     ctx.baseUrl = str(workspace_root)
     # Built-in services: owner is the root fiber, so they are never revoked.
     ctx.provide(CONFIG_SERVICE, cfg)
-    from javis.engines.tools import create_default_tool_registry
+    from javis.tools import create_default_tool_registry
 
     tools_registry = create_default_tool_registry()
     ctx.provide(TOOLS_SERVICE, tools_registry)

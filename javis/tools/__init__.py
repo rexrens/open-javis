@@ -1,4 +1,8 @@
-"""Tool registry and built-in tools for javis engines.
+"""javis.tools — host-level tool registry and the seven built-in tools.
+
+A shared service for the whole host (runtime ``tools`` service, plugin
+registrations, engine consumption), independent of any engine implementation
+(previously ``javis.engines.tools``; promoted 2026-09-01).
 
 The registry itself lives in ``javis.contracts.tools`` (the typed ``tools``
 service contract for the plugin system): ``register(tool)`` returns a
@@ -27,7 +31,7 @@ from javis.contracts.tools import Tool, ToolRegistry
 from .agent import AgentTool
 from .bash import BashTool
 from .edit import EditFileTool
-from .glob_tool import GlobTool
+from .glob import GlobTool
 from .grep import GrepTool
 from .read import ReadFileTool
 from .write import WriteFileTool

@@ -50,13 +50,14 @@ The React/Ink frontend is forked from openharness and customized for javis; ever
 └───────────────────────────▲───────────────────────────────────┘
                             │ AgentBackend protocol (one seam)
 ┌───────────────────────────┴───────────────────────────────────┐
-│  javis.engines.harness.core (ReactLoopAgent, session log)    │
+│  javis.dsh (ReactLoopAgent, session log) — shared with demo  │
 └───────────────────────────▲───────────────────────────────────┘
                             │
 ┌───────────────────────────┴───────────────────────────────────┐
 │  ReactLoopAgent — turn/step loop, exclusive/parallel tools    │
 │  JavisLLMAdapter — LLMProvider streaming, retries, token/cost │
-│  javis.engines.tools — bash/read/write/edit/glob/grep/agent   │
+│  javis.llm.providers — OpenAICompat / Scripted               │
+│  javis.tools — bash/read/write/edit/glob/grep/agent           │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -205,13 +206,16 @@ uv run mypy javis/
 ### Project layout
 
 ```
-javis/engines/harness/  Agent engine: dsh-style loop, LLM adapter, tools, compression
+javis/engines/harness/  Agent engine: dsh-style loop integration shell
+javis/dsh/            Shared dsh architecture (ReactLoopAgent, session log)
+javis/llm/            LLM provider implementations (OpenAICompat / Scripted)
+javis/tools/          Host tool registry + 7 built-in tools
 javis/                Host shell: CLI, runtime, backend host, wire protocol
   contracts/          AgentBackend protocol, event/message models (pure contracts)
   host/               CLI, runtime, wire protocol, backend host, frontend launcher
   session/            Session persistence, app state, workspace layout
   commands/           Slash-command registry
-  engines/            Engine implementations (harness) + shared tools
+  engines/            Engine implementations (harness)
   frontend/terminal   React/Ink TUI (TypeScript)
 tests/                pytest suite
 ```

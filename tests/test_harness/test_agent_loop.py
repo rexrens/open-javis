@@ -15,8 +15,8 @@ import pytest
 from javis.contracts.llm import LLMResponse, ToolCall
 from javis.contracts.messages import ToolResultBlock
 from javis.engines.harness.engine import HarnessEngine
-from javis.engines.harness.providers import ScriptedProvider
-from javis.engines.tools import create_default_tool_registry
+from javis.llm.providers import ScriptedProvider
+from javis.tools import create_default_tool_registry
 
 
 def _make_engine(script: list[LLMResponse], **kwargs: Any) -> HarnessEngine:

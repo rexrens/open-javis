@@ -25,10 +25,9 @@ from typing import Any
 
 from javis.contracts.tools import Tool as JavisTool
 from javis.contracts.tools import ToolRegistry as JavisToolRegistry
-
-from .core.contracts import ToolExecutionResult
-from .core.tools import Tool as CoreTool
-from .core.tools import ToolRegistry as CoreToolRegistry
+from javis.dsh.contracts import ToolExecutionResult
+from javis.dsh.tools import Tool as CoreTool
+from javis.dsh.tools import ToolRegistry as CoreToolRegistry
 
 
 def _invoke(javis_tool: JavisTool, arguments: Any) -> ToolExecutionResult:

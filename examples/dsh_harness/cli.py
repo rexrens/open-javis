@@ -4,7 +4,9 @@
 The demo harness (``examples/dsh_harness``) is a dsh-style agent loop — phase
 state machine, inbox, session event log, exclusive/parallel tool scheduling,
 and the agent/* waterfalls — composed entirely out of Cordis plugins
-(``examples/dsh_harness/dsh_harness/cordis.yml``). This entry point:
+(``examples/dsh_harness/cordis.yml``). The loop itself is the shared
+``javis.dsh`` architecture layer (the same source the production
+``javis.engines.harness`` engine runs on). This entry point:
 
 1. boots a root context and mounts the composition on the ``Loader``
    (dependency-driven load order, fiber lifecycle, reversible services);
@@ -19,7 +21,7 @@ Usage (from the repo root, with ``javis`` importable)::
     uv run python examples/dsh_harness/cli.py --scenario tools
     uv run python examples/dsh_harness/cli.py --scenario steer --verbose
 
-The mock provider is scripted (``dsh_harness/mock_llm.py``); no API key needed.
+The mock provider is scripted (``mock_llm.py``); no API key needed.
 """
 
 from __future__ import annotations
@@ -35,13 +37,12 @@ DEMO_ROOT = Path(__file__).resolve().parent
 if str(DEMO_ROOT) not in sys.path:
     sys.path.insert(0, str(DEMO_ROOT))
 
-from dsh_harness.contracts import UserMessage
-
 from javis.cordis import Context, FiberState
 from javis.cordis.loader import Loader
 from javis.cordis.registry import settle
+from javis.dsh.contracts import UserMessage
 
-COMPOSITION = DEMO_ROOT / "dsh_harness" / "cordis.yml"
+COMPOSITION = DEMO_ROOT / "cordis.yml"
 SCENARIOS = ("text", "tools", "retry", "steer")
 
 PROMPTS = {
@@ -169,7 +170,7 @@ def check(scenario: str, ctx: Context, session: Any) -> list[str]:
 def _result_text(data: dict[str, Any]) -> str:
     message = data["message"]
     block = message.content[0]
-    from dsh_harness.contracts import TextBlock
+    from javis.dsh.contracts import TextBlock
 
     return "".join(b.text for b in block.content if isinstance(b, TextBlock))
 
@@ -183,7 +184,7 @@ async def run_scenario(scenario: str, verbose: bool) -> bool:
     print(f"\n════ scenario: {scenario} " + "═" * 40)
     ctx, agent, session = await compose(scenario)
     if scenario == "steer":
-        from dsh_harness.mock_llm import steer_hook
+        from mock_llm import steer_hook
 
         ctx.get("llm").on_tool_call = steer_hook(agent)
 

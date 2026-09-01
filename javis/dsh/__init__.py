@@ -1,7 +1,12 @@
-"""Harness core — the dsh-style agent loop, javis production copy.
+"""javis.dsh — the dsh-style agent loop, single source for engine and demo.
 
-Faithful copy of ``examples/dsh_harness`` (the standalone reference demo) with
-three javis additions:
+The architecture layer ported from the dsh reference (``ReactLoopAgent`` /
+Inbox / Session event log / exclusive-parallel tool scheduling / agent
+waterfalls). It is the **single source** shared by the production engine
+(``javis.engines.harness``) and the standalone reference demo
+(``examples/dsh_harness``) — previously two copies that drifted.
+
+Three javis additions on top of the plain dsh port:
 
 - ``session.Session.on_append(seq, type, data)`` — the host engine's event
   bridge hook (the demo copy has no observer).

@@ -1,6 +1,6 @@
 """Plugin: system-prompt service (dsh ``ctx.systemPrompt``).
 
-``assemble()`` returns a :class:`~dsh_harness.contracts.PromptAssembly` — the
+``assemble()`` returns a :class:`~javis.dsh.contracts.PromptAssembly` — the
 ordered sections **plus the tool schemas** (dsh: tools are part of the
 prompt assembly). ``render_prompt`` renders the ``persona`` sections into
 the system slot; ``render_context`` renders the ``context`` sections into
@@ -8,14 +8,8 @@ the step-boundary context message that the ``agent/pre-step`` default
 injects.
 """
 
-import os as _os
-import sys as _sys
 
-_DEMO_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-if _DEMO_ROOT not in _sys.path:
-    _sys.path.insert(0, _DEMO_ROOT)
-
-from dsh_harness.contracts import PromptAssembly, PromptSection
+from javis.dsh.contracts import PromptAssembly, PromptSection
 
 name = "system-prompt"
 

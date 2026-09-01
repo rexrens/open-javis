@@ -7,24 +7,31 @@ agent 事件钩子），用 Python 重新表达，**真实实现全部用 mock �
 MockLLM 按脚本流式返回 `StreamChunk`，mock 工具返回固定文本。
 
 整个 harness **全部由 Cordis 插件系统装配**（`javis.cordis`）：7 个插件 +
-一份 `cordis.yml` 组合文件，宿主零改动即可驱动。
+一份 `cordis.yml` 组合文件，宿主零改动即可驱动。主流程本身（
+`ReactLoopAgent` / Inbox / Session / 工具调度）在 **`javis.dsh`**——与生产
+引擎 `javis.engines.harness` **共享同一份单一来源**，不再有重复拷贝。
 
 ```
 examples/dsh_harness/
 ├── cli.py                     # 场景运行器（text / tools / retry / steer）
-└── dsh_harness/
-    ├── contracts.py           # 契约面：blocks/chunks/messages/usage/failure、
-    │                          #   LlmCallConfig/GenerateOptions、Agent 运行时类型、
-    │                          #   工具执行类型、prompt assembly、事件名常量
-    ├── session.py             # Session 事件日志（append-only、seq、derive_messages）
-    ├── inbox.py               # Inbox 双队列（next-turn / next-step、splice/claim）
-    ├── llm.py                 # LLM 服务契约 + BlockAssembler + 流归一化
-    ├── tools.py               # ToolRegistry + execute_tool_calls（barrier/池调度）
-    ├── agent.py               # ReactLoopAgent（phase 状态机 + kick/turn/step）
-    ├── mock_llm.py            # MockLLM：脚本化 provider + 4 场景脚本 + steer 钩子
-    ├── plugins/               # 7 个 Cordis 插件（见下）
-    └── cordis.yml             # 组合文件
+├── cordis.yml                 # 组合文件
+├── mock_llm.py                # MockLLM：脚本化 provider + 4 场景脚本 + steer 钩子
+└── plugins/                   # 7 个 Cordis 插件（见下）
+    ├── agent_loop_config.py   # provide("agentLoop")：max_parallel_tool_calls=2
+    ├── system_prompt.py       # provide("systemPrompt")：persona/context + 工具 schema
+    ├── llm.py                 # provide("llm")：MockLLM（$HARNESS_DEMO_SCENARIO 脚本）
+    ├── demo_tools.py          # provide("tools")：now/weather(并行) + set_note/end_session(独占)
+    ├── middleware.py          # agent/request、agent/pre-step、agent/request-error 三个 waterfall
+    ├── observer.py            # agent/status、inbox/*、tools/result、turn-stopping、error
+    └── driver.py              # inject=[llm, tools, systemPrompt, agentLoop]
+                               # create Session + ReactLoopAgent → provide session/agent
 ```
+
+架构层（`javis.dsh`）的契约面：`contracts.py`（blocks/chunks/messages/
+usage/failure、LlmCallConfig/GenerateOptions、工具执行类型、事件名常量）、
+`session.py`（事件日志）、`inbox.py`（双队列）、`llm.py`（LLM 服务契约 +
+BlockAssembler）、`tools.py`（ToolRegistry + exclusive/parallel 调度）、
+`agent.py`（ReactLoopAgent 状态机）。
 
 ## 运行
 
@@ -35,7 +42,7 @@ uv run python examples/dsh_harness/cli.py                    # 全部 4 个场�
 uv run python examples/dsh_harness/cli.py --scenario tools   # 单场景
 
 # 通用 Cordis 运行器也可以加载同一份组合（只装配、不驱动）：
-uv run python -m javis.cordis.cli run examples/dsh_harness/dsh_harness/cordis.yml
+uv run python -m javis.cordis.cli run examples/dsh_harness/cordis.yml
 ```
 
 冒烟测试：
@@ -86,16 +93,16 @@ examples/dsh_harness/cli.py
 
 | dsh | 本 demo |
 |---|---|
-| `ReactLoopAgent`（`packages/core/agent-loop/src/agent.ts`） | `dsh_harness/agent.py::ReactLoopAgent` |
-| `Inbox`（next-turn / next-step + splice 日志） | `dsh_harness/inbox.py`（`agent/inbox/spliced` 记入 session） |
-| `Session` 事件日志 + `deriveMessages` | `dsh_harness/session.py`（同一套事件词汇表） |
-| `LlmRuntime.stream` / `prepareCall` / `BlockAssembler` | `dsh_harness/llm.py`（`normalized_stream` 把异常归一化为 `error`/`aborted` finish） |
-| `executeToolCalls`（exclusive barrier / parallel pool / `concludesTurn` / abort 合成结果） | `dsh_harness/tools.py`（`maxParallelToolCalls` 读 `agentLoop.config`） |
-| 事件：`agent/status|error|inbox/*`、`agent/pre-step|request|request-error`（waterfall）、`agent/turn-stopping`（serial） | `dsh_harness/contracts.py::Events`（javis cordis 的 emit/waterfall/serial 一一对应） |
-| `StreamChunk` / `FinishReason` / `TokenUsage` / `LlmFailure` / `GenerateOptions` | `dsh_harness/contracts.py`（dataclass，命名对齐） |
-| `LlmCallConfig` + `callConfigEquals` + `canonicalHeader` | `dsh_harness/contracts.py` + `dsh_harness/agent.py::_canonical_header` |
+| `ReactLoopAgent`（`packages/core/agent-loop/src/agent.ts`） | `javis/dsh/agent.py::ReactLoopAgent` |
+| `Inbox`（next-turn / next-step + splice 日志） | `javis/dsh/inbox.py`（`agent/inbox/spliced` 记入 session） |
+| `Session` 事件日志 + `deriveMessages` | `javis/dsh/session.py`（同一套事件词汇表） |
+| `LlmRuntime.stream` / `prepareCall` / `BlockAssembler` | `javis/dsh/llm.py`（`normalized_stream` 把异常归一化为 `error`/`aborted` finish） |
+| `executeToolCalls`（exclusive barrier / parallel pool / `concludesTurn` / abort 合成结果） | `javis/dsh/tools.py`（`maxParallelToolCalls` 读 `agentLoop.config`） |
+| 事件：`agent/status|error|inbox/*`、`agent/pre-step|request|request-error`（waterfall）、`agent/turn-stopping`（serial） | `javis/dsh/contracts.py::Events`（javis cordis 的 emit/waterfall/serial 一一对应） |
+| `StreamChunk` / `FinishReason` / `TokenUsage` / `LlmFailure` / `GenerateOptions` | `javis/dsh/contracts.py`（dataclass，命名对齐） |
+| `LlmCallConfig` + `callConfigEquals` + `canonicalHeader` | `javis/dsh/contracts.py` + `javis/dsh/agent.py::_canonical_header` |
 
-## 契约面速览（`dsh_harness/contracts.py`）
+## 契约面速览（`javis/dsh/contracts.py`）
 
 - **内容**：`TextBlock` / `ReasoningBlock` / `ToolCallBlock` / `ToolResultBlock`
 - **流**：`StreamChunk` = `block-start | text-delta | reasoning-delta | tool-call-delta | block-end | usage | finish`
@@ -121,6 +128,6 @@ examples/dsh_harness/cli.py
 
 ## 扩展方向
 
-- 把 `plugins/llm.py` 换成真实 adapter（实现 `dsh_harness.llm.LLM` 契约即可，引擎零改动）。
+- 把 `plugins/llm.py` 换成真实 adapter（实现 `javis.dsh.llm.LLM` 契约即可，引擎零改动）。
 - 接 `additional_contexts`（工具结果附带上下文注入 next-step）——契约已就位。
 - HMR：`javis.cordis` 的 Loader 支持 `--watch` 热重载同一份组合。

@@ -7,7 +7,7 @@ Data models (``LLMRequest`` / ``LLMResponse`` / ``ToolCall``) are the wire
 payloads exchanged with the provider layer.
 
 Everything here is pure: stdlib only, no openai SDK, no javis-internal
-dependencies — ``javis.engines.harness.providers`` re-exports these names so
+dependencies — ``javis.llm.providers`` re-exports these names so
 existing imports keep working.
 
 Design decisions (spec/llm-provider.md):

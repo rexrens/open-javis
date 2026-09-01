@@ -13,7 +13,7 @@ from __future__ import annotations
 import datetime as _dt
 from typing import Any
 
-from .core.contracts import PromptAssembly, PromptSection, ToolSchema
+from javis.dsh.contracts import PromptAssembly, PromptSection, ToolSchema
 
 
 class HarnessPromptService:

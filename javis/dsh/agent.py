@@ -2,7 +2,7 @@
 
 Port of ``packages/core/agent-loop/src/agent.ts`` (dsh ``ReactLoopAgent``).
 Every request is derived from the session log; the agent owns a phase
-state machine (idle / maintenance / running), an :class:`~dsh_harness.inbox.Inbox`,
+state machine (idle / maintenance / running), an :class:`~javis.dsh.inbox.Inbox`,
 and the live event dispatch surface:
 
 ======================  ============  =====================================================
@@ -320,6 +320,16 @@ class ReactLoopAgent:
         try:
             while True:
                 signal.throw_if_aborted()
+                max_steps = self._loop_max_steps()
+                if phase.step >= max_steps:
+                    # javis guard: the dsh loop has no bound; stop the turn
+                    # once the per-turn step cap is reached (replaces the old
+                    # corecoder ``max_rounds`` semantics).
+                    self._dispatch_emit(
+                        Events.AGENT_LIMIT, {"turn": turn, "kind": "max-steps", "limit": max_steps}
+                    )
+                    turn_ends = TurnCompleted()
+                    return False
                 step = phase.step + 1
                 decision, assembly = await self._pre_step(target, turn, step)
                 if decision.kind == "reject":
@@ -598,13 +608,32 @@ class ReactLoopAgent:
         request = GenerateOptions(
             provider=config.provider,
             model=config.model,
-            messages=tuple(self.session.derive_messages()),
+            messages=tuple(self._compress_history(list(self.session.derive_messages()))),
             system=system or None,
             tools=tuple(assembly.tools) if assembly.tools else None,
             max_tokens=config.max_tokens,
             signal=signal,
         )
         return request, prepared
+
+    # -- javis extensions ----------------------------------------------------
+
+    def _loop_config(self) -> Any:
+        """The ``agentLoop`` service's config object (dsh ``ctx.agentLoop.config``)."""
+        service = self._ctx.get("agentLoop")
+        return getattr(service, "config", None) or service
+
+    def _loop_max_steps(self) -> int:
+        value = getattr(self._loop_config(), "max_steps_per_turn", 20)
+        return max(1, int(value))
+
+    def _compress_history(self, messages: list[Any]) -> list[Any]:
+        """Apply the optional ``history_compressor`` after deriving messages,
+        before the request is built (javis compression middleware slot)."""
+        compressor = getattr(self._loop_config(), "history_compressor", None)
+        if compressor is None:
+            return messages
+        return list(compressor(messages))
 
 
 # ---------------------------------------------------------------------------

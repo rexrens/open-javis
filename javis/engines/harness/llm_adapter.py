@@ -1,7 +1,7 @@
 """JavisLLMAdapter — bridges ``javis.contracts.llm.LLMProvider`` onto the
 harness core's LLM seam.
 
-The core agent loop consumes ``harness.core.llm.LLM``: ``prepare_call``
+The core agent loop consumes ``javis.dsh.llm.LLM``: ``prepare_call``
 (exact-model adapter resolution) + ``stream(GenerateOptions)`` yielding
 ``StreamChunk`` (block-start / text-delta / reasoning-delta /
 tool-call-delta / block-end / usage / finish). Real javis providers
@@ -30,8 +30,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from javis.contracts.llm import LLMProvider, LLMRequest
-
-from .core.contracts import (
+from javis.dsh.contracts import (
     AbortSignal,
     BlockEndChunk,
     BlockStartChunk,
@@ -54,7 +53,7 @@ from .core.contracts import (
     ToolSchema,
     UsageChunk,
 )
-from .core.llm import PreparedCall
+from javis.dsh.llm import PreparedCall
 
 
 def _map_finish(finish_reason: str) -> FinishReason:

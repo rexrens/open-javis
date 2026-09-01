@@ -46,7 +46,7 @@ def build(
     from ``model`` / ``api_key`` / ``base_url`` / ``max_tokens``.
     """
     if provider is None:
-        from .providers import OpenAICompatProvider
+        from javis.llm.providers import OpenAICompatProvider
 
         provider_kwargs: dict[str, Any] = {
             "model": model,

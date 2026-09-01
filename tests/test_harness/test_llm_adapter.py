@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from javis.contracts.llm import LLMResponse, ToolCall
-from javis.engines.harness.core.contracts import (
+from javis.dsh.contracts import (
     GenerateOptions,
     LlmCallConfig,
     MaxTokensFinish,
@@ -15,7 +15,7 @@ from javis.engines.harness.core.contracts import (
     UserMessage,
 )
 from javis.engines.harness.llm_adapter import JavisLLMAdapter
-from javis.engines.harness.providers import ScriptedProvider
+from javis.llm.providers import ScriptedProvider
 
 
 def _options(**kwargs: object) -> GenerateOptions:
@@ -69,7 +69,7 @@ async def test_tool_call_blocks_and_finish():
     assert isinstance(block_ends[0].block, ToolCallBlock)
     assert block_ends[0].block.id == "t1"
     finish = next(c for c in chunks if c.type == "finish")
-    from javis.engines.harness.core.contracts import ToolCallsFinish
+    from javis.dsh.contracts import ToolCallsFinish
 
     assert isinstance(finish.reason, ToolCallsFinish)
 

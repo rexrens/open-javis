@@ -4,15 +4,10 @@ dsh reads ``ctx.agentLoop.config.maxParallelToolCalls`` in the tool-call
 scheduler; here the ``tools`` service reads it the same way.
 """
 
-import os as _os
-import sys as _sys
 
-_DEMO_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-if _DEMO_ROOT not in _sys.path:
-    _sys.path.insert(0, _DEMO_ROOT)
-
-from dsh_harness.contracts import AgentLoop, AgentLoopConfig
 from pydantic import BaseModel, Field
+
+from javis.dsh.contracts import AgentLoop, AgentLoopConfig
 
 name = "agent-loop-config"
 

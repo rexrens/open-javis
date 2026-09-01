@@ -4,7 +4,7 @@
 contract (the host's single seam): it owns the javis conversation mirror
 (``ConversationMessage``), accumulates usage, and yields ``AgentEvent``
 streams per turn — exactly like the old ``CoreCoderEngine`` did, but driven
-by the dsh-style loop from ``javis.engines.harness.core`` (phase state
+by the dsh-style loop from ``javis.dsh`` (phase state
 machine, inbox, session event log, exclusive/parallel tool scheduling,
 ``agent/*`` waterfalls).
 
@@ -69,15 +69,8 @@ from javis.contracts.types import (
 )
 from javis.contracts.usage import UsageSnapshot
 from javis.cordis import Context
-
-from .compression import (
-    HISTORY_MAX_MESSAGES,
-    MAX_TOOL_OUTPUT_CHARS,
-    HistoryCompressor,
-    make_snip_listener,
-)
-from .core.agent import ReactLoopAgent
-from .core.contracts import (
+from javis.dsh.agent import ReactLoopAgent
+from javis.dsh.contracts import (
     AgentLoop,
     AgentOptions,
     Events,
@@ -87,23 +80,30 @@ from .core.contracts import (
     ToolCallBlock,
     ToolExecutionResult,
 )
-from .core.contracts import (
+from javis.dsh.contracts import (
     AssistantMessage as DshAssistantMessage,
 )
-from .core.contracts import (
+from javis.dsh.contracts import (
     TextBlock as DshTextBlock,
 )
-from .core.contracts import (
+from javis.dsh.contracts import (
     ToolResultBlock as DshToolResultBlock,
 )
-from .core.contracts import (
+from javis.dsh.contracts import (
     ToolResultMessage as DshToolResultMessage,
 )
-from .core.contracts import (
+from javis.dsh.contracts import (
     UserMessage as DshUserMessage,
 )
-from .core.session import Session
-from .core.tools import ToolRegistry as CoreToolRegistry
+from javis.dsh.session import Session
+from javis.dsh.tools import ToolRegistry as CoreToolRegistry
+
+from .compression import (
+    HISTORY_MAX_MESSAGES,
+    MAX_TOOL_OUTPUT_CHARS,
+    HistoryCompressor,
+    make_snip_listener,
+)
 from .llm_adapter import JavisLLMAdapter
 from .prompt import HarnessPromptService
 from .tool_adapter import adapt_registry

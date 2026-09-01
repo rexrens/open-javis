@@ -1,6 +1,6 @@
 """MockLLM: a scripted model provider for the demo (dsh adapter stand-in).
 
-Implements the :class:`~dsh_harness.llm.LLM` seam exactly like a real adapter:
+Implements the :class:`~javis.dsh.llm.LLM` seam exactly like a real adapter:
 ``prepare_call`` resolves exact-model adapter defaults (``adapterDefaults``
 into the request header, ``contextWindow`` into the request context), and
 ``stream`` emits the raw streaming protocol — ``block-start`` /
@@ -23,7 +23,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .contracts import (
+from javis.dsh.contracts import (
     AbortSignal,
     LlmCallConfig,
     LlmError,
@@ -31,7 +31,7 @@ from .contracts import (
     MaxTokensFinish,
     ToolCallBlock,
 )
-from .llm import PreparedCall, chunk_response
+from javis.dsh.llm import PreparedCall, chunk_response
 
 
 @dataclass
@@ -105,11 +105,11 @@ class MockLLM:
         if response.failure is not None:
             # A provider-level failure mid-stream: the adapter throws; the
             # LLM runtime normalizes it to a terminal ``error`` finish.
-            from .contracts import StopFinish
+            from javis.dsh.contracts import StopFinish
 
             del StopFinish
             # Stream a partial block first so interruption semantics are real.
-            from .contracts import BlockStartChunk, TextDeltaChunk
+            from javis.dsh.contracts import BlockStartChunk, TextDeltaChunk
 
             yield BlockStartChunk(index=0, block_type="text")
             yield TextDeltaChunk(index=0, text="…")
@@ -148,7 +148,7 @@ class MockLLM:
 
 
 def _usage(response: MockResponse) -> Any:
-    from .contracts import TokenUsage
+    from javis.dsh.contracts import TokenUsage
 
     return TokenUsage(input_tokens=response.usage[0], output_tokens=response.usage[1])
 
@@ -157,10 +157,10 @@ def _finish(response: MockResponse) -> Any:
     if response.max_tokens:
         return MaxTokensFinish()
     if response.tool_calls:
-        from .contracts import ToolCallsFinish
+        from javis.dsh.contracts import ToolCallsFinish
 
         return ToolCallsFinish()
-    from .contracts import StopFinish
+    from javis.dsh.contracts import StopFinish
 
     return StopFinish()
 
@@ -237,7 +237,7 @@ def steer_hook(agent: Any) -> Callable[[str, Any], Any]:
     steering message lands in the next-step inbox *before* the step's tool
     calls execute, so the next step's pre-step claims it deterministically.
     """
-    from .contracts import UserMessage
+    from javis.dsh.contracts import UserMessage
 
     fired = False
 

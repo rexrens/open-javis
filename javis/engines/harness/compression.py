@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from .core.contracts import PostToolDecision, TextBlock, ToolExecutionResult
+from javis.dsh.contracts import PostToolDecision, TextBlock, ToolExecutionResult
 
 #: Default cap for a single tool result (chars). Matches the old corecoder's
 #: 15_000-char bash truncation spirit, tighter because the request must stay

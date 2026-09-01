@@ -1,6 +1,6 @@
 """Plugin: the ``"tools"`` service + the demo's mock tools.
 
-Provides a :class:`~dsh_harness.tools.ToolRegistry` and registers four tools
+Provides a :class:`~javis.dsh.tools.ToolRegistry` and registers four tools
 covering the scheduler's semantics:
 
 - ``now``         — parallel mode, trivial body
@@ -12,15 +12,9 @@ Registration is reversible: every ``register`` returns a disposer tracked by
 the plugin fiber, so unloading the fiber restores an empty registry.
 """
 
-import os as _os
-import sys as _sys
 
-_DEMO_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-if _DEMO_ROOT not in _sys.path:
-    _sys.path.insert(0, _DEMO_ROOT)
-
-from dsh_harness.contracts import TextBlock, ToolExecutionResult
-from dsh_harness.tools import Tool, ToolRegistry
+from javis.dsh.contracts import TextBlock, ToolExecutionResult
+from javis.dsh.tools import Tool, ToolRegistry
 
 name = "demo-tools"
 

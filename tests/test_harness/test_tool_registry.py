@@ -6,7 +6,7 @@ from typing import ClassVar
 
 import pytest
 
-from javis.engines.tools import (
+from javis.tools import (
     TOOL_REGISTRY,
     ToolRegistry,
     all_tools,
@@ -14,7 +14,7 @@ from javis.engines.tools import (
     register_tool,
     unregister_tool,
 )
-from javis.engines.tools.base import Tool
+from javis.tools.base import Tool
 
 
 class TestEchoTool(Tool):

@@ -20,7 +20,11 @@ if str(DEMO_ROOT) not in sys.path:
 
 from cli import PROMPTS, final_assistant_text, seq_of, turn_end_reason
 from cli import compose as compose_scenario
-from dsh_harness.contracts import (
+from mock_llm import MockLLM, MockResponse
+
+from javis.cordis import Context, FiberState
+from javis.cordis.registry import settle
+from javis.dsh.contracts import (
     AgentCancelCause,
     Events,
     LlmFailure,
@@ -28,11 +32,7 @@ from dsh_harness.contracts import (
     ToolCallBlock,
     UserMessage,
 )
-from dsh_harness.mock_llm import MockLLM, MockResponse
-from dsh_harness.tools import Tool
-
-from javis.cordis import Context, FiberState
-from javis.cordis.registry import settle
+from javis.dsh.tools import Tool
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -49,7 +49,7 @@ def tool_result_text(session: Any, predicate: Any = None) -> list[str]:
     for event in session.events_of("tool/result"):
         message = event.data["message"]
         block = message.content[0]
-        from dsh_harness.contracts import TextBlock
+        from javis.dsh.contracts import TextBlock
 
         text = "".join(b.text for b in block.content if isinstance(b, TextBlock))
         if predicate is None or predicate(event.data, text):
@@ -59,12 +59,12 @@ def tool_result_text(session: Any, predicate: Any = None) -> list[str]:
 
 async def compose_custom(script: list[MockResponse], *, max_parallel: int = 2) -> tuple[Context, Any, Any]:
     """Compose the same plugin set as cordis.yml, with a custom mock script."""
-    import dsh_harness.plugins.agent_loop_config as p_agent_loop
-    import dsh_harness.plugins.demo_tools as p_tools
-    import dsh_harness.plugins.driver as p_driver
-    import dsh_harness.plugins.middleware as p_middleware
-    import dsh_harness.plugins.observer as p_observer
-    import dsh_harness.plugins.system_prompt as p_system_prompt
+    import plugins.agent_loop_config as p_agent_loop
+    import plugins.demo_tools as p_tools
+    import plugins.driver as p_driver
+    import plugins.middleware as p_middleware
+    import plugins.observer as p_observer
+    import plugins.system_prompt as p_system_prompt
 
     ctx = Context()
     ctx.plugin(p_agent_loop, {"max_parallel_tool_calls": max_parallel})
@@ -158,7 +158,7 @@ async def test_retry_scenario() -> None:
 
 async def test_steer_scenario() -> None:
     ctx, agent, session = await compose_scenario("steer")
-    from dsh_harness.mock_llm import steer_hook
+    from mock_llm import steer_hook
 
     # wire the deterministic steer hook (like examples/dsh_harness/cli.py does)
     ctx.get("llm").on_tool_call = steer_hook(agent)
@@ -286,7 +286,7 @@ async def test_additional_contexts_land_in_next_step() -> None:
     ctx, agent, session = await compose_custom(script)
 
     def add_context(_exec: Any, result: Any, _next: Any) -> Any:
-        from dsh_harness.contracts import PostToolDecision
+        from javis.dsh.contracts import PostToolDecision
 
         return PostToolDecision(
             additional_contexts=(UserMessage.from_text("[injected by tools/post-execute]"),)

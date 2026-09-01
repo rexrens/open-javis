@@ -30,6 +30,11 @@ def collect_fibers(ctx: Context) -> list[Any]:
 async def run(args: argparse.Namespace) -> int:
     ctx = Context()
     ctx.baseUrl = str(args.file.parent)
+    # The composition directory becomes the plugin import context: plugins
+    # loaded from relative paths can import sibling modules (e.g. a demo's
+    # mock provider next to its ``cordis.yml``).
+    if str(args.file.parent) not in sys.path:
+        sys.path.insert(0, str(args.file.parent))
     loader_fiber = ctx.plugin(Loader, {"file": str(args.file)})
     try:
         await loader_fiber

@@ -17,16 +17,10 @@ Waterfall listener contract (Cordis): ``listener(payload, next)`` — calling
 it vetoes the rest.
 """
 
-import os as _os
-import sys as _sys
-
-_DEMO_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-if _DEMO_ROOT not in _sys.path:
-    _sys.path.insert(0, _DEMO_ROOT)
 
 from dataclasses import replace
 
-from dsh_harness.contracts import (
+from javis.dsh.contracts import (
     Events,
     PreStepEnter,
     PreStepReject,
