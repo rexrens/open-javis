@@ -10,7 +10,7 @@ Plugin wiring lives in ``build_runtime``: a fresh Cordis context provides the
 built-in services (``config`` / ``tools`` / ``commands`` / ``host``), mounts
 the plugin composition via the Cordis loader, and picks the engine from the
 ``engine`` service when a plugin provided one (falling back to the built-in
-``CoreCoderEngine`` otherwise).
+``HarnessEngine`` otherwise).
 
 ``handle_line`` yields ``AgentEvent`` straight through to the host's
 ``render_event`` callback — no ``StreamEvent`` translation layer.
@@ -117,15 +117,19 @@ def _build_default_engine(
     max_turns: int | None,
     tool_metadata: dict[str, Any],
     workspace: str | Path,
+    javis_tools: Any = None,
 ) -> AgentEngine:
-    """Construct the built-in ``CoreCoderEngine`` from resolved config.
+    """Construct the built-in ``HarnessEngine`` from resolved config.
 
     This is the single seam where the engine is chosen: the runtime no longer
     accepts an injected engine, and future engine implementations (e.g. the
     plugin system's ``ctx.provide("engine", impl)``) replace the body of this
     function instead of threading an engine parameter through the runtime.
+
+    ``javis_tools`` is the runtime's plugin-populated javis tool registry; the
+    harness engine adapts it (built-ins + plugin tools) into its own registry.
     """
-    from javis.engines.corecoder.engine import CoreCoderEngine
+    from javis.engines.harness import build
     from javis.session.config import resolve_provider_and_model
     from javis.session.credentials import resolve_api_key
 
@@ -145,15 +149,18 @@ def _build_default_engine(
             break
     if max_turns is None and cfg.session.max_turns is not None:
         max_turns = cfg.session.max_turns
-    return CoreCoderEngine.build(
+    return build(
         model=model_id,
         api_key=api_key or "",
         base_url=provider_cfg.base_url,
+        provider_name=provider_name,
         max_tokens=max_tokens,
         system_prompt=system_prompt,
         cwd=cwd,
+        workspace=workspace,
         max_turns=max_turns,
         tool_metadata=tool_metadata,
+        javis_tools=javis_tools,
     )
 
 
@@ -176,7 +183,7 @@ async def build_runtime(
     composition — CLI ``--plugins`` > ``JAVIS_PLUGINS`` > ``pluginsFile`` >
     ``<workspace>/cordis.yml`` — and waits for every fiber to settle. A
     plugin that provided ``engine`` supplies the engine object; otherwise
-    ``_build_default_engine`` builds the built-in ``CoreCoderEngine`` (the
+    ``_build_default_engine`` builds the built-in ``HarnessEngine`` (the
     seam tests patch with a fake).
     """
     cwd_resolved = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd())
@@ -212,9 +219,10 @@ async def build_runtime(
     ctx.baseUrl = str(workspace_root)
     # Built-in services: owner is the root fiber, so they are never revoked.
     ctx.provide(CONFIG_SERVICE, cfg)
-    from javis.engines.corecoder.tools import create_default_tool_registry
+    from javis.engines.tools import create_default_tool_registry
 
-    ctx.provide(TOOLS_SERVICE, create_default_tool_registry())
+    tools_registry = create_default_tool_registry()
+    ctx.provide(TOOLS_SERVICE, tools_registry)
     ctx.provide(COMMANDS_SERVICE, commands)
     ctx.provide(
         HOST_SERVICE,
@@ -253,6 +261,7 @@ async def build_runtime(
             max_turns=max_turns,
             tool_metadata=tool_metadata,
             workspace=workspace_root,
+            javis_tools=tools_registry,
         )
     # Explicit CLI overrides win over the engine's resolved defaults.
     if model is not None:

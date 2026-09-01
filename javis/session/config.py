@@ -22,7 +22,7 @@ from javis.session.workspace import find_project_javis_dir, get_workspace_root
 
 log = logging.getLogger(__name__)
 
-DEFAULT_ENGINE = "corecoder"
+DEFAULT_ENGINE = "harness"
 CONFIG_FILENAME = "config.json"
 COMPOSITION_FILENAME = "cordis.yml"
 

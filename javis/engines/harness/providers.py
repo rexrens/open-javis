@@ -1,4 +1,4 @@
-"""LLM provider implementations for the corecoder engine.
+"""LLM provider implementations for the harness engine.
 
 The provider *contract* lives in ``javis.contracts.llm`` — ``LLMProvider``
 (single abstract method ``achat_stream``), the data models (``LLMRequest`` /
@@ -7,6 +7,9 @@ here so existing imports keep working. This module holds the SDK-dependent
 pieces: error classification (``is_fallback_trigger``, used only for
 fallback decisions — the SDK does retries) and the concrete providers
 (``OpenAICompatProvider`` / ``ScriptedProvider``).
+
+Migrated from ``javis.engines.corecoder.llm`` (2026-09-01) when the corecoder
+engine was replaced by the dsh-style harness engine.
 """
 
 from __future__ import annotations

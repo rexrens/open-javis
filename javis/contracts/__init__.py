@@ -17,7 +17,7 @@ Only pure definitions live here — no runtime logic, no side effects:
 - ``messages.py`` — the ``ConversationMessage`` model and sanitization
 - ``usage.py`` — the ``UsageSnapshot`` token/cost record
 
-Everything above (host, session, engines, corecoder) may depend on this
+Everything above (host, session, engines) may depend on this
 package; it depends on nothing within javis.
 """
 

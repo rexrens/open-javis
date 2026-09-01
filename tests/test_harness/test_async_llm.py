@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from javis.engines.corecoder.llm import (
+from javis.engines.harness.providers import (
     LLMRequest,
     LLMResponse,
     OpenAICompatProvider,
@@ -142,7 +142,7 @@ def test_is_fallback_trigger_classification():
 
     from openai import BadRequestError, RateLimitError
 
-    from javis.engines.corecoder.llm import is_fallback_trigger
+    from javis.engines.harness.providers import is_fallback_trigger
 
     response = MagicMock()
     response.request = MagicMock()
@@ -153,7 +153,7 @@ def test_is_fallback_trigger_classification():
 
 
 def test_estimated_cost():
-    from javis.engines.corecoder.llm import estimated_cost
+    from javis.engines.harness.providers import estimated_cost
 
     assert estimated_cost("deepseek-chat", 1_000_000, 0) == 0.27
     assert estimated_cost("no-such-model", 1, 1) is None
@@ -166,7 +166,7 @@ def test_streaming_tool_call_accumulates_across_chunks():
     """Streaming tool calls span multiple chunks; id/name/args must survive."""
     import types
 
-    from javis.engines.corecoder.llm import LLMResponse, _parse_delta
+    from javis.engines.harness.providers import LLMResponse, _parse_delta
 
     def make_chunk(idx, tc_id=None, name=None, args=None):
         fn = None

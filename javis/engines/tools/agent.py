@@ -6,14 +6,20 @@ work like "go research this codebase and report back" without polluting
 its own context window.
 
 The sub-agent runs to completion and returns a text summary.
+
+The old corecoder implementation constructed a ``corecoder.Agent`` directly
+from ``..agent``. The harness engine owns a different loop (ReactLoopAgent),
+so the spawner is injected instead: the engine sets ``sub_agent_factory``
+(a ``(task) -> str`` callable that runs one sub-task to completion and
+returns its final text).
 """
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any, ClassVar
 
 from .base import Tool
-
-if TYPE_CHECKING:
-    from ..agent import Agent
 
 
 class AgentTool(Tool):
@@ -35,26 +41,16 @@ class AgentTool(Tool):
         "required": ["task"],
     }
 
-    # set by Agent.__init__ after construction
-    _parent_agent: "Agent | None" = None
+    #: Injected by the harness engine: ``(task) -> str`` runs a sub-agent to
+    #: completion and returns its final text (the old corecoder Agent is gone).
+    sub_agent_factory: Callable[[str], str] | None = None
 
     def execute(self, task: str, **kwargs: Any) -> str:
-        if self._parent_agent is None:
-            return "Error: agent tool not initialized (no parent agent)"
-
-        # import here to avoid circular dep
-        from ..agent import Agent
-
-        parent = self._parent_agent
-        sub = Agent(
-            llm=parent.llm,
-            tools=[t for t in parent.tools if t.name != "agent"],  # no recursive agents
-            max_context_tokens=parent.context.max_tokens,
-            max_rounds=20,
-        )
+        if self.sub_agent_factory is None:
+            return "Error: agent tool not initialized (no sub-agent factory)"
 
         try:
-            result = sub.chat(task)
+            result = self.sub_agent_factory(task)
             # trim long results to avoid blowing up parent's context
             if len(result) > 5000:
                 result = result[:4500] + "\n... (sub-agent output truncated)"

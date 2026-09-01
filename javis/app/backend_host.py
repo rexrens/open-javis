@@ -481,7 +481,7 @@ class BackendHost:
         """Wire the modal permission channel into the engine's tool loop.
 
         Contract-level hook first (``AgentEngine.set_permission_checker``);
-        legacy corecoder path (``engine.agent.permission_checker``) as a
+        legacy path (``engine.agent.permission_checker``) as a
         fallback. Test doubles that implement neither simply skip injection.
         """
         engine = self._bundle.engine

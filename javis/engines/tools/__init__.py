@@ -1,4 +1,4 @@
-"""Tool registry and built-in tools for the corecoder engine.
+"""Tool registry and built-in tools for javis engines.
 
 The registry itself lives in ``javis.contracts.tools`` (the typed ``tools``
 service contract for the plugin system): ``register(tool)`` returns a
@@ -11,6 +11,11 @@ The module-level functions delegate to the default instance
 registered at import time. ``create_default_tool_registry()`` builds a fresh
 per-session registry (the runtime's ``tools`` service) so plugin tool
 registrations never leak across sessions.
+
+Migrated from ``javis.engines.corecoder.tools`` (2026-09-01): the
+``AgentTool`` sub-agent dependency is now injected via
+``AgentTool.sub_agent_factory`` instead of constructing the old corecoder
+Agent directly.
 """
 
 from __future__ import annotations
@@ -72,6 +77,7 @@ def get_tool(name: str) -> Tool | None:
 def all_tools() -> list[Tool]:
     """Snapshot of the default registry (new list each call)."""
     return TOOL_REGISTRY.all()
+
 
 # Deprecated compatibility alias: import-time snapshot.
 ALL_TOOLS = all_tools()

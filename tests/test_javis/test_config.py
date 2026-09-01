@@ -30,15 +30,15 @@ def isolated_env(tmp_path, monkeypatch):
 # --- defaults & template ---
 
 
-def test_default_engine_is_corecoder():
-    assert DEFAULT_ENGINE == "corecoder"
+def test_default_engine_is_harness():
+    assert DEFAULT_ENGINE == "harness"
 
 
 def test_ensure_default_config_creates_template(isolated_env):
     path = ensure_default_config()
     assert path.exists()
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert "engine" not in data  # engine selector removed; fixed to builtin corecoder
+    assert "engine" not in data  # engine selector removed; fixed to builtin harness
     assert "providers" in data
     assert "appearance" in data
     assert "session" in data

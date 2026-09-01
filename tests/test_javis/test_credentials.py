@@ -69,7 +69,7 @@ def test_resolve_global_env_beats_project_env(isolated_env, tmp_path):
     )
 
 
-def test_resolve_global_fallback_corecoder_key(isolated_env, monkeypatch):
+def test_resolve_global_fallback_provider_key(isolated_env, monkeypatch):
     monkeypatch.setenv("CORECODER_API_KEY", "sk-fallback")
     assert resolve_api_key("deepseek", workspace=get_workspace_root(), cwd=str(isolated_env)) == "sk-fallback"
 
