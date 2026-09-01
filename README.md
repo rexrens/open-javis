@@ -27,7 +27,7 @@ Two layers:
 - **Context management** — automatic compression when tool outputs push the conversation past the token budget.
 - **Robust LLM layer** — exponential-backoff retries (rate limit / timeout / 5xx), `stream_options` fallback for providers that reject it, usage tracking and per-model cost estimates.
 - **Session persistence** — atomic JSON snapshots per session under `~/.javis/sessions/`, with `/resume` support from the TUI.
-- **Deterministic offline testing** — `ScriptedProvider` (and the standalone `demo/dsh_harness` mock reference) let you exercise the engine without network.
+- **Deterministic offline testing** — `ScriptedProvider` (and the standalone `examples/dsh_harness` mock reference) let you exercise the engine without network.
 
 ## Architecture
 

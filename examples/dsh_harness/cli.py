@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """Run the harness demo scenarios through the Cordis plugin system.
 
-The demo harness (``demo/dsh_harness``) is a dsh-style agent loop — phase state
-machine, inbox, session event log, exclusive/parallel tool scheduling, and
-the agent/* waterfalls — composed entirely out of Cordis plugins
-(``demo/dsh_harness/cordis.yml``). This entry point:
+The demo harness (``examples/dsh_harness``) is a dsh-style agent loop — phase
+state machine, inbox, session event log, exclusive/parallel tool scheduling,
+and the agent/* waterfalls — composed entirely out of Cordis plugins
+(``examples/dsh_harness/dsh_harness/cordis.yml``). This entry point:
 
 1. boots a root context and mounts the composition on the ``Loader``
    (dependency-driven load order, fiber lifecycle, reversible services);
@@ -15,9 +15,9 @@ the agent/* waterfalls — composed entirely out of Cordis plugins
 
 Usage (from the repo root, with ``javis`` importable)::
 
-    uv run python demo/cli.py                 # all four scenarios
-    uv run python demo/cli.py --scenario tools
-    uv run python demo/cli.py --scenario steer --verbose
+    uv run python examples/dsh_harness/cli.py                 # all four scenarios
+    uv run python examples/dsh_harness/cli.py --scenario tools
+    uv run python examples/dsh_harness/cli.py --scenario steer --verbose
 
 The mock provider is scripted (``dsh_harness/mock_llm.py``); no API key needed.
 """

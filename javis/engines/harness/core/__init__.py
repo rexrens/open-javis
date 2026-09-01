@@ -1,6 +1,6 @@
 """Harness core — the dsh-style agent loop, javis production copy.
 
-Faithful copy of ``demo/dsh_harness`` (the standalone reference demo) with
+Faithful copy of ``examples/dsh_harness`` (the standalone reference demo) with
 three javis additions:
 
 - ``session.Session.on_append(seq, type, data)`` — the host engine's event

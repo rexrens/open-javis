@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-DEMO_ROOT = Path(__file__).resolve().parents[1] / "demo"
+DEMO_ROOT = Path(__file__).resolve().parents[1] / "examples" / "dsh_harness"
 if str(DEMO_ROOT) not in sys.path:
     sys.path.insert(0, str(DEMO_ROOT))
 
@@ -160,7 +160,7 @@ async def test_steer_scenario() -> None:
     ctx, agent, session = await compose_scenario("steer")
     from dsh_harness.mock_llm import steer_hook
 
-    # wire the deterministic steer hook (like demo/cli.py does)
+    # wire the deterministic steer hook (like examples/dsh_harness/cli.py does)
     ctx.get("llm").on_tool_call = steer_hook(agent)
     await drive(agent, PROMPTS["steer"])
 

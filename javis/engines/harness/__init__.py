@@ -1,7 +1,7 @@
 """Harness engine — the javis production engine over the dsh-style agent loop.
 
 Replaces ``javis.engines.corecoder`` (2026-09-01). Architecture: the demo's
-``demo/dsh_harness`` reference (dsh ``ReactLoopAgent`` — phase state machine,
+``examples/dsh_harness`` reference (dsh ``ReactLoopAgent`` — phase state machine,
 inbox, session event log, exclusive/parallel tool scheduling, ``agent/*``
 waterfalls) copied into ``javis.engines.harness.core`` with three javis
 additions (``Session.on_append`` / ``max_steps_per_turn`` guard /

@@ -1,6 +1,6 @@
 # 插件化 standalone harness 示例
 
-这是一个完全独立于 javis 内建 harness（`CoreCoderEngine`）的
+这是一个完全独立于 javis 内建 harness（`HarnessEngine`）的
 `AgentEngine` 实现，通过 cordis 插件机制接入 javis。它演示了"单独写一个
 harness"的完整姿势：harness 本体只依赖 `javis.contracts`，装配发生在插件
 入口，宿主（TUI / print / backend）零改动即可驱动它。
@@ -79,17 +79,17 @@ provider 选择：`cordis.yml` 的 `config.provider`（`auto` | `scripted` |
   包装——注意不能直接 `ctx.effect(tools.register(tool))`，那样 register 先执行、
   effect 又把 disposer 当 execute 立即调用，等于马上撤销（历史上踩过）。
 - **事件流自持**：turn 内用 asyncio.Queue 桥接 provider 回调与 `AgentEvent`
-  生成器（与内建 CoreCoderEngine 同款模式），消费者取消会取消 provider 任务。
+  生成器（与内建 HarnessEngine 同款模式），消费者取消会取消 provider 任务。
 
-## 与内建 corecoder harness 的对比
+## 与内建 harness 的对比
 
-| 维度 | corecoder harness | 本示例 |
+| 维度 | 内建 harness | 本示例 |
 |---|---|---|
 | 引擎契约 | `AgentEngine` | `AgentEngine`（同一条缝） |
 | 装配 | `runtime._build_default_engine` 直构 | 插件 `apply` + `ctx.provide("engine")` |
-| provider | `javis.engines.corecoder.llm` | 自持 `providers.py`，引擎 SDK-free |
-| 工具来源 | `all_tools()` 全局单例 | 会话级 `ToolRegistry` 快照 |
-| 权限 | 直插 `engine.agent.permission_checker` | `set_permission_checker` 契约钩子 |
+| provider | `javis.engines.harness`（JavisLLMAdapter 桥接 OpenAICompat/Scripted） | 自持 `providers.py`，引擎 SDK-free |
+| 工具来源 | 运行时插件化 `ToolRegistry` | 会话级 `ToolRegistry` 快照 |
+| 权限 | `tools/execute` middleware（经 `set_permission_checker`） | `set_permission_checker` 契约钩子 |
 | 卸载 | 无 | `bundle.close()` 逆序 dispose 插件 fiber |
 
 ## 扩展方向

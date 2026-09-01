@@ -10,7 +10,7 @@ MockLLM 按脚本流式返回 `StreamChunk`，mock 工具返回固定文本。
 一份 `cordis.yml` 组合文件，宿主零改动即可驱动。
 
 ```
-demo/
+examples/dsh_harness/
 ├── cli.py                     # 场景运行器（text / tools / retry / steer）
 └── dsh_harness/
     ├── contracts.py           # 契约面：blocks/chunks/messages/usage/failure、
@@ -31,11 +31,11 @@ demo/
 从仓库根目录（`javis` 已装好，无需 API key）：
 
 ```bash
-uv run python demo/cli.py                    # 全部 4 个场景
-uv run python demo/cli.py --scenario tools   # 单场景
+uv run python examples/dsh_harness/cli.py                    # 全部 4 个场景
+uv run python examples/dsh_harness/cli.py --scenario tools   # 单场景
 
 # 通用 Cordis 运行器也可以加载同一份组合（只装配、不驱动）：
-uv run python -m javis.cordis.cli run demo/dsh_harness/cordis.yml
+uv run python -m javis.cordis.cli run examples/dsh_harness/dsh_harness/cordis.yml
 ```
 
 冒烟测试：
@@ -56,7 +56,7 @@ uv run pytest tests/test_demo_harness.py -v
 ## 接线图
 
 ```text
-demo/cli.py
+examples/dsh_harness/cli.py
   └─ Context（根 fiber）+ Loader（cordis.yml，依赖驱动排序）
        ├─ agent-loop-config   provide("agentLoop")      max_parallel_tool_calls=2
        ├─ system-prompt       provide("systemPrompt")   persona/context sections + 工具 schema 组装
