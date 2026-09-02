@@ -2,6 +2,5 @@
 
 name = "hello"
 
-
 def apply(ctx):
     print("hello from my first plugin")

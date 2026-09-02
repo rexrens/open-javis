@@ -6,6 +6,8 @@ name = "config-demo"
 
 
 class Config(BaseModel):
+    """Config schema for this plugin."""
+    
     greeting: str = "Hello"
     targets: list[str] = Field(default_factory=lambda: ["world"])
 

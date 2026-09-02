@@ -34,6 +34,7 @@ uv run python examples/cordis/runner.py hmr --wait     # hmr 章节需 --wait（
 | 8 | `scope/` | `ctx.isolate` · `ctx.extend` · `Service.filter` | 按服务名做作用域隔离（同 label 共享 scope） |
 | 9 | `failure/` | `FiberState.FAILED` · runner 的错误报告 | apply 抛错：坏插件 FAILED，好插件继续跑，runner 退出码 1 |
 | 10 | `hmr/` | `Hmr`（loader.hmr）· Loader 热重载 | 热模块替换：改插件文件，条目原地重挂 |
+| 11 | `tools/` | `ctx.waterfall` × 3 · `ctx.on` · `ctx.provide`/`inject` | DSH 式工具调用管线：`tools/pre-execute`（能不能跑）→ `tools/execute`（怎么跑）→ `tools/post-execute`（结果怎么用）；常驻 handler（audit/metrics/截断）与外部策略（权限 veto / 重试）拆成独立插件挂接 |
 
 ## 接口速查
 

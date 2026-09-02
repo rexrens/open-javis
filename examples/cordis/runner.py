@@ -41,6 +41,29 @@ _CORDIS_ROOT = Path(__file__).resolve().parent
 def collect_fibers(ctx: Context) -> list[Any]:
     return [fiber for runtime in ctx.registry.values() for fiber in list(runtime.fibers)]
 
+def print_fibers(fibers: list[Any]) -> None:
+    """Print every fiber as a tree, indented by parent/child nesting."""
+    uids = {f.uid for f in fibers}
+    children: dict[int, list[Any]] = {}
+    for fiber in fibers:
+        parent = fiber.parent.fiber if fiber.parent is not None else None
+        # The invisible root fiber (uid 0, never listed) parents top-level
+        # plugins; anything whose parent is absent is a tree root here.
+        if parent is None or parent.uid not in uids:
+            parent = None
+        children.setdefault(parent.uid if parent is not None else -1, []).append(fiber)
+    for siblings in children.values():
+        siblings.sort(key=lambda f: f.uid)
+
+    def walk(fiber: Any, depth: int) -> None:
+        pad = "  " * depth
+        print(f"[runner] {pad}#{fiber.uid} {fiber.name} ({fiber.state.name})", file=sys.stderr)
+        for child in children.pop(fiber.uid, []):
+            walk(child, depth + 1)
+
+    for root in children.pop(-1, []):
+        walk(root, 0)
+
 
 async def run(chapter: str, wait: bool) -> int:
     chapter_dir = _CORDIS_ROOT / chapter
@@ -65,6 +88,8 @@ async def run(chapter: str, wait: bool) -> int:
     await settle(ctx)
 
     fibers = collect_fibers(ctx)
+    # print_fibers(fibers)
+
     failed = [f for f in fibers if f.state == FiberState.FAILED]
     if failed:
         for fiber in failed:
@@ -75,7 +100,7 @@ async def run(chapter: str, wait: bool) -> int:
     if not wait and not busy_tasks:
         return 0
 
-    print(f"[runner] {len(fibers)} fiber(s) active; press Ctrl-C to stop", file=sys.stderr)
+    print(f"{len(fibers)} fiber(s) active; press Ctrl-C to stop", file=sys.stderr)
     stop = asyncio.Event()
 
     # Documented extension: plugins may request a graceful exit (see the
