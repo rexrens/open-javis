@@ -35,9 +35,9 @@ Status: **ready for review**
   砍掉 javis 特有层；类型面大幅合并。
 - **Q3 → 目录改名 `examples/plugin_harness` → `examples/mini_dsh`**（git mv，同步更新
   引用与测试文件名）。
-- **Q4（自定，规格中可改）**：demo 场景保留 4 个的精简版（text 闭环 / tools 调度 /
-  retry 恢复 / steer 注入）——core 含 inbox 就该有 steer 的验证；断言比
-  dsh_harness 精简（每场景 2–4 条）。
+- **Q4（自定，规格中可改）**：demo 场景保留 5 个的精简版（text 闭环 / tools 调度 /
+  retry 恢复 / steer 注入 / skills 加载）——core 含 inbox 就该有 steer 的验证；
+  skills 场景验证 Q6 的技能闭环；断言比 dsh_harness 精简（每场景 2–4 条）。
 - **Q5（用户质疑后修正）**：session 必须插件化、按真实 dsh 原样——dsh 里 session 是
   一等 cordis 服务（`packages/core/session::SessionStore extends Service`，`ctx.sessions`；
   `create()` 走 fiber effect，`announce()` 发 `session/created`；agent 工厂把 session+agent
@@ -45,6 +45,14 @@ Status: **ready for review**
   简化，不是 dsh 原样。修正为：**轻量 SessionStore 服务**（~80 行）：core/session.py =
   Session + SessionStore（cordis Service，名 `"sessions"`）；plugins/session.py provide
   store；driver 从 `store.create()` 取 session。
+- **Q6（用户指出缺失后补上）**：mini_dsh 要有**模型 SKILL 能力**，按 dsh 形状 +
+  用户显式调用——dsh 里 skill 是 4 包协作（`dsh-skill` 核心服务 `ctx.skills`
+  注册表 + `dsh-skill-filesystem` provider + `dsh-tool-skill` 插件：`skill` 加载
+  工具 / pre-step 发布 `<available_skills>` 目录 / pre-step 用户 `/<name>` 显式
+  调用注入 + `dsh-skill-badge` UI）。mini_dsh 收：core/skill.py = SkillRegistry
+  服务 + 轻量文件系统 provider（扫 `<root>/<name>/SKILL.md` + YAML frontmatter，
+  无 watch/rank）；plugins/skills.py = skill 加载工具 + 两个 pre-step 监听器
+  （目录发布、`/<name>` 注入）；新增第 5 个 demo 场景 `skills`；不裁 UI。
 
 ## 目标形态
 
@@ -53,7 +61,7 @@ Status: **ready for review**
 ```
 examples/mini_dsh/                  # 由 examples/plugin_harness git mv 而来
 ├── README.md                       # 全重写：新定位（见"示例矩阵"）
-├── cordis.yml                      # 组合文件（5 个插件条目）
+├── cordis.yml                      # 组合文件（6 个插件条目）
 ├── cli.py                          # standalone driver：demo 场景（带断言）/ 单发 prompt / REPL
 ├── core/                           # ★ 自包含精简 dsh core（唯一外部依赖 javis.cordis）
 │   ├── __init__.py                 # 导出核心符号
@@ -63,18 +71,23 @@ examples/mini_dsh/                  # 由 examples/plugin_harness git mv 而来
 │   ├── inbox.py                    # next-turn/next-step 双队列（~70 行）
 │   ├── llm.py                      # LLM 服务契约 + BlockAssembler + chunk 归一化（~150 行）
 │   ├── tools.py                    # ToolRegistry + exclusive/parallel 调度（~200 行）
+│   ├── skill.py                    # SkillRegistry 服务 + 文件系统 provider（~200 行）
 │   └── agent.py                    # ReactLoopAgent 精简状态机（~330 行）
 ├── plugins/                        # cordis 插件（装配层）
 │   ├── session.py                  # provide("sessions")：SessionStore（dsh 原样：一等服务）
 │   ├── llm.py                      # provide("llm")：从 providers.py 选 adapter（scripted/openai）
 │   ├── tools.py                    # provide("tools")：demo 工具（now/weather/set_note…）
+│   ├── skill_tool.py               # skill 加载工具 + pre-step 目录发布 + /<name> 注入
+│   │                               #   （对应 dsh tool-skill 包）
 │   ├── middleware.py               # waterfall 演示：agent/request-error 重试（可 veto 证明）
 │   └── driver.py                   # 组合根：store.create() → ReactLoopAgent → provide agent
-└── providers.py                    # ScriptedAdapter（4 场景工厂）+ OpenAICompatAdapter
+├── skills/                         # 示例技能目录（demo 用）
+│   └── poetic-note/SKILL.md        # frontmatter（name/description）+ 正文指令
+└── providers.py                    # ScriptedAdapter（5 场景工厂）+ OpenAICompatAdapter
 ```
 
-代码规模目标：core ~1.2k + 外围（plugins/providers/cli）~0.7k ≈ **1.8k 行以内**
-（session 插件化后 core 上浮 ~70 行，从 types/agent 的文档与冷门分支里找补）。
+代码规模目标：core ~1.4k + 外围（plugins/providers/cli）~0.75k ≈ **2.1k 行以内**
+（含 skill 能力 +~300 行；超预算时优先裁场景断言文本与 docstring，不裁语义）。
 
 ### core 精简裁切清单（参照 javis/harness 架构层）
 
@@ -88,15 +101,22 @@ examples/mini_dsh/                  # 由 examples/plugin_harness git mv 而来
   SessionStore（cordis Service，dsh 原样）：create（fiber effect 生命周期）/
   get/announce（emit `session/created`）；砍 store 的 typert 注册、fork/seed、
   surface 折叠等 dsh 高级特性 |
+| `packages/skill/*`（dsh TS） | **新增** core/skill.py：SkillRegistry 服务（名 `"skills"`）：
+  SkillSummary/SkillDefinition、register_skill（runtime 贡献）、list/get；
+  轻量文件系统 provider：扫 `<root>/<name>/SKILL.md` 目录包 + YAML frontmatter
+  （name/description），无 watch/rank/scope 分层；**新增** plugins/skill_tool.py
+  （对应 dsh-tool-skill）：注册 `skill` 加载工具到 tools 服务 + pre-step 监听器
+  1（session 日志无目录消息时注入 `<available_skills>` 目录）+ pre-step 监听器
+  2（用户消息首行 `/<name>` → 技能正文作为 instructions 注入，只扫 user 来源消息） |
 | engine/build/compression/tool_adapter/prompt | 整层删除（javis 集成壳）；systemPrompt 服务并入 llm 插件或 driver 内提供（精简为普通字符串，不做 sections） |
 
 命名对齐：模块名与类名沿用 javis/harness（即 dsh TS 源码的命名），保证与
 `examples/dsh_harness` 的对照表可读。**代码是独立复刻**（copy + trim + 精简），不是
 import——mini_dsh 对 javis 的依赖只有 `javis.cordis`。
 
-### 装配模型（cordis，5 插件）
+### 装配模型（cordis，6 插件）
 
-- 服务名沿用 dsh 词汇：`sessions` / `llm` / `tools` / `agentLoop` / `agent`。
+- 服务名沿用 dsh 词汇：`sessions` / `skills` / `llm` / `tools` / `agentLoop` / `agent`。
 - `cli.py` 引导 = `Context` + `ctx.plugin(Loader, {"file": cordis.yml})`（同
   examples/cordis/runner.py 姿势），宿主只认 `agent` 服务契约
   （followup / steer / inject / cancel / when_idle）。
@@ -115,6 +135,10 @@ import——mini_dsh 对 javis 的依赖只有 `javis.cordis`。
   block 的时机调 `agent.steer(...)`（同 dsh_harness mock_llm 的 steer_hook——注入
   时机确定性，不与真实模型赛跑）。
 - middleware 插件挂 agent/request-error waterfall：TRANSIENT 每 step 重试一次。
+- skill_tool 插件 `inject=[skills, tools]`：向 tools 服务注册 `skill` 加载工具
+  （execute：`ctx.get("skills").get(name)` → 正文，未知/不可调用 → error 文本）；
+  两个 `agent/pre-step` 监听器（注册顺序决定注入次序：`/<name>` 注入先于目录
+  注入，与 dsh tool-skill 一致）；目录/显式注入均为 user 来源消息，可审计。
 - import 技巧：cordis Loader 按文件路径加载 `plugins/*.py`，插件内
   `sys.path.insert(0, <examples/mini_dsh>)` 后 `import core…`（沿用现
   harness_plugin.py 的 `_DIR` 手法）；`cli.py` 直接跑时同目录包结构天然可 import core。
@@ -123,15 +147,18 @@ import——mini_dsh 对 javis 的依赖只有 `javis.cordis`。
 
 - `ScriptedAdapter`：离线确定性模型，`stream(GenerateOptions) → AsyncIterator[StreamChunk]`
   按脚本吐出（chunk 词汇直接是 core/types 的 StreamChunk，不再有自定义 ChatProvider
-  中间抽象）；内置 4 场景工厂（text/tools/retry/steer），同 dsh_harness 的
+  中间抽象）；内置 5 场景工厂（text/tools/retry/steer/**skills**），同 dsh_harness 的
   `$HARNESS_DEMO_SCENARIO` 环境变量选场景。
+- `skills` 场景：脚本模型第 1 步调 `skill(name="poetic-note")` 工具（读
+  `skills/poetic-note/SKILL.md` 正文），第 2 步按技能指令回答（如“用两行诗总结”）；
+  断言：skill tool/call+result 配对、result 含技能正文标记、最终文本体现技能指令。
 - `OpenAICompatAdapter`：openai SDK → StreamChunk（流式累积 tool-call delta、usage、
   失败抛 LlmError 由 core 归一化）；真实模型可跑。
 
 ### CLI / 运行
 
 ```bash
-uv run python examples/mini_dsh/cli.py                # 全部 demo 场景（带断言）
+uv run python examples/mini_dsh/cli.py                # 全部 5 个 demo 场景（带断言）
 uv run python examples/mini_dsh/cli.py --scenario tools
 uv run python examples/mini_dsh/cli.py --prompt "2+2" # 有 API key 走真实模型
 uv run python examples/mini_dsh/cli.py --repl         # 交互
@@ -170,7 +197,7 @@ uv run python examples/mini_dsh/cli.py --repl         # 交互
 
 ## 验证标准
 
-1. `uv run python examples/mini_dsh/cli.py` 4 场景全 OK（退出码 0）。
+1. `uv run python examples/mini_dsh/cli.py` 5 场景全 OK（退出码 0）。
 2. `uv run pytest tests/test_javis/test_mini_dsh_example.py -v` 通过。
 3. 全仓 pytest 通过（~250）。
 4. `ruff` 改动文件零新增（全仓历史遗留 115 个 I001 不算）。
@@ -180,8 +207,8 @@ uv run python examples/mini_dsh/cli.py --repl         # 交互
 
 ## 风险与备注
 
-- 行数预算：若实现超 1.8k，优先裁场景断言长度 / ScriptedAdapter 脚本文本，
-  不裁语义（先砍 steer 场景的话需用户点头）。
+- 行数预算：若实现超 2.1k，优先裁场景断言长度 / ScriptedAdapter 脚本文本 / docstring，
+  不裁语义（先砍 steer 或 skills 场景的话需用户点头）。
 - javis/harness 架构层与 mini_dsh core 会部分同源（结构相似）——这是刻意的
   （同一 dsh 逻辑的两个表达：生产 core vs 教学精简），README 对照表中言明。
 - 现工作区有用户未提交改动（examples/dsh_harness 等 5 文件 + plugin_harness
@@ -189,5 +216,5 @@ uv run python examples/mini_dsh/cli.py --repl         # 交互
 
 ## 未决（实现计划前可再调）
 
-- demo 默认全跑 4 场景（含 steer）；README 提供 `--scenario` 单选。
+- demo 默认全跑 5 场景（text/tools/retry/steer/skills）；README 提供 `--scenario` 单选。
 - 是否在 cli.py 提供 REPL（原 plugin_harness 有）——默认保留最简版。
