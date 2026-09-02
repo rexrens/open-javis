@@ -8,7 +8,7 @@ layer:
 
 - :class:`LlmRuntime` — the ``llm`` service: adapter registry (provider
   routes → adapters), configurable-provider directory, model discovery, and
-  a ``llm/stream`` waterfall over every streaming call.
+  an interceptable ``llm/stream`` waterfall for raw runtime streams.
 - :class:`LLMAdapter` — the provider-wire contract: implement
   ``stream(GenerateOptions) → StreamChunk`` only; serialization lives inside
   the adapter.

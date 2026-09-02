@@ -10,8 +10,8 @@ Port of ``packages/llm/llm/src/index.ts`` (``@deepseek-ai/dsh-llm``):
   declares provider routes a plugin can activate through configuration.
 - **model discovery** — ``register_model_discovery`` / ``discover_models``
   offer endpoint interrogation on behalf of a settings namespace.
-- **``llm/stream`` waterfall** — every streaming model call is interceptable
-  (retry / replay / routing). Adapter selection, dispatch, iterator
+- **``llm/stream`` waterfall** — raw :meth:`LlmRuntime.stream` dispatch is
+  interceptable by listeners. Adapter selection, dispatch, iterator
   construction, and iteration failures become one terminal ``error`` /
   ``aborted`` finish chunk; middleware and consumer failures remain thrown.
 - **``prepare_call(config, signal)``** — resolve exact-model metadata and
@@ -137,15 +137,21 @@ class AdapterRegistrationHandle:
 class DirectoryRegistrationHandle:
     """Disposer + atomic replacement for one configurable-provider registration."""
 
-    def __init__(self, runtime: LlmRuntime, disposer: Callable[[], Any]) -> None:
+    def __init__(
+        self,
+        runtime: LlmRuntime,
+        held: list[LlmConfigurableProvider],
+        disposer: Callable[[], Any],
+    ) -> None:
         self._runtime = runtime
+        self._held = held
         self._disposer = disposer
         self._released = False
 
     def replace(self, entries: list[LlmConfigurableProvider]) -> None:
         if self._released:
             raise LlmError("this configurable-provider registration was disposed", "REGISTRATION_DISPOSED")
-        self._runtime._commit_directory(entries, held=[])
+        self._runtime._commit_directory(entries, self._held)
 
     def __call__(self) -> Any:
         self._released = True
@@ -269,23 +275,30 @@ class LlmRuntime(Service):
         All-or-nothing; disposed with the fiber.
         """
         runtime = self
+        held: list[LlmConfigurableProvider] = []
         disposer = self.ctx.effect(
-            lambda: runtime._directory_effect(entries),
+            lambda: runtime._directory_effect(entries, held),
             "llm.register_configurable_providers()",
         )
-        return DirectoryRegistrationHandle(self, disposer)
+        return DirectoryRegistrationHandle(self, held, disposer)
 
-    def _directory_effect(self, entries: list[LlmConfigurableProvider]) -> Any:
+    def _directory_effect(
+        self,
+        entries: list[LlmConfigurableProvider],
+        held: list[LlmConfigurableProvider],
+    ) -> Any:
         if len(entries) == 0:
             raise LlmError(
                 "a configurable-provider registration must declare at least one provider",
                 "INVALID_DIRECTORY",
             )
-        self._commit_directory(entries, held=[])
+        self._commit_directory(entries, held)
 
         def disposer() -> None:
-            for entry in self._directory.values():
-                self._directory.pop(entry.provider, None)
+            for entry in list(held):
+                if self._directory.get(entry.provider) is entry:
+                    self._directory.pop(entry.provider, None)
+            held.clear()
             self._emit_adapters_updated()
 
         return disposer
@@ -332,8 +345,19 @@ class LlmRuntime(Service):
         self,
         settings_ns: str,
         discover: Callable[[LlmModelDiscoveryRequest], Any],
-    ) -> Callable[[], None]:
+    ) -> Callable[[], Any]:
         """Offer to interrogate provider endpoints for a settings namespace."""
+        runtime = self
+        return self.ctx.effect(
+            lambda: runtime._discovery_effect(settings_ns, discover),
+            "llm.register_model_discovery()",
+        )
+
+    def _discovery_effect(
+        self,
+        settings_ns: str,
+        discover: Callable[[LlmModelDiscoveryRequest], Any],
+    ) -> Callable[[], None]:
         if not settings_ns:
             raise LlmError("model discovery needs a non-empty settings namespace", "INVALID_DISCOVERY")
         if settings_ns in self._discoveries:
@@ -559,8 +583,10 @@ class LlmRuntime(Service):
     def stream(self, options: GenerateOptions) -> Any:
         """Stream one model call as raw chunks (token-level deltas).
 
-        ``options.provider`` selects the adapter; the ``llm/stream`` waterfall
-        may wrap the stream (retry / replay / routing).
+        ``options.provider`` selects the adapter. Raw runtime streams pass
+        through the ``llm/stream`` waterfall so listeners can observe or wrap
+        this dispatch path; prepared-call dispatch is bound directly to the
+        already-resolved adapter registration.
         """
         return self.ctx.waterfall(
             "llm/stream",
@@ -577,8 +603,7 @@ class LlmRuntime(Service):
     ) -> AsyncIterator[StreamChunk]:
         if not call_config_equals(options, config):
             raise LlmError("prepared LLM call config changed before adapter dispatch", "INVALID_PREPARED_CALL")
-        resolved_options = options if call_config_equals(options, config) else replace(options, max_tokens=config.max_tokens)
-        return self._adapter_stream(resolved_options, prepared=dispatch)
+        return self._adapter_stream(options, prepared=dispatch)
 
     async def _adapter_stream(
         self,

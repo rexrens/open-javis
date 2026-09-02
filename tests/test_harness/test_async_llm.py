@@ -15,6 +15,7 @@ from javis.harness.types import (
     MaxTokensFinish,
     StopFinish,
     TokenUsage,
+    ToolCallBlock,
     ToolCallsFinish,
 )
 from javis.llm import OpenAICompatAdapter, ScriptedAdapter, estimated_cost, is_fallback_trigger
@@ -153,6 +154,62 @@ def test_openai_chunk_tool_call_accumulates_across_chunks():
     assert tc_id == "call_1"
     assert name == "read_file"
     assert arguments == '{"file_path": "pyproject.toml"}'
+
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_stream_tool_call_accumulates_across_chunks():
+    """The adapter must not emit an empty tool call before the arguments finish."""
+    import json
+    import types
+
+    def make_chunk(idx, tc_id=None, name=None, args=None, finish_reason=None):
+        fn = None
+        if name is not None or args is not None:
+            fn = types.SimpleNamespace(name=name, arguments=args)
+        return types.SimpleNamespace(
+            usage=None,
+            choices=[
+                types.SimpleNamespace(
+                    finish_reason=finish_reason,
+                    delta=types.SimpleNamespace(
+                        content=None,
+                        reasoning_content=None,
+                        tool_calls=[
+                            types.SimpleNamespace(index=idx, id=tc_id, function=fn)
+                        ],
+                    ),
+                )
+            ],
+        )
+
+    chunks = [
+        make_chunk(0, tc_id="call_1", name="read_file"),
+        make_chunk(0, args='{"file_path": "'),
+        make_chunk(0, args='pyproject.toml"}', finish_reason="tool_calls"),
+    ]
+
+    async def create(**params):
+        del params
+
+        async def stream():
+            for chunk in chunks:
+                yield chunk
+
+        return stream()
+
+    fake = types.SimpleNamespace(
+        chat=types.SimpleNamespace(
+            completions=types.SimpleNamespace(create=create)
+        )
+    )
+    adapter = OpenAICompatAdapter(model="deepseek-chat", api_key="k")
+    adapter._aclient = fake
+
+    emitted = [c async for c in adapter.stream(_opts())]
+    block_ends = [c for c in emitted if c.type == "block-end" and isinstance(c.block, ToolCallBlock)]
+    assert len(block_ends) == 1
+    assert json.loads(block_ends[0].block.arguments) == {"file_path": "pyproject.toml"}
 
 
 # --- package re-exports ---

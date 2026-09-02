@@ -105,6 +105,14 @@ def test_setters():
 
 
 @pytest.mark.asyncio
+async def test_set_effort_is_written_to_next_request():
+    engine = _engine([_resp(content="x")])
+    engine.set_effort("high")
+    await _drain(engine, "go")
+    assert engine._session.request_header()["config"]["reasoningEffort"] == "high"
+
+
+@pytest.mark.asyncio
 async def test_load_messages_restores_history():
     engine = _engine(
         [_resp(content="restored and answered", prompt_tokens=3, completion_tokens=2)]

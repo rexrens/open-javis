@@ -461,11 +461,14 @@ class HarnessEngine(AgentEngine):
         return ToolExecutionResult.text(f"[permission denied: {decision}]", is_error=True)
 
     def _request_middleware(self, payload: dict[str, Any], next: Any) -> Any:
-        """``agent/request`` waterfall: the engine's current model wins over
-        the loop seed, so ``set_model`` takes effect on the next request."""
+        """``agent/request`` waterfall: the engine's current model and effort
+        win over the loop seed, so ``set_model`` and ``set_effort`` take
+        effect on the next request."""
         config = next()
         if self._model and config.model != self._model:
             config = replace(config, model=self._model)
+        if self._effort is not None and config.reasoning_effort != self._effort:
+            config = replace(config, reasoning_effort=self._effort)
         return config
 
     def _on_agent_limit(self, payload: dict[str, Any]) -> None:

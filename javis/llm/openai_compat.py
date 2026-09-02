@@ -196,7 +196,7 @@ class OpenAICompatAdapter(LLMAdapter):
         text_buffer: list[str] = []
         reasoning_buffer: list[str] = []
         text_open = reasoning_open = False
-        emitted: set[str] = set()
+        emitted_idx: set[int] = set()
         index = 0
         collected: list[Any] = []
 
@@ -220,30 +220,31 @@ class OpenAICompatAdapter(LLMAdapter):
                 reasoning_buffer.append(reasoning)
                 collected.append(ReasoningDeltaChunk(index=index, text=reasoning))
                 yield ReasoningDeltaChunk(index=index, text=reasoning)
-            # Provider tool calls arrive as cumulative snapshots per chunk:
-            # diff against what we already emitted and emit one block per call.
-            for tc_id, name, arguments in _tool_call_snapshots(tc_map):
-                if tc_id and tc_id not in emitted:
-                    emitted.add(tc_id)
-                    collected.append(BlockStartChunk(index=index, block_type="tool-call"))
-                    yield BlockStartChunk(index=index, block_type="tool-call")
-                    collected.append(
-                        ToolCallDeltaChunk(
-                            index=index, id=tc_id, name=name, arguments_delta=arguments
+            # Provider tool calls arrive as cumulative snapshots per chunk.
+            # Emit a tool block only once its arguments have finished
+            # arriving: either a later tool index is already present, or the
+            # provider has marked the completion with a finish reason.
+            if tc_map:
+                max_idx = max(tc_map)
+                for tool_idx in sorted(tc_map):
+                    if tool_idx in emitted_idx:
+                        continue
+                    if not (
+                        finish_reason
+                        or (
+                            tool_idx < max_idx
+                            and _tool_call_arguments_complete(tc_map[tool_idx])
                         )
-                    )
-                    yield ToolCallDeltaChunk(index=index, id=tc_id, name=name, arguments_delta=arguments)
-                    collected.append(
-                        BlockEndChunk(
-                            index=index,
-                            block=ToolCallBlock(id=tc_id, name=name, arguments=arguments),
-                        )
-                    )
-                    yield BlockEndChunk(
-                        index=index,
-                        block=ToolCallBlock(id=tc_id, name=name, arguments=arguments),
-                    )
+                    ):
+                        continue
+                    chunks = _tool_call_chunks(index, tc_map[tool_idx])
+                    if not chunks:
+                        continue
+                    emitted_idx.add(tool_idx)
                     index += 1
+                    for chunk in chunks:
+                        collected.append(chunk)
+                        yield chunk
             if prompt_tok or completion_tok:
                 collected.append(
                     UsageChunk(
@@ -258,6 +259,21 @@ class OpenAICompatAdapter(LLMAdapter):
             if finish_reason:
                 collected.append(FinishChunk(reason=_map_finish(finish_reason)))
                 yield FinishChunk(reason=_map_finish(finish_reason))
+
+        # A provider can stop the stream without an explicit finish reason.
+        # Flush any accumulated tool calls that never reached a completion
+        # boundary so consumers still see the complete assembled arguments.
+        for tool_idx in sorted(tc_map):
+            if tool_idx in emitted_idx:
+                continue
+            chunks = _tool_call_chunks(index, tc_map[tool_idx])
+            if not chunks:
+                continue
+            emitted_idx.add(tool_idx)
+            index += 1
+            for chunk in chunks:
+                collected.append(chunk)
+                yield chunk
 
         # Close open content blocks with the fully assembled block (normal
         # exhaustion only: a mid-stream exception leaves blocks open and
@@ -371,6 +387,38 @@ def _parse_openai_chunk(
                     if tc_delta.function.arguments:
                         tc_map[idx]["args"] += tc_delta.function.arguments
     return content, reasoning, finish_reason, prompt_tok, completion_tok
+
+
+def _tool_call_arguments_complete(raw: dict[str, Any]) -> bool:
+    """Return whether the accumulated tool-call JSON arguments parse."""
+    if not raw["args"]:
+        return True
+    try:
+        json.loads(raw["args"])
+    except json.JSONDecodeError:
+        return False
+    return True
+
+
+def _tool_call_chunks(index: int, raw: dict[str, Any]) -> list[Any]:
+    """Build one complete tool-call block chunk sequence from ``tc_map``."""
+    try:
+        arguments = (
+            json.dumps(json.loads(raw["args"]), ensure_ascii=False)
+            if raw["args"]
+            else "{}"
+        )
+    except json.JSONDecodeError:
+        arguments = raw["args"]
+    tc_id = raw["id"]
+    name = raw["name"]
+    if not tc_id and not name:
+        return []
+    return [
+        BlockStartChunk(index=index, block_type="tool-call"),
+        ToolCallDeltaChunk(index=index, id=tc_id, name=name, arguments_delta=arguments),
+        BlockEndChunk(index=index, block=ToolCallBlock(id=tc_id, name=name, arguments=arguments)),
+    ]
 
 
 def _tool_call_snapshots(tc_map: dict[int, dict[str, Any]]) -> list[tuple[str, str, str]]:

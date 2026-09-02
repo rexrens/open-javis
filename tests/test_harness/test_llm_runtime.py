@@ -23,7 +23,13 @@ from javis.harness.types import (
     ToolSchema,
     UserMessage,
 )
-from javis.llm import LlmRuntime, ScriptedAdapter
+from javis.llm import (
+    LlmConfigurableProvider,
+    LlmDiscoveredModel,
+    LlmModelDiscoveryRequest,
+    LlmRuntime,
+    ScriptedAdapter,
+)
 
 from . import test_async_llm as async_llm
 
@@ -149,6 +155,95 @@ async def test_register_adapter_handle_replace_swaps_routes():
     # the same adapter instance is kept
     assert runtime._adapters["mock"].adapter is first
     del second
+
+
+@pytest.mark.asyncio
+async def test_configurable_provider_registrations_release_independently():
+    """Disposing one directory registration must not remove another's routes."""
+    ctx = Context()
+    runtime = LlmRuntime(ctx)
+    first = runtime.register_configurable_providers(
+        [LlmConfigurableProvider(provider="a", display_name="A", settings_ns="ns")]
+    )
+    second = runtime.register_configurable_providers(
+        [LlmConfigurableProvider(provider="b", display_name="B", settings_ns="ns")]
+    )
+
+    assert [entry.provider for entry in runtime.list_configurable_providers()] == ["a", "b"]
+    await first()
+    assert [entry.provider for entry in runtime.list_configurable_providers()] == ["b"]
+    await second()
+    assert runtime.list_configurable_providers() == []
+
+
+@pytest.mark.asyncio
+async def test_configurable_provider_directory_disposes_multiple_entries_cleanly():
+    """Multiple entries from one handle should be removable without iteration errors."""
+    ctx = Context()
+    runtime = LlmRuntime(ctx)
+    handle = runtime.register_configurable_providers(
+        [
+            LlmConfigurableProvider(provider="a", display_name="A", settings_ns="ns"),
+            LlmConfigurableProvider(provider="b", display_name="B", settings_ns="ns"),
+        ]
+    )
+
+    await handle()
+    assert runtime.list_configurable_providers() == []
+
+
+@pytest.mark.asyncio
+async def test_configurable_provider_replace_does_not_leak_old_route():
+    """``replace`` should swap the held route, not accumulate the old name."""
+    ctx = Context()
+    runtime = LlmRuntime(ctx)
+    handle = runtime.register_configurable_providers(
+        [LlmConfigurableProvider(provider="a", display_name="A", settings_ns="ns")]
+    )
+    handle.replace(
+        [LlmConfigurableProvider(provider="b", display_name="B", settings_ns="ns")]
+    )
+
+    assert [entry.provider for entry in runtime.list_configurable_providers()] == ["b"]
+
+
+@pytest.mark.asyncio
+async def test_model_discovery_registers_discovers_and_disposes():
+    """Model discovery should participate in the owning fiber's effects."""
+    ctx = Context()
+    runtime = LlmRuntime(ctx)
+
+    async def discover(request):
+        del request
+        return [LlmDiscoveredModel(id="m1", name="Model One")]
+
+    disposer = runtime.register_model_discovery("ns", discover)
+    models = await runtime.discover_models(
+        "ns", LlmModelDiscoveryRequest(provider="mock")
+    )
+    assert [model.id for model in models] == ["m1"]
+    await disposer()
+    with pytest.raises(LlmError, match="no model discovery"):
+        await runtime.discover_models("ns", LlmModelDiscoveryRequest(provider="mock"))
+
+
+@pytest.mark.asyncio
+async def test_prepared_dispatch_bypasses_llm_stream_waterfall():
+    """Prepared dispatch is bound to the registration and skips raw-stream waterfall."""
+    runtime, _ = _runtime([chunk_response(text="hello")])
+    seen: list[str] = []
+
+    def on_stream(payload, next):
+        seen.append(payload.model)
+        return next()
+
+    runtime.ctx.on("llm/stream", on_stream)
+    prepared = await runtime.prepare_call(
+        LlmCallConfig(provider="scripted", model="scripted-demo")
+    )
+    chunks = await _collect(prepared.stream(_options(max_tokens=4096)))
+    assert seen == []
+    assert any(c.type == "text-delta" for c in chunks)
 
 
 @pytest.mark.asyncio
