@@ -753,7 +753,10 @@ def test_registry_merges_providers_and_runtime():
 
     class P:
         name = "p"
-        def list(self): return []
+
+        def list(self):
+            return [SkillSummary(name="only-provider", description="from provider")]
+
         def get(self, name):
             if name == "only-provider":
                 return SkillDefinition(name="only-provider", description="from provider", content="body")
