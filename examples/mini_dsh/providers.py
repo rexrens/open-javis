@@ -1,144 +1,164 @@
-"""Provider seam for the plugin harness — a tiny, self-contained LLM adapter.
+"""Provider 层：LLM 协议的两个实现（core/llm.LLM 契约面）。
 
-The harness engine never talks to the OpenAI SDK (or any vendor). It only
-knows :class:`ChatProvider`: one ``complete`` call per agent round, receiving
-OpenAI-style messages plus tool schemas, and streaming text/reasoning through
-callbacks.
+- :class:`ScriptedAdapter` —— 离线确定性模型：按脚本逐条吐 StreamChunk
+  （用 ``core.llm.chunk_response`` 构造）；``retry`` 场景的响应含
+  :class:`_Fault` 哨兵，stream 中途抛 ``LlmError(TRANSIENT)``（由 core 的
+  ``normalized_stream`` 归一化成 error finish）。
+- :class:`OpenAICompatAdapter` —— openai SDK → StreamChunk（真实模型）。
 
-Two implementations ship with this example:
-
-- :class:`ScriptedProvider` — an offline, deterministic "model" used for demos
-  and tests (no API key, no network). It replays a script of turns so the
-  full tool-call loop can be exercised end to end.
-- :class:`OpenAICompatChatProvider` — a streaming adapter over the official
-  OpenAI SDK for any OpenAI-compatible endpoint (DeepSeek / Qwen / Kimi /
-  Ollama ...).
-
-A real harness would add its own providers here (Anthropic, LiteLLM, local
-models, ...) without touching the engine.
+场景工厂 :func:`scenario_script` 产出 7 个确定性脚本（text/tools/retry/
+steer/skills/instructions/compaction），与 dsh_harness 的 ``mock_llm`` 同思路。
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import Any, Protocol
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import Any
 
-TextSink = Callable[[str], None]
-
-
-@dataclass
-class ToolCallDraft:
-    """One tool call requested by the model."""
-
-    id: str
-    name: str
-    arguments: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class ProviderResult:
-    """Outcome of one model round."""
-
-    content: str
-    tool_calls: list[ToolCallDraft] = field(default_factory=list)
-    usage: dict[str, int] | None = None  # {"input_tokens": n, "output_tokens": n}
-
-
-class ChatProvider(Protocol):
-    """A model behind the harness: one ``complete`` per agent round.
-
-    ``messages`` are OpenAI-style dicts (system / user / assistant / tool);
-    ``tools`` are OpenAI function schemas (``Tool.schema()``). Streamed text
-    and reasoning arrive through the callbacks; the return value carries the
-    final content and any tool calls.
-    """
-
-    model: str
-
-    async def complete(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
-        *,
-        on_text: TextSink,
-        on_reasoning: TextSink,
-    ) -> ProviderResult: ...
-
+from core import types as t
+from core.llm import PreparedCall, chunk_response
 
 # ---------------------------------------------------------------------------
-# ScriptedProvider — offline deterministic model
+# 场景脚本（确定性，离线）
 # ---------------------------------------------------------------------------
 
 
+def _text() -> list[list[Any]]:
+    return [chunk_response(text="2 + 2 = 4.", reasoning="2 + 2 is basic arithmetic; the answer is 4.")]
+
+
+def _tools() -> list[list[Any]]:
+    return [
+        chunk_response(
+            tool_calls=[
+                t.ToolCallBlock(id="note", name="set_note", arguments=json.dumps({"text": "remember: parrot"})),
+                t.ToolCallBlock(id="wx1", name="weather", arguments=json.dumps({"city": "Paris"})),
+                t.ToolCallBlock(id="wx2", name="weather", arguments=json.dumps({"city": "Tokyo"})),
+            ]
+        ),
+        chunk_response(
+            text="Paris is 18°C (light rain) and Tokyo is 24°C (sunny) — bring an umbrella for Paris."
+        ),
+    ]
+
+
 @dataclass
-class ScriptedTurn:
-    """One scripted model reply (offline demo)."""
+class _Fault:
+    """retry 场景哨兵：stream 遇到它即抛 TRANSIENT LlmError。"""
 
-    content: str = ""
-    reasoning: str = ""
-    tool_calls: list[ToolCallDraft] = field(default_factory=list)
-    output_tokens: int = 12
+    message: str = "connection reset by peer"
 
 
-def _chunks(text: str, size: int = 6) -> list[str]:
-    """Split text into small chunks so streaming events are exercised."""
-    return [text[i : i + size] for i in range(0, len(text), size)]
+def _retry() -> list[list[Any]]:
+    return [
+        [  # 尝试 1：半截文本后故障
+            t.BlockStartChunk(index=0, block_type="text"),
+            t.TextDeltaChunk(index=0, text="Almost "),
+            _Fault(),
+        ],
+        chunk_response(text="Recovered after one transient provider failure — all good."),
+    ]
 
 
-class ScriptedProvider:
-    """Deterministic offline model: replays a script of turns.
+def _steer() -> list[list[Any]]:
+    return [
+        chunk_response(tool_calls=[t.ToolCallBlock(id="now1", name="now", arguments="{}")]),
+        chunk_response(
+            text="It is 2026-08-31T18:00:00Z, and (per your steering) Tokyo's weather is 24°C sunny."
+        ),
+    ]
 
-    Content/reasoning are streamed in small chunks so the harness event
-    pipeline (``AgentTextDelta`` / ``AgentReasoningDelta``) is exercised for
-    real. After the script is exhausted it answers with a short closing text.
-    """
 
-    def __init__(self, script: list[ScriptedTurn], model: str = "scripted-demo") -> None:
+def _skills() -> list[list[Any]]:
+    return [
+        chunk_response(tool_calls=[t.ToolCallBlock(id="sk1", name="skill", arguments=json.dumps({"name": "poetic-note"}))]),
+        chunk_response(text="Notes fall like autumn leaves —\nwhat you save, time preserves in green."),
+    ]
+
+
+def _instructions() -> list[list[Any]]:
+    # AGENTS.md 指令："回答必须 ≤ 5 个词" → 5 词内回应
+    return [chunk_response(text="Understood. Keeping it brief.")]
+
+
+def _compaction() -> list[list[Any]]:
+    return [
+        chunk_response(tool_calls=[t.ToolCallBlock(id="blob1", name="big_read", arguments=json.dumps({"file": "big.txt"}))]),
+        chunk_response(text="Done reading the big file. It was mostly noise."),
+    ]
+
+
+_SCENARIOS: dict[str, Any] = {
+    "text": _text,
+    "tools": _tools,
+    "retry": _retry,
+    "steer": _steer,
+    "skills": _skills,
+    "instructions": _instructions,
+    "compaction": _compaction,
+}
+
+SCENARIOS: tuple[str, ...] = tuple(_SCENARIOS)
+
+
+def scenario_script(scenario: str) -> list[list[Any]]:
+    """按名字产出确定性脚本（未知场景抛 ValueError）。"""
+    factory = _SCENARIOS.get(scenario)
+    if factory is None:
+        raise ValueError(f"unknown scenario {scenario!r}; choose from {sorted(SCENARIOS)}")
+    return factory()
+
+
+# ---------------------------------------------------------------------------
+# ScriptedAdapter
+# ---------------------------------------------------------------------------
+
+
+class ScriptedAdapter:
+    """离线确定性 LLM：按脚本流式回复（LLM 协议实现）。"""
+
+    def __init__(self, script: list[list[Any]], model: str = "mini-scripted") -> None:
         self.model = model
         self._script = list(script)
         self._cursor = 0
+        #: steer 钩子：在即将发出 tool-call block 前被调用（由 cli/测试挂载）。
+        self.on_tool_call = None
 
-    async def complete(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
-        *,
-        on_text: TextSink,
-        on_reasoning: TextSink,
-    ) -> ProviderResult:
-        del messages, tools
+    def prepare_call(self, config: t.LlmCallConfig, signal: t.AbortSignal | None = None) -> PreparedCall:
+        return PreparedCall(config=config)
+
+    def stream(self, options: t.GenerateOptions) -> AsyncIterator[Any]:
         if self._cursor >= len(self._script):
-            text = "(scripted demo: no more turns)"
-            for chunk in _chunks(text):
-                on_text(chunk)
-            return ProviderResult(content=text, usage={"input_tokens": 0, "output_tokens": 4})
-        turn = self._script[self._cursor]
+            # 脚本耗尽：收尾短句（REPL/多轮时不会重复最后一条）
+            chunks = chunk_response(text="(scripted demo: no more turns)")
+        else:
+            chunks = self._script[self._cursor]
         self._cursor += 1
-        if turn.reasoning:
-            for chunk in _chunks(turn.reasoning):
-                on_reasoning(chunk)
-        for chunk in _chunks(turn.content):
-            on_text(chunk)
-        return ProviderResult(
-            content=turn.content,
-            tool_calls=turn.tool_calls,
-            usage={"input_tokens": 8, "output_tokens": turn.output_tokens},
-        )
+
+        async def gen():
+            for chunk in chunks:
+                if isinstance(chunk, _Fault):
+                    raise t.LlmError(chunk.message, "TRANSIENT")
+                if (
+                    self.on_tool_call is not None
+                    and isinstance(chunk, t.BlockStartChunk)
+                    and chunk.block_type == "tool-call"
+                ):
+                    self.on_tool_call()
+                yield chunk
+
+        return gen()
 
 
 # ---------------------------------------------------------------------------
-# OpenAICompatChatProvider — streaming OpenAI-compatible adapter
+# OpenAICompatAdapter
 # ---------------------------------------------------------------------------
 
 
-class OpenAICompatChatProvider:
-    """Streaming OpenAI-compatible adapter (DeepSeek / Qwen / Kimi / Ollama ...).
-
-    A thin wrapper over the official ``openai`` SDK's ``AsyncOpenAI`` client;
-    the harness engine itself stays SDK-free.
-    """
+class OpenAICompatAdapter:
+    """openai SDK → StreamChunk（DeepSeek/Qwen/Kimi/Ollama 等兼容端点）。"""
 
     def __init__(
         self,
@@ -153,43 +173,39 @@ class OpenAICompatChatProvider:
         self._max_tokens = max_tokens
         self._client: Any = None
 
+    def prepare_call(self, config: t.LlmCallConfig, signal: t.AbortSignal | None = None) -> PreparedCall:
+        return PreparedCall(config=config)
+
     def close(self) -> None:
-        """Release the SDK client reference (called on plugin dispose)."""
         self._client = None
 
-    async def complete(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
-        *,
-        on_text: TextSink,
-        on_reasoning: TextSink,
-    ) -> ProviderResult:
+    async def stream(self, options: t.GenerateOptions) -> AsyncIterator[Any]:
         from openai import AsyncOpenAI
 
         if self._client is None:
             self._client = AsyncOpenAI(api_key=self._api_key or "sk-missing", base_url=self._base_url)
-
+        messages = _to_openai_messages(options)
         params: dict[str, Any] = {
-            "model": self.model,
+            "model": options.model,
             "messages": messages,
             "stream": True,
             "stream_options": {"include_usage": True},
         }
-        if tools:
-            params["tools"] = tools
+        if options.tools:
+            params["tools"] = [{"type": "function", "function": {"name": s.name, "description": s.description, "parameters": s.parameters}} for s in options.tools]
         if self._max_tokens is not None:
             params["max_tokens"] = self._max_tokens
-
         try:
             stream = await self._client.chat.completions.create(**params)
-        except Exception:  # noqa: BLE001 — some providers reject stream_options
+        except Exception:  # noqa: BLE001 —— 有些端点拒绝 stream_options
             params.pop("stream_options", None)
             stream = await self._client.chat.completions.create(**params)
 
-        content_parts: list[str] = []
-        tool_slots: dict[int, dict[str, str]] = {}
+        # 把 OpenAI 流转换成 dsh StreamChunk（逐块流式）
+        index = 0
+        open_slot: dict[int, dict[str, str]] = {}
         usage: Any = None
+        text_parts: list[str] = []
         async for chunk in stream:
             if getattr(chunk, "usage", None) is not None:
                 usage = chunk.usage
@@ -198,49 +214,67 @@ class OpenAICompatChatProvider:
             delta = chunk.choices[0].delta
             reasoning = getattr(delta, "reasoning_content", None)
             if reasoning:
-                on_reasoning(reasoning)
+                yield t.BlockStartChunk(index=index, block_type="reasoning")
+                yield t.ReasoningDeltaChunk(index=index, text=reasoning)
+                yield t.BlockEndChunk(index=index, block=t.ReasoningBlock(text=reasoning))
+                index += 1
             if delta.content:
-                on_text(delta.content)
-                content_parts.append(delta.content)
+                if not open_slot.get(-1, {}).get("open"):
+                    yield t.BlockStartChunk(index=index, block_type="text")
+                    open_slot[-1] = {"open": True}
+                yield t.TextDeltaChunk(index=index, text=delta.content)
+                text_parts.append(delta.content)
             if delta.tool_calls:
                 for call in delta.tool_calls:
-                    slot = tool_slots.setdefault(
-                        call.index,
-                        {"id": f"call_{call.index}", "name": "", "arguments": ""},
-                    )
+                    slot = open_slot.setdefault(call.index, {"id": "", "name": "", "arguments": "", "open": False})
+                    if not slot["open"]:
+                        yield t.BlockStartChunk(index=index, block_type="tool-call")
+                        slot["open"] = True
                     if call.id:
                         slot["id"] = call.id
                     if call.function and call.function.name:
                         slot["name"] += call.function.name
                     if call.function and call.function.arguments:
+                        yield t.ToolCallDeltaChunk(index=index, id=call.id or f"call_{call.index}", name=slot["name"], arguments_delta=call.function.arguments)
                         slot["arguments"] += call.function.arguments
-
-        drafts = [
-            ToolCallDraft(
-                id=slot["id"],
-                name=slot["name"],
-                arguments=json.loads(slot["arguments"] or "{}"),
+        # 收尾：关闭块、usage、finish
+        seen_ids: set[int] = set()
+        for idx, slot in sorted(open_slot.items()):
+            if idx < 0 or idx in seen_ids:
+                continue
+            seen_ids.add(idx)
+            if slot["open"]:
+                yield t.BlockEndChunk(index=idx, block=t.ToolCallBlock(id=slot["id"], name=slot["name"], arguments=slot["arguments"]))
+        if text_parts:
+            yield t.BlockEndChunk(index=index, block=t.TextBlock(text="".join(text_parts)))
+        if usage is not None:
+            yield t.UsageChunk(
+                usage=t.TokenUsage(
+                    input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+                    output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
+                )
             )
-            for slot in tool_slots.values()
-        ]
-        input_tokens = getattr(usage, "prompt_tokens", None)
-        output_tokens = getattr(usage, "completion_tokens", None)
-        return ProviderResult(
-            content="".join(content_parts),
-            tool_calls=drafts,
-            usage=(
-                {"input_tokens": int(input_tokens), "output_tokens": int(output_tokens)}
-                if input_tokens is not None and output_tokens is not None
-                else None
-            ),
-        )
+        yield t.FinishChunk(reason=t.StopFinish())
 
 
-__all__ = [
-    "ChatProvider",
-    "OpenAICompatChatProvider",
-    "ProviderResult",
-    "ScriptedProvider",
-    "ScriptedTurn",
-    "ToolCallDraft",
-]
+def _to_openai_messages(options: t.GenerateOptions) -> list[dict[str, Any]]:
+    """把 core 的 Message 族转成 OpenAI messages（text 消息 + tool 结果）。"""
+    out: list[dict[str, Any]] = []
+    if options.system:
+        out.append({"role": "system", "content": options.system})
+    for message in options.messages:
+        role = getattr(message, "role", "")
+        if role == "user":
+            out.append({"role": "user", "content": message.text or ""})
+        elif role == "tool":
+            out.append({"role": "tool", "tool_call_id": message.call_id, "content": message.text})
+        elif role == "assistant":
+            entry: dict[str, Any] = {"role": "assistant", "content": message.text or None}
+            calls = getattr(message, "tool_calls", None)
+            if calls:
+                entry["tool_calls"] = [
+                    {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": c.arguments}}
+                    for c in calls
+                ]
+            out.append(entry)
+    return out

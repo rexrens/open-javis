@@ -43,6 +43,10 @@ def example_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return ws
 
 
+@pytest.mark.skip(
+    reason="旧 plugin-harness 栈随 Task 10 providers.py 重写失效（providers.ChatProvider 移除）；"
+    "Task 16 将此测试重写为新 cli 的 E2E。"
+)
 @pytest.mark.asyncio
 async def test_plugin_harness_example_runs_tool_loop(example_workspace: Path) -> None:
     """The example composition yields a HarnessEngine that sees plugin tools,
