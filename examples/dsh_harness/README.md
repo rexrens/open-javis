@@ -74,12 +74,117 @@ uv run pytest tests/test_demo_harness.py -v
 
 ## 4 个场景
 
-| 场景 | 演示 |
-|---|---|
-| `text` | 最小闭环：reasoning + text 流式 → `stop` finish → turn 完成 |
-| `tools` | **exclusive barrier**（`set_note`）+ **parallel 池**（`weather`×2，上限 2）、模型顺序提交、结果回灌模型 |
-| `retry` | provider 抛 `TRANSIENT` 失败 → `agent/request-error` waterfall 重试一次 → 成功（失败尝试只留 chunk、不留 assistant/message） |
-| `steer` | `now()` 工具发起时经 `MockLLM.on_tool_call` 钩子**确定性注入** steering 消息 → 下一步 pre-step 认领 → 模型看到 steering |
+四个场景都是**脚本化回放**：`MockAdapter`（`mock_llm.py`）读环境变量
+`HARNESS_DEMO_SCENARIO`，按 `scenario_script()` 的脚本每次 `stream()` 调用
+吐一个响应——行为完全确定，不需要真实 LLM，跑多少遍结果都一样。所以这些场景
+验证的是**循环本身的行为**（流式组装、工具调度、错误恢复、消息注入），而不是
+模型输出质量。`cli.py` 的 `check()` 对每个场景做断言，全部通过才算
+"scenario OK"。
+
+| 场景 | 验证什么 | 关键机制 |
+|---|---|---|
+| `text` | 最小闭环（基线） | reasoning + text 流式、`stop` finish |
+| `tools` | 工具调度语义 | exclusive 屏障 + parallel 池 |
+| `retry` | 错误恢复 | `agent/request-error` waterfall |
+| `steer` | 轮中消息注入 | inbox + step 边界认领 |
+
+### `text` — 最小闭环
+
+**模拟什么**：最基础的"问一句 → 答一句"，验证不用任何工具时，循环也能
+走完一个完整的 turn。这是其他场景的基线——它不过，后面都没法看。
+
+脚本只有一个响应，按流式协议依次发出：
+
+1. reasoning block："2 + 2 is basic arithmetic; the answer is 4."
+2. text block："2 + 2 = 4."
+3. `stop` finish（正常结束）。
+
+**断言验证**：流式 chunk（block-start / *-delta / block-end / usage / finish）
+被 `BlockAssembler` 组装成完整消息；turn 以 `completed` 结束；turn/start 与
+turn/end 成对；最终文本含答案（"4"）。
+
+### `tools` — 工具调度语义（exclusive 屏障 + parallel 池）
+
+**模拟什么**：模型在一轮里发起多个工具调用——其中有的必须串行（exclusive，
+如"写笔记"这种要独占屏障的），有的可以并行（parallel，如查两个城市天气）；
+执行完把结果回灌给模型，由模型生成最终总结。这是 dsh 主流程
+（`executeToolCalls`）最核心的调度语义，本场景把它拆开来验证。
+
+脚本是两个响应，对应两步：
+
+- **Step 1**：模型一次返回 3 个工具调用（按模型给出的顺序）：
+  1. `set_note(text=...)` —— **exclusive 模式**：调度器把它当作屏障，
+     它执行期间别的工具调用不得提交；
+  2. `weather(city=Paris)` —— **parallel 模式**；
+  3. `weather(city=Tokyo)` —— **parallel 模式**。后两个组成并行对，
+     正好打在 `max_parallel_tool_calls=2`（`agent_loop_config.py` 提供）的上限上。
+  三个工具结果分别回灌成 `tool/result` 事件。
+- **Step 2**：模型看到三个结果后生成总结——
+  "Paris is 18°C (light rain) and Tokyo is 24°C (sunny) — bring an umbrella for Paris."
+
+**断言验证**（本场景重点）：
+- 工具调用按**模型提交顺序**执行：`set_note → weather → weather`；
+- **exclusive 屏障证明**：`set_note` 的 result 必须比两个 weather result
+  **更早**写进会话日志（在追加日志上比 seq）——这就是"独占是屏障"的语义保证，
+  而不是靠运气；
+- 总结覆盖两个城市；每个 tool/call 都有配对的 tool/result。
+
+### `retry` — 错误恢复（agent/request-error waterfall）
+
+**模拟什么**：请求途中 provider 侧发生瞬时故障（网络抖动、502 这类），
+**由中间件接管恢复**，而不是整个 turn 直接崩掉。这是 dsh 的
+"错误恢复可插拔"设计：循环自身不重试——它只把失败归一化成 terminal
+`error` finish chunk，并触发 `agent/request-error` waterfall；**重试与否由
+监听器决定**。demo 的 `middleware.py` 插件就是这个监听器。
+
+脚本是两个响应，对应同一步的两个尝试：
+
+1. **尝试 1（失败）**：mock 先流出一个半截文本增量（让中断语义真实——
+   失败前确实已经有部分 chunk 了），然后抛
+   `LlmError(code="TRANSIENT", message="connection reset by peer")`；
+   LLM 层把它归一化成 `error` finish，循环走到 `agent/request-error` waterfall。
+2. **中间件决策**（`middleware.py` 的 `on_request_error`）：失败码在可重试集合
+   （`TRANSIENT`）里，且这个 (turn, step) 还没重试过 → 返回 `RetryAction`，
+   同一步用脚本的下一条响应重放。**每个 step 只允许重试一次**（`retried`
+   集合记录），防止无限重试。
+3. **尝试 2（成功）**：返回 "Recovered after one transient provider failure — all good."
+
+**断言验证**：
+- 最终文本含恢复标记（"Recovered"）；
+- middleware 的观察日志（`middleware-observed` 服务）里至少有一条 retry
+  决策——证明恢复**走的是 waterfall**，而不是悄悄重掷；
+- 会话里**只有一条 assistant/message**：失败的尝试只留下半截 chunk，
+  不成消息、不污染日志（这是 dsh 的关键语义：失败尝试不算数）。
+
+### `steer` — 轮中消息注入（inbox + step 边界）
+
+**模拟什么**：agent 正在干活（两步之间），用户追加了一条指令——
+"对了，再把东京天气带上"。这是 inbox/steering 机制：step 中途提交的消息
+**不打断当前 step**，而是在**下一个 step 边界**被认领、进入模型上下文。
+
+脚本是两个响应：
+
+1. **Step 1**：模型调用 `now` 工具取时间（2026-08-31T18:00:00Z）。关键在于
+   **注入时机**：`cli.py` 预先给 mock 挂了 `on_tool_call` 钩子（`mock_llm.py`
+   的 `steer_hook`）——mock 即将发出这个工具调用块的那一刻，钩子调
+   `agent.steer(...)` 把 steering 消息（"also include Tokyo's weather in
+   your answer"）推进 agent 的 inbox。用"工具调用即将发出"做触发点，注入
+   时机是**确定性的**，不用和真实模型的速度赛跑。
+2. **Step 2**：step 边界处循环从 inbox 认领消息（记 `user/message` 事件），
+   模型的上下文里出现 steering；最终答案同时包含时间和东京天气——
+   "It is 2026-08-31T18:00:00Z, and (per your steering) Tokyo's weather is 24°C sunny."
+
+**断言验证**：
+- 最终答案体现 steering 被吸收（含 "Tokyo"）；
+- **inbox 语义证明**：steering 的 `user/message` 事件的 seq **严格晚于**
+  step 1 的 `step/end` seq——step 中途提交的消息只能在下一个 step 边界被
+  认领，不会打断当前 step（比 seq，不靠印象）。
+
+### 公共断言（四个场景都查）
+
+- turn 以 `completed` 结束；
+- turn/start 与 turn/end 成对；step/start 与 step/end 成对；
+- 每个 tool/call 都有配对的 tool/result。
 
 ## 接线图
 
