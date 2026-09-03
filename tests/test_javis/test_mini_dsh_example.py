@@ -1,6 +1,6 @@
 """End-to-end test for the plugin-harness example.
 
-Mounts ``examples/plugin_harness/cordis.yml`` through ``build_runtime`` with
+Mounts ``examples/mini_dsh/cordis.yml`` through ``build_runtime`` with
 the offline scripted provider and asserts the full loop: plugin tools reach
 the engine, the ``/harness`` command is registered, events stream, and
 ``close()`` disposes plugins.
@@ -20,7 +20,7 @@ from javis.contracts.types import (
     AgentTurnEnd,
 )
 
-_COMPOSITION = Path(__file__).resolve().parents[2] / "examples" / "plugin_harness" / "cordis.yml"
+_COMPOSITION = Path(__file__).resolve().parents[2] / "examples" / "mini_dsh" / "cordis.yml"
 
 
 @pytest.fixture

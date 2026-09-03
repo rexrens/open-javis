@@ -5,9 +5,9 @@
 > 与 [`examples/cordis`](../cordis/README.md)（只讲插件系统接口的教程）互补：
 > 那里学 `Context` / `Loader` / `inject` / 五种事件模式怎么调用，
 > 这里看它们组合起来装配一个完整 agent harness。
-> 与 [`examples/plugin_harness`](../plugin_harness/README.md) 的对照：
+> 与 [`examples/mini_dsh`](../mini_dsh/README.md) 的对照：
 > 本示例的引擎**由插件装配**（dsh 哲学 "everything is a plugin"）；
-> plugin_harness 的引擎是**独立实现**、插件只做组合根接入宿主——
+> mini_dsh 的引擎是**独立实现**、插件只做组合根接入宿主——
 > 两种"引擎从哪来"的姿势，见下方对比表。
 
 一个**完整流程、完整契约接口**的 agent harness 演示：参考
@@ -43,9 +43,9 @@ usage/failure、LlmCallConfig/GenerateOptions、工具执行类型、事件名�
 BlockAssembler）、`tools.py`（ToolRegistry + exclusive/parallel 调度）、
 `agent.py`（ReactLoopAgent 状态机）。
 
-## 与 plugin_harness 的对照（两种引擎姿势）
+## 与 mini_dsh 的对照（两种引擎姿势）
 
-| 维度 | 本示例（dsh_harness） | examples/plugin_harness |
+| 维度 | 本示例（dsh_harness） | examples/mini_dsh |
 |---|---|---|
 | 引擎从哪来 | **由插件装配**：ReactLoopAgent 的 llm/tools/systemPrompt/agentLoop 都是插件 provide 的服务 | **独立实现**：自持 agent loop + 自有 provider 抽象，只依赖 `javis.contracts` |
 | 插件角色 | 提供引擎的每个部件 | 只做组合根：读内建服务、`ctx.provide(ENGINE_SERVICE, engine)` |
