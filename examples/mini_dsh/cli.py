@@ -1,21 +1,11 @@
-"""Standalone driver for the plugin-harness example.
+#!/usr/bin/env python
+"""mini_dsh 的 standalone 驱动（无 javis 宿主，仅 javis.cordis）。
 
-Runs the harness through javis' normal plugin pipeline — ``build_runtime``
-mounts ``cordis.yml``, the harness plugin provides the engine, and this file
-drives it with ``handle_line`` (the same dispatch core the TUI backend uses).
-No React frontend required.
-
-Run from anywhere (javis must be importable):
-
-    uv run python examples/plugin_harness/cli.py --demo
-    uv run python examples/plugin_harness/cli.py --prompt "what is 2+2"
-    uv run python examples/plugin_harness/cli.py            # interactive REPL
-
-Or use the full TUI:
-
-    uv run javis --plugins examples/plugin_harness/cordis.yml
+    uv run python examples/mini_dsh/cli.py                 # 全部 7 个 demo 场景
+    uv run python examples/mini_dsh/cli.py --scenario tools
+    uv run python examples/mini_dsh/cli.py --prompt "2+2"  # 真实模型（有 API key）
+    uv run python examples/mini_dsh/cli.py --repl          # 交互 REPL
 """
-
 from __future__ import annotations
 
 import argparse
@@ -24,132 +14,201 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-
-from javis.app.runtime import RuntimeBundle, build_runtime, handle_line
-from javis.contracts.messages import ConversationMessage
-from javis.contracts.types import (
-    AgentError,
-    AgentEvent,
-    AgentReasoningDelta,
-    AgentStatus,
-    AgentTextDelta,
-    AgentToolCallResult,
-    AgentToolCallStart,
-    AgentTurnEnd,
-)
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 _COMPOSITION = _HERE / "cordis.yml"
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+from core import types as t
+from providers import SCENARIOS
+
+from javis.cordis import Context, FiberState
+from javis.cordis.loader import Loader
+from javis.cordis.registry import settle
+
+PROMPTS: dict[str, str] = {
+    "text": "what is 2+2?",
+    "tools": "save a note and check two cities",
+    "retry": "say something",
+    "steer": "what time is it?",
+    "skills": "save a note about autumn",
+    "instructions": "what is your policy?",
+    "compaction": "read the big file",
+}
+
+#: run_demo 期间写入的环境变量（循环后恢复，不污染调用方/测试进程）。
+_ENV_KEYS = ("MINI_DSH_CWD", "HARNESS_DEMO_SCENARIO")
 
 
-def _summarize(tool_input: dict[str, object]) -> str:
-    return ", ".join(f"{key}={str(value)[:40]}" for key, value in tool_input.items())
+async def _compose(scenario: str, *, cwd: str | None = None) -> Context:
+    ctx = Context()
+    ctx.baseUrl = cwd or str(_HERE)
+    loader_fiber = ctx.plugin(Loader, {"file": str(_COMPOSITION)})
+    await loader_fiber
+    await settle(ctx)
+    failed = [f for f in _all_fibers(ctx) if f.state == FiberState.FAILED]
+    if failed:
+        raise RuntimeError(f"plugin load failed: {failed[0]._error}")
+    return ctx
 
 
-async def _render_event(event: AgentEvent) -> None:
-    """Print the AgentEvent stream in a terminal-friendly shape."""
-    if isinstance(event, AgentTextDelta):
-        sys.stdout.write(event.text)
-        sys.stdout.flush()
-    elif isinstance(event, AgentReasoningDelta):
-        sys.stderr.write(f"\n[reasoning] {event.text}\n")
-        sys.stderr.flush()
-    elif isinstance(event, AgentToolCallStart):
-        sys.stderr.write(f"\n⚙ {event.tool_name}({_summarize(event.tool_input)})\n")
-        sys.stderr.flush()
-    elif isinstance(event, AgentToolCallResult):
-        status = "ok" if not event.is_error else "error"
-        sys.stderr.write(f"  → [{status}] {event.output[:200]}\n")
-        sys.stderr.flush()
-    elif isinstance(event, AgentTurnEnd):
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-    elif isinstance(event, AgentStatus):
-        sys.stderr.write(f"{event.message}\n")
-        sys.stderr.flush()
-    elif isinstance(event, AgentError):
-        sys.stderr.write(f"[error] {event.message}\n")
-        sys.stderr.flush()
+def _all_fibers(ctx: Context) -> list[Any]:
+    return [fiber for runtime in ctx.registry.values() for fiber in list(runtime.fibers)]
 
 
-async def _run(args: argparse.Namespace) -> int:
-    workspace = args.workspace
-    if args.demo and workspace is None:
-        workspace = Path(tempfile.mkdtemp(prefix="plugin-harness-demo-"))
-        print(f"[javis] offline demo workspace: {workspace}", file=sys.stderr)
-    if args.demo:
-        os.environ["HARNESS_PROVIDER"] = "scripted"
+def _attach_steer_hook(ctx: Context) -> None:
+    """steer 场景：llm 即将发出 tool-call 时注入纠正消息（ScriptedAdapter 钩子）。"""
+    ctx.get("llm").on_tool_call = lambda: ctx.get("agent").steer(
+        t.UserMessage.from_text("also include Tokyo's weather in your answer")
+    )
 
-    bundle: RuntimeBundle | None = None
+
+async def _run_turn(ctx: Context, prompt: str) -> None:
+    agent = ctx.get("agent")
+    agent.followup(t.UserMessage.from_text(prompt))
+    await agent.when_idle()
+
+
+async def run_demo_async(scenario: str | None = None) -> int:
+    """跑 1 个或全部 demo 场景，每个带断言；失败抛 AssertionError。"""
+    names = [scenario] if scenario else list(SCENARIOS)
+    saved = {key: os.environ.get(key) for key in _ENV_KEYS}
     try:
-        bundle = await build_runtime(
-            cwd=str(Path.cwd()),
-            workspace=workspace,
-            plugins=str(_COMPOSITION),
-        )
-        print(
-            f"[javis] engine: {type(bundle.engine).__name__} "
-            f"(composition: {_COMPOSITION.name})",
-            file=sys.stderr,
-        )
-
-        async def _print_system(message: str) -> None:
-            print(message, file=sys.stderr)
-
-        async def _clear_output() -> None:
-            return None
-
-        saw_error = False
-
-        async def _render_checked(event: AgentEvent) -> None:
-            nonlocal saw_error
-            if isinstance(event, AgentError):
-                saw_error = True
-            await _render_event(event)
-
-        if args.prompt or args.demo:
-            prompt = args.prompt or "Save a note to the workspace and read it back"
-            # plain prompt: never dispatch slash commands
-            await handle_line(
-                bundle,
-                prompt,
-                print_system=_print_system,
-                render_event=_render_checked,
-                clear_output=_clear_output,
-                user_message=ConversationMessage.from_user_text(prompt),
-            )
-            return 1 if saw_error else 0
-
-        # interactive REPL (slash commands work: /help, /harness, /exit ...)
-        while True:
+        for name in names:
+            workspace = tempfile.mkdtemp(prefix=f"mini-dsh-{name}-")
+            if name == "instructions":
+                _seed_workspace(workspace)  # 拷入 fixtures/AGENTS.md
+            os.environ["MINI_DSH_CWD"] = workspace
+            os.environ["HARNESS_DEMO_SCENARIO"] = name  # llm 插件 apply 时读
+            print(f"[mini-dsh] running scenario {name} ...", file=sys.stderr)
             try:
-                line = input("javis> ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print(file=sys.stderr)
-                break
-            if not line:
-                continue
-            keep = await handle_line(
-                bundle,
-                line,
-                print_system=_print_system,
-                render_event=_render_checked,
-                clear_output=_clear_output,
-            )
-            if not keep:
-                break
-        return 0
+                ctx = await _compose(name, cwd=workspace)
+                session = ctx.get("session")
+                if name == "steer":
+                    _attach_steer_hook(ctx)
+                await _run_turn(ctx, PROMPTS[name])
+                _assert_scenario(name, ctx, session)
+            except BaseException:  # —— 原样重抛，仅补场景名上下文
+                print(f"[mini-dsh] scenario {name} FAILED", file=sys.stderr)
+                raise
+            print(f"[mini-dsh] scenario {name}: OK", file=sys.stderr)
     finally:
-        if bundle is not None:
-            await bundle.close()
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+    return 0
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--prompt", help="Run one prompt and exit")
-    parser.add_argument("--demo", action="store_true", help="Force the offline scripted provider (no API key)")
-    parser.add_argument("--workspace", help="javis workspace (default: ~/.javis; --demo uses a temp dir)")
-    return asyncio.run(_run(parser.parse_args()))
+def _seed_workspace(workspace: str) -> None:
+    from shutil import copyfile
+
+    copyfile(_HERE / "fixtures" / "AGENTS.md", Path(workspace) / "AGENTS.md")
+
+
+def _tool_result_text(event: Any) -> str:
+    """tool/result 消息的文本：块在 content[0]（ToolResultBlock）的 content 里。"""
+    block = event.data["message"].content[0]
+    return "".join(getattr(b, "text", "") for b in block.content)
+
+
+def _assert_scenario(name: str, ctx: Context, session: Any) -> None:
+    """每场景 2–4 条断言（语义验证，不全量）。"""
+    if name == "text":
+        msgs = session.derive_messages()
+        assert any("2 + 2 = 4" in getattr(m, "text", "") for m in msgs)
+    elif name == "tools":
+        results = [e for e in session.events_of("tool/result")]
+        assert len(results) == 3
+        names = [e.data["name"] for e in session.events_of("tool/call")]
+        assert names == ["set_note", "weather", "weather"]
+    elif name == "retry":
+        msgs = session.derive_messages()
+        assert any("Recovered" in getattr(m, "text", "") for m in msgs)
+        assert len(session.events_of("assistant/message")) == 1
+        observed = ctx.get("middleware-observed", strict=False) or []
+        assert any("request-error: retry" in line for line in observed)
+    elif name == "steer":
+        msgs = session.derive_messages()
+        assert any("Tokyo" in getattr(m, "text", "") for m in msgs)
+    elif name == "skills":
+        msgs = session.derive_messages()
+        assert any("autumn leaves" in getattr(m, "text", "") for m in msgs)
+        assert any(
+            "available_skills" in (getattr(e.data.get("message"), "text", "") or "")
+            for e in session.events_of("user/message")
+        )
+    elif name == "instructions":
+        baseline = [
+            e for e in session.events_of("user/message")
+            if (getattr(e.data.get("message"), "source", None) or {}).get("kind") == "agent-instructions"
+        ]
+        assert baseline
+        msgs = session.derive_messages()
+        assert any("Keeping it brief" in getattr(m, "text", "") for m in msgs)
+    elif name == "compaction":
+        results = [_tool_result_text(e) for e in session.events_of("tool/result")]
+        assert any("truncated by compaction" in text for text in results)
+        assert len(session.events_of("compaction/start")) == 1
+        msgs = session.derive_messages()
+        assert any(getattr(m, "text", "").startswith("Earlier context (compacted):") for m in msgs)
+
+
+def run_demo(scenario: str | None = None) -> int:
+    """同步入口（pytest 与 main 共用）。"""
+    return asyncio.run(run_demo_async(scenario))
+
+
+async def _run_prompt(prompt: str) -> int:
+    os.environ.setdefault("MINI_DSH_PROVIDER", "auto")  # 有 key 走真实模型
+    ctx = await _compose("text")
+    agent = ctx.get("agent")
+    agent.followup(t.UserMessage.from_text(prompt))
+    await agent.when_idle()
+    # 打印 assistant 文本
+    session = ctx.get("session")
+    for message in session.derive_messages():
+        if getattr(message, "role", "") == "assistant":
+            print(message.text or "")
+    return 0
+
+
+async def _run_repl() -> int:
+    ctx = await _compose("text")
+    agent = ctx.get("agent")
+    print("mini-dsh REPL — type a message, /exit to quit", file=sys.stderr)
+    while True:
+        try:
+            line = input("mini> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if not line:
+            continue
+        if line in ("/exit", "/quit"):
+            break
+        agent.followup(t.UserMessage.from_text(line))
+        await agent.when_idle()
+        session = ctx.get("session")
+        for message in session.derive_messages():
+            if getattr(message, "role", "") == "assistant" and message.text:
+                print(message.text)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="mini-dsh", description=__doc__)
+    parser.add_argument("--scenario", choices=list(SCENARIOS), help="run one demo scenario")
+    parser.add_argument("--prompt", help="run one real-model prompt and exit")
+    parser.add_argument("--repl", action="store_true", help="interactive REPL")
+    args = parser.parse_args(argv)
+    if args.prompt:
+        return asyncio.run(_run_prompt(args.prompt))
+    if args.repl:
+        return asyncio.run(_run_repl())
+    return run_demo(args.scenario)
 
 
 if __name__ == "__main__":
