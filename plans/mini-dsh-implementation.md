@@ -304,6 +304,7 @@ def test_store_create_get_and_announce():
     assert store.get(s.id) is s
     assert seen == [s.id]
     # store 生命周期（fiber effect 卸载移除）由 Task 11 组合语义覆盖，不在此单测
+```
 
 - [ ] **步骤 2：跑测试确认失败**
 
@@ -3056,7 +3057,7 @@ git commit -m "chore(mini-dsh): drop legacy javis-bound files, rewrite README, f
 - 引用更新（cordis/dsh_harness README、测试名）→ Task 1/17 ✓
 - 行数预算 2.5k → 文件布局表的量级合计 core ~1.5k + 外围 ~0.9k ≈ 2.4k ✓（超了从 docstring/断言裁）
 
-**占位符扫描：** 无 TODO/"补充细节"式步骤。Task 16 的 `_run_prompt` 废代码已在文中标注删除；Task 11/12/13 的断言"对照实际事件形状微调"均有明确原则（比 seq / 事件类型 / source 标记），不是空指令。
+**占位符扫描：** 无 TODO/"补充细节"式步骤。自查修复记录：cordis Context 无 dispose——测试里 7 处死代码 `await ctx.dispose() if hasattr(...)` 已全部删除（Task 11 测试 docstring 言明每测试独立 compose、进程退出回收）；Task 11 的 cordis.yml 改为只含已存在插件的增量追加（Task 12/13/14/15 各追加自己的条目，否则引用未创建插件会 load 失败）；skill_tool 模块级 `inject = ["tools"]` 保证加载顺序；Task 3 代码块收尾围栏补回（围栏 65/65 平衡）；ScriptedAdapter 脚本耗尽改收尾短句（不重复最后一条）；cli run_demo_async 每场景设置 HARNESS_DEMO_SCENARIO。
 
 **类型一致性：**
 - `execute_tool_calls(ctx, session, agent, turn, step, tool_calls, signal, accept_context=...)` 全计划一致（Task 6/9 使用）✓
