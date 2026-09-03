@@ -1,14 +1,19 @@
-# 插件化 standalone harness 示例组合文件
-#
-# 加载顺序由 cordis 依赖驱动（inject），但引擎插件在 apply 内快照
-# tools.all()，所以工具插件条目要排在引擎插件之前。
+# mini_dsh 组合文件（dsh: everything is a plugin）
+# 加载顺序由 cordis inject 依赖驱动（书写顺序无关）。
+# 条目随插件任务逐步追加：middleware(T12) / skill-tool(T13) /
+# instructions(T14) / compaction(T15)。
 
-- id: extra-tools
-  name: ./extra_tools.py
-  inject: [tools, host]
+- id: sessions
+  name: ./plugins/session.py
 
-- id: harness-engine
-  name: ./harness_plugin.py
-  inject: [config, tools, commands, host]
+- id: llm
+  name: ./plugins/llm.py
   config:
-    provider: auto   # auto | scripted | openai（也可用环境变量 HARNESS_PROVIDER 覆盖）
+    provider: scripted   # scripted（离线 demo）| openai | auto（有 key 走真实）
+
+- id: tools
+  name: ./plugins/tools.py
+
+- id: driver
+  name: ./plugins/driver.py
+  inject: [sessions, llm, tools]
