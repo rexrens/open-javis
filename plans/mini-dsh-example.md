@@ -51,8 +51,23 @@ Status: **ready for review**
   工具 / pre-step 发布 `<available_skills>` 目录 / pre-step 用户 `/<name>` 显式
   调用注入 + `dsh-skill-badge` UI）。mini_dsh 收：core/skill.py = SkillRegistry
   服务 + 轻量文件系统 provider（扫 `<root>/<name>/SKILL.md` + YAML frontmatter，
-  无 watch/rank）；plugins/skills.py = skill 加载工具 + 两个 pre-step 监听器
+  无 watch/rank）；plugins/skill_tool.py = skill 加载工具 + 两个 pre-step 监听器
   （目录发布、`/<name>` 注入）；新增第 5 个 demo 场景 `skills`；不裁 UI。
+- **Q7（用户指出缺失后补上）**：mini_dsh 要有 **memory + history 能力**，按 dsh
+  真实逻辑的轻量版：
+  - **memory = dsh `context/agent-instructions`**：AGENTS.md/CLAUDE.md 风格工作区
+    指令文件——baseline 在首个请求前注入为 user 消息（source 标记
+    `agent-instructions, baseline=true`，持久化上下文）；文件变更后重新注入
+    （轻量版：每 pre-step 按内容哈希比对，无 dsh 的 fs-touch 事件追踪、无版本缓存）；
+  - **history = dsh compaction 族**（`packages/compaction/*`）：`ctx.compaction`
+    服务（CompactionEngine：compactIfNeeded/compactNow）+ `compaction/start|summary|end`
+    事件（log-only，锁括号包住整个操作）+ 摘要落为 `user/message`（compaction-checkpoint
+    source 标记）替换 shadowed 范围 + 工具结果 snip（dsh `compaction-tool-result-pruner`
+    / javis `make_snip_listener` 同款：`tools/post-execute` 监听器截断超限结果）；
+  - 轻量裁切：无 token-meter 服务（字符数估算代替）、无 LLM 摘要（规则摘要器，
+    LLM 版为扩展方向）、无 `command-compact` 人工命令、无 scope/rank；
+  - 新增 2 个 demo 场景：`instructions`（baseline 注入 + 模型遵循指令）、
+    `compaction`（snip 截断 + 摘要事件链 + shadow 范围）。
 
 ## 目标形态
 
@@ -61,7 +76,7 @@ Status: **ready for review**
 ```
 examples/mini_dsh/                  # 由 examples/plugin_harness git mv 而来
 ├── README.md                       # 全重写：新定位（见"示例矩阵"）
-├── cordis.yml                      # 组合文件（6 个插件条目）
+├── cordis.yml                      # 组合文件（8 个插件条目）
 ├── cli.py                          # standalone driver：demo 场景（带断言）/ 单发 prompt / REPL
 ├── core/                           # ★ 自包含精简 dsh core（唯一外部依赖 javis.cordis）
 │   ├── __init__.py                 # 导出核心符号
@@ -72,6 +87,7 @@ examples/mini_dsh/                  # 由 examples/plugin_harness git mv 而来
 │   ├── llm.py                      # LLM 服务契约 + BlockAssembler + chunk 归一化（~150 行）
 │   ├── tools.py                    # ToolRegistry + exclusive/parallel 调度（~200 行）
 │   ├── skill.py                    # SkillRegistry 服务 + 文件系统 provider（~200 行）
+│   ├── compaction.py               # Compaction 服务 + 规则摘要器 + 事件（~180 行）
 │   └── agent.py                    # ReactLoopAgent 精简状态机（~330 行）
 ├── plugins/                        # cordis 插件（装配层）
 │   ├── session.py                  # provide("sessions")：SessionStore（dsh 原样：一等服务）
@@ -79,15 +95,21 @@ examples/mini_dsh/                  # 由 examples/plugin_harness git mv 而来
 │   ├── tools.py                    # provide("tools")：demo 工具（now/weather/set_note…）
 │   ├── skill_tool.py               # skill 加载工具 + pre-step 目录发布 + /<name> 注入
 │   │                               #   （对应 dsh tool-skill 包）
+│   ├── instructions.py             # AGENTS.md/CLAUDE.md baseline + 变更重注入
+│   │                               #   （对应 dsh agent-instructions）
+│   ├── compaction.py               # provide("compaction") + snip 监听器
+│   │                               #   （对应 dsh compaction-basic + pruner）
 │   ├── middleware.py               # waterfall 演示：agent/request-error 重试（可 veto 证明）
 │   └── driver.py                   # 组合根：store.create() → ReactLoopAgent → provide agent
 ├── skills/                         # 示例技能目录（demo 用）
 │   └── poetic-note/SKILL.md        # frontmatter（name/description）+ 正文指令
-└── providers.py                    # ScriptedAdapter（5 场景工厂）+ OpenAICompatAdapter
+├── fixtures/                       # demo 场景 fixtures
+│   └── AGENTS.md                   # instructions 场景的指令文件（运行时拷入临时 workspace）
+└── providers.py                    # ScriptedAdapter（7 场景工厂）+ OpenAICompatAdapter
 ```
 
-代码规模目标：core ~1.4k + 外围（plugins/providers/cli）~0.75k ≈ **2.1k 行以内**
-（含 skill 能力 +~300 行；超预算时优先裁场景断言文本与 docstring，不裁语义）。
+代码规模目标：core ~1.6k + 外围（plugins/providers/cli）~0.9k ≈ **2.5k 行以内**
+（含 skill +300、memory/history +~350；超预算时优先裁场景断言文本与 docstring，不裁语义）。
 
 ### core 精简裁切清单（参照 javis/harness 架构层）
 
@@ -108,15 +130,30 @@ examples/mini_dsh/                  # 由 examples/plugin_harness git mv 而来
   （对应 dsh-tool-skill）：注册 `skill` 加载工具到 tools 服务 + pre-step 监听器
   1（session 日志无目录消息时注入 `<available_skills>` 目录）+ pre-step 监听器
   2（用户消息首行 `/<name>` → 技能正文作为 instructions 注入，只扫 user 来源消息） |
+| `packages/context/agent-instructions`（dsh TS） | **新增** plugins/instructions.py：
+  扫 `<cwd>/AGENTS.md` 或 `<cwd>/CLAUDE.md`（先命中先赢）；pre-step 监听器：
+  session 日志无 baseline 消息时注入全文（source `agent-instructions, baseline=true`）；
+  内容哈希变更时注入更新消息；无 fs-touch 事件追踪/版本缓存（dsh 的
+  `reconcileInstructionContext` 精简为哈希比对） |
+| `packages/compaction/*`（dsh TS） | **新增** core/compaction.py：Compaction 服务
+  （名 `"compaction"`）：compactIfNeeded(session, trigger) / compactNow(session)：
+  压力检测（字符数估算）→ `compaction/start` → 规则摘要器（保留最近 N 条，丢弃部分
+  压成一段 “Earlier context: …” 文本）→ `compaction/summary`（摘要/shadowedSeqs/估算）
+  → `compaction/end`（锁括号包住整个操作）；摘要以 user/message（compaction-checkpoint
+  source）注入，derive_messages 跳过 shadowed 范围；**新增** plugins/compaction.py：
+  provide 服务 + `tools/post-execute` snip 监听器（截断超限工具结果，默认 8k 字符，
+  ellipsis 标记）+ pre-step 压力检查调用 compactIfNeeded；无 token-meter/LLM 摘要/
+  command-compact（扩展方向） |
 | engine/build/compression/tool_adapter/prompt | 整层删除（javis 集成壳）；systemPrompt 服务并入 llm 插件或 driver 内提供（精简为普通字符串，不做 sections） |
 
 命名对齐：模块名与类名沿用 javis/harness（即 dsh TS 源码的命名），保证与
 `examples/dsh_harness` 的对照表可读。**代码是独立复刻**（copy + trim + 精简），不是
 import——mini_dsh 对 javis 的依赖只有 `javis.cordis`。
 
-### 装配模型（cordis，6 插件）
+### 装配模型（cordis，8 插件）
 
-- 服务名沿用 dsh 词汇：`sessions` / `skills` / `llm` / `tools` / `agentLoop` / `agent`。
+- 服务名沿用 dsh 词汇：`sessions` / `skills` / `compaction` / `llm` / `tools` /
+  `agentLoop` / `agent`。
 - `cli.py` 引导 = `Context` + `ctx.plugin(Loader, {"file": cordis.yml})`（同
   examples/cordis/runner.py 姿势），宿主只认 `agent` 服务契约
   （followup / steer / inject / cancel / when_idle）。
@@ -139,6 +176,12 @@ import——mini_dsh 对 javis 的依赖只有 `javis.cordis`。
   （execute：`ctx.get("skills").get(name)` → 正文，未知/不可调用 → error 文本）；
   两个 `agent/pre-step` 监听器（注册顺序决定注入次序：`/<name>` 注入先于目录
   注入，与 dsh tool-skill 一致）；目录/显式注入均为 user 来源消息，可审计。
+- instructions 插件：无 inject 服务依赖（只读 session 日志 + ctx 事件），
+  pre-step 监听器按哈希比对注入 baseline/更新（只扫 user 来源消息防伪造，同 skill 注入）。
+- compaction 插件 `inject=[]`：构造 `Compaction(ctx)` → `provide("compaction")`；
+  注册 `tools/post-execute` snip 监听器（截断超限结果，默认 8k 字符）+ pre-step
+  压力检查（派生消息字符数超阈 → `compactIfNeeded(session, "pressure")`）；
+  摘要注入与 shadow 范围对 derive_messages 可见，事件链对 session 日志可审计。
 - import 技巧：cordis Loader 按文件路径加载 `plugins/*.py`，插件内
   `sys.path.insert(0, <examples/mini_dsh>)` 后 `import core…`（沿用现
   harness_plugin.py 的 `_DIR` 手法）；`cli.py` 直接跑时同目录包结构天然可 import core。
@@ -147,18 +190,26 @@ import——mini_dsh 对 javis 的依赖只有 `javis.cordis`。
 
 - `ScriptedAdapter`：离线确定性模型，`stream(GenerateOptions) → AsyncIterator[StreamChunk]`
   按脚本吐出（chunk 词汇直接是 core/types 的 StreamChunk，不再有自定义 ChatProvider
-  中间抽象）；内置 5 场景工厂（text/tools/retry/steer/**skills**），同 dsh_harness 的
+  中间抽象）；内置 7 场景工厂（text/tools/retry/steer/skills/instructions/compaction），
+  同 dsh_harness 的
   `$HARNESS_DEMO_SCENARIO` 环境变量选场景。
 - `skills` 场景：脚本模型第 1 步调 `skill(name="poetic-note")` 工具（读
   `skills/poetic-note/SKILL.md` 正文），第 2 步按技能指令回答（如“用两行诗总结”）；
   断言：skill tool/call+result 配对、result 含技能正文标记、最终文本体现技能指令。
+- `instructions` 场景：临时 workspace 放 `fixtures/AGENTS.md`（如“回答必须 ≤ 5 个词”）；
+  断言：baseline 消息 seq 早于首个 assistant/message、最终文本遵循指令（≤ 5 词）；
+  可选：中途改写 AGENTS.md 验证变更重注入。
+- `compaction` 场景：脚本模型发起大工具结果（超 8k）+ 多步长对话；
+  断言：工具结果被 snip（含 ellipsis 标记）、`compaction/start|summary|end` 事件链
+  成对且 start 早于 summary 早于 end、shadowed 范围消息不在最终派生历史中、
+  摘要消息（compaction-checkpoint source）存在。
 - `OpenAICompatAdapter`：openai SDK → StreamChunk（流式累积 tool-call delta、usage、
   失败抛 LlmError 由 core 归一化）；真实模型可跑。
 
 ### CLI / 运行
 
 ```bash
-uv run python examples/mini_dsh/cli.py                # 全部 5 个 demo 场景（带断言）
+uv run python examples/mini_dsh/cli.py                # 全部 7 个 demo 场景（带断言）
 uv run python examples/mini_dsh/cli.py --scenario tools
 uv run python examples/mini_dsh/cli.py --prompt "2+2" # 有 API key 走真实模型
 uv run python examples/mini_dsh/cli.py --repl         # 交互
@@ -197,7 +248,7 @@ uv run python examples/mini_dsh/cli.py --repl         # 交互
 
 ## 验证标准
 
-1. `uv run python examples/mini_dsh/cli.py` 5 场景全 OK（退出码 0）。
+1. `uv run python examples/mini_dsh/cli.py` 7 场景全 OK（退出码 0）。
 2. `uv run pytest tests/test_javis/test_mini_dsh_example.py -v` 通过。
 3. 全仓 pytest 通过（~250）。
 4. `ruff` 改动文件零新增（全仓历史遗留 115 个 I001 不算）。
@@ -207,8 +258,8 @@ uv run python examples/mini_dsh/cli.py --repl         # 交互
 
 ## 风险与备注
 
-- 行数预算：若实现超 2.1k，优先裁场景断言长度 / ScriptedAdapter 脚本文本 / docstring，
-  不裁语义（先砍 steer 或 skills 场景的话需用户点头）。
+- 行数预算：若实现超 2.5k，优先裁场景断言长度 / ScriptedAdapter 脚本文本 / docstring，
+  不裁语义（先砍 steer / skills / instructions / compaction 场景的话需用户点头）。
 - javis/harness 架构层与 mini_dsh core 会部分同源（结构相似）——这是刻意的
   （同一 dsh 逻辑的两个表达：生产 core vs 教学精简），README 对照表中言明。
 - 现工作区有用户未提交改动（examples/dsh_harness 等 5 文件 + plugin_harness
@@ -216,5 +267,6 @@ uv run python examples/mini_dsh/cli.py --repl         # 交互
 
 ## 未决（实现计划前可再调）
 
-- demo 默认全跑 5 场景（text/tools/retry/steer/skills）；README 提供 `--scenario` 单选。
+- demo 默认全跑 7 场景（text/tools/retry/steer/skills/instructions/compaction）；
+  README 提供 `--scenario` 单选。
 - 是否在 cli.py 提供 REPL（原 plugin_harness 有）——默认保留最简版。
