@@ -443,6 +443,8 @@ class PreStepReject:
     """The loop must not enter the proposed step."""
 
     kind: Literal["reject"] = "reject"
+    #: Optional diagnostic (why the step was vetoed); the loop ignores it.
+    reason: str | None = None
 
 
 @dataclass(frozen=True)

@@ -105,9 +105,11 @@ async def test_pre_step_veto_blocks_turn():
 
     ctx.on(t.Events.AGENT_PRE_STEP, veto)
     await _run_turn(agent, "hi")
-    assert session.find_last("turn/end") is not None
     end = session.find_last("turn/end")
-    assert end.data.get("reason") in (None, "blocked") or True  # veto 走 blocked 结束
+    assert end is not None
+    # veto 必须让 turn 以 blocked 结束（而非 error——veto handler 的异常会被
+    # 错误包容机制吞成 TurnError，断言必须区分两者）
+    assert end.data["reason"].kind == "blocked"
 
 
 @pytest.mark.asyncio
