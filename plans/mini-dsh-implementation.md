@@ -1928,7 +1928,14 @@ class Config(BaseModel):
 
 
 def _resolve(config: Config, scenario: str | None) -> Any:
-    choice = (config.provider or os.environ.get("MINI_DSH_PROVIDER", "scripted")).lower()
+    # 优先级：显式环境变量 > 插件 config > 默认 scripted。
+    # （env 优先才能让 cli 的 --prompt 用 MINI_DSH_PROVIDER=auto 切真实模型，
+    #  同时 cordis.yml 的 provider: scripted 保持 demo 默认确定性）
+    choice = (
+        os.environ.get("MINI_DSH_PROVIDER")
+        or config.provider
+        or "scripted"
+    ).lower()
     if choice == "scripted":
         return ScriptedAdapter(scenario_script(scenario or "text"), model="mini-scripted")
     api_key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
