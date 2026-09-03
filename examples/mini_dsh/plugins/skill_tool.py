@@ -86,7 +86,10 @@ def apply(ctx, config: Config) -> None:
             first_line = text.splitlines()[0] if text else ""
             if not first_line.startswith("/"):
                 continue
-            skill_name = first_line[1:].strip()
+            # 技能名 = 首行 "/" 后的第一个 token（kebab-case）；余下文本是普通用户输入，
+            # 不进注入消息——整行剩余会因 is_skill_name 正则必返 None（永不触发）。
+            rest = first_line[1:].strip()
+            skill_name = rest.split(maxsplit=1)[0] if rest else ""
             skill = registry.get(skill_name)
             if skill is None:
                 continue

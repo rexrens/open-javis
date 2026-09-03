@@ -145,12 +145,22 @@ async def test_skills_scenario_loads_skill_and_follows_it(monkeypatch: pytest.Mo
 
 @pytest.mark.asyncio
 async def test_skills_slash_invocation_injects_body(monkeypatch: pytest.MonkeyPatch):
-    """用户显式 /poetic-note 调用：技能正文作为 instructions 注入。"""
+    """用户显式 /poetic-note 调用：技能正文作为 instructions 注入（catalog 之后）。"""
     ctx = await _compose(monkeypatch, "text")  # 无工具调用脚本
     session = ctx.get("session")
     await _run(ctx, "/poetic-note please summarize this")
+    # 断言 source 标记而非子串：catalog 文本（"…two-line poems…"）也含 "two-line poem"
+    # 子串，子串断言在 slash 功能完全失效时也会被目录消息满足（假阳性）。
     injected = [
-        e.data["message"].text for e in session.events_of("user/message")
-        if "two-line poem" in (e.data.get("message").text if e.data.get("message") else "")
+        e for e in session.events_of("user/message")
+        if (e.data.get("message").source or {}).get("kind") == "skill-invocation"
     ]
-    assert injected
+    assert injected, "no skill-invocation message injected"
+    body = injected[0].data["message"].text
+    assert body.startswith("# Skill: poetic-note")
+    # instructions-last：注入 seq 严格晚于目录消息
+    catalogs = [
+        e for e in session.events_of("user/message")
+        if (e.data.get("message").source or {}).get("kind") == "skill-catalog"
+    ]
+    assert catalogs and injected[0].seq > catalogs[0].seq
