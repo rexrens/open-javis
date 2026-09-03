@@ -127,13 +127,15 @@ class Session:
     # -- write ---------------------------------------------------------------
 
     def append(self, type: str, data: dict[str, Any] | None = None, **options: Any) -> SessionEvent:
-        """Append one event; returns it (with its new ``seq``).
+        """追加一条事件并返回（自带新分配的 ``seq``）。
 
-        Unknown event types raise ``ValueError`` (dsh logs them under the
-        ``ignorable`` guard; the demo fails fast instead).
+        未知事件类型抛 ``ValueError``（dsh 在 ``ignorable`` 守卫下记日志；
+        本 demo 选择快速失败）。
         """
         if type not in SESSION_EVENT_TYPES:
             raise ValueError(f"session {self.id}: unknown event type {type!r}")
+        # seq 单调递增且永不重用：它是跨事件的唯一序，compaction shadow、
+        # 重放对齐、变更检测都靠它。data 拷贝一份，防止调用方事后改日志。
         self._seq += 1
         event = SessionEvent(
             seq=self._seq,

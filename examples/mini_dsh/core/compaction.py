@@ -123,6 +123,7 @@ class Compaction:
         try:
             shadowed, summary_text = self._pick_and_summarize(session)
             if not shadowed:
+                # 无可压内容：不落 summary/user-message，事件链只留空 start/end
                 session.append(
                     SessionEvents.COMPACTION_END,
                     {"turn": None, "compactionId": compaction_id},
@@ -136,6 +137,8 @@ class Compaction:
                     "trigger": trigger,
                 },
             )
+            # 事件顺序是关键：先写 summary（带 shadowedSeqs），再写摘要消息——
+            # derive_messages 顺序扫描时能跳过 shadowed 事件并读到这条摘要。
             summary_event = session.append(
                 SessionEvents.COMPACTION_SUMMARY,
                 {
@@ -171,6 +174,7 @@ class Compaction:
 
     def _pick_and_summarize(self, session: Session) -> tuple[tuple[int, ...], str | None]:
         """规则摘要：保留最近 N 条消息事件，丢弃部分压成一段 Earlier-context 文本。"""
+        # 只看“消息型”事件且排除已 shadowed：压缩过的范围不再重复压缩
         shadowed_so_far = self._shadowed_so_far(session)
         message_events = [
             event
@@ -178,9 +182,13 @@ class Compaction:
             if event.type in _MESSAGE_EVENT_TYPES and event.seq not in shadowed_so_far
         ]
         if len(message_events) <= self._keep:
+            # 剩余不足 keep 条 → 无东西可压（空 shadow 集，调用方不落摘要）
             return (), None
+        # head = 最早的多余消息（保留尾巴 keep 条）；shadow 掉它们的 seq
         head = message_events[: -self._keep]
         shadowed = tuple(event.seq for event in head)
+        # 每条消息截 80 字符压成一行，拼成 Earlier context 规则摘要——
+        # 换成 LLM 摘要时只需替换此函数（README 已标注该扩展点）
         parts: list[str] = []
         for event in head:
             message = (event.data or {}).get("message")

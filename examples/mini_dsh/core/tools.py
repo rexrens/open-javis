@@ -160,11 +160,14 @@ async def _execute_one(
     def _default(payload: Any, _next: Any) -> Any:
         return tool.execute(payload)  # sync or awaitable; awaited below
 
+    # 监听器可包装/替换工具 body（最内层默认 = 直接执行）；结果统一包成
+    # ToolExecutionResult（纯文本 / JSON / repr 都转成模型可见的文本）。
     result = ctx.waterfall(Events.TOOLS_EXECUTE, exec_input, _default)
     if inspect.isawaitable(result):
         result = await result
     if not isinstance(result, ToolExecutionResult):
         result = _wrap_result(exec_input.name, result)
+    # 协作式取消点：中止后到此不再提交/广播——每个 waterfall 之间都检查一次
     signal.throw_if_aborted()
 
     # -- tools/post-execute waterfall (rewrite content / add context) --------
@@ -172,6 +175,8 @@ async def _execute_one(
     def _post_default(_exec: Any, _result: Any, _next: Any) -> Any:
         return None
 
+    # 监听器可截断超限结果（compaction 的 snip）或追加上下文；
+    # 返回 PostToolDecision 才会改写，返回 None 则原样提交。
     post = ctx.waterfall(Events.TOOLS_POST_EXECUTE, exec_input, result, _post_default)
     if inspect.isawaitable(post):
         post = await post
@@ -206,6 +211,9 @@ async def execute_tool_calls(
     registry: ToolRegistry = ctx.get("tools")
     max_parallel = _max_parallel_tool_calls(ctx)
 
+    # 工具按“模型提交顺序”调度：先到先服务，禁止乱序回灌。
+    # exclusive → 单独一组（屏障：挡住前后所有并发）；parallel → 与后续
+    # 未启动调用合成一个池（池内遇到后面的 exclusive 会停手，排空后自成下一组）。
     planned = [
         {
             "block": block,
@@ -223,8 +231,8 @@ async def execute_tool_calls(
     next = 0
     concluded = False
     while next < len(planned):
-        # Commit before classifying again so registry changes affect
-        # unstarted calls (a registry flip creates a new barrier).
+        # 提交前先重新分类：注册表可能在上一组执行期间变化（
+        # 换模式 = 新屏障，未启动的调用按新规则分组）。
         first = planned[next]
         mode = registry.execution_mode(first["exec"].name)
         group = [first] if mode.kind == "exclusive" else planned[next:]
@@ -234,6 +242,8 @@ async def execute_tool_calls(
         next += consumed
         concluded = concluded or group_concluded
         if aborted:
+            # 中止：尚未启动的调用补合成“skipped”错误结果并落库——
+            # 会话日志保持闭合，重放（replay）不会缺工具结果。
             for call in planned[next:]:
                 _append_skipped_tool_call(session, turn, step, call["block"])
             break
@@ -304,8 +314,8 @@ async def _run_group(
     try:
         while next_to_start < len(group) or in_flight:
             if not signal.aborted:
-                # Fill the bounded pool; reclassify before start so a later
-                # exclusive tool becomes the next barrier.
+                # 填充有界并行池；启动前重新分类——池内遇到后来的 exclusive
+                # 就停手，等本池排空后它自成下一个屏障（注册表可能已变化）。
                 while next_to_start < len(group) and len(in_flight) < max_parallel:
                     if (
                         next_to_start > 0
@@ -314,6 +324,8 @@ async def _run_group(
                         break
                     in_flight[next_to_start] = asyncio.ensure_future(start_call(next_to_start))
                     next_to_start += 1
+            # 只要模型顺序的前缀结果就绪就立刻提交（commit_ready 每次循环前、
+            # 每次有任务完成后都调用，保证结果按提交顺序落库）
             commit_ready()
             if not in_flight:
                 break
@@ -323,13 +335,14 @@ async def _run_group(
                 in_flight.pop(index)
             commit_ready()
     finally:
+        # 无论如何退出都要清场：取消仍在飞的调用，避免任务泄漏
         for task in in_flight.values():
             task.cancel()
         await asyncio.gather(*in_flight.values(), return_exceptions=True)
 
     if signal.aborted:
-        # Started calls committed above; every remaining model call in the
-        # group then receives an ordered synthetic result (dsh semantics).
+        # 组内已启动的调用其结果已在上方提交；剩下的每个模型调用补一条
+        # 有序的合成错误结果（skipped）——会话日志保持完整，重放不缺口（dsh 语义）
         for index in range(started, len(group)):
             _append_skipped_tool_call(session, turn, step, group[index]["block"])
         return len(group), concluded, True

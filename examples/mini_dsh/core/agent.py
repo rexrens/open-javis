@@ -158,6 +158,8 @@ class ReactLoopAgent:
         return self.session.last_turn()
 
     def _set_phase(self, next_phase: Phase) -> None:
+        # 相位是代理的内部状态机；对外只广播 idle↔running 的切换
+        # （maintenance 不改变对外可见状态，因此不触发 agent/status）。
         previous = self.status
         self._phase = next_phase
         if self.status != previous:
@@ -260,9 +262,12 @@ class ReactLoopAgent:
     # -- driver --------------------------------------------------------------
 
     def _wake_driver(self, wake_after_abort: bool = False) -> None:
-        """Start one driver, or latch its wake behind maintenance/abort."""
+        """启动一个 driver，或在忙碌时把唤醒请求暂存到相位上。"""
         phase = self._phase
         if phase.kind != "idle":
+            # 代理忙（running/maintenance）：不重复启动 driver，只记下唤醒意图，
+            # 等活动收敛回 idle 后由 _kick/_run 的收尾补跑。
+            # 例外：disposed 原因的取消意味着代理将被销毁，不复活。
             reason = phase.abort.signal.reason
             if (reason is None or reason.kind != "disposed") and (
                 phase.kind == "maintenance" or wake_after_abort
@@ -270,6 +275,8 @@ class ReactLoopAgent:
                 phase.wake_requested = True
             return
         loop = asyncio.get_running_loop()
+        # idle → running：driver future 即 when_idle() 等待的“本次活动完成”信号；
+        # 相位用上一轮 last_turn 续接（turn 号在 _turn 里自增）。
         driver: asyncio.Future = loop.create_future()
         self._activity_done = driver
         self._set_phase(RunningPhase(turn=phase.last_turn))
@@ -299,12 +306,15 @@ class ReactLoopAgent:
         except asyncio.CancelledError:
             raise
         except BaseException:  # noqa: BLE001 S110 — reported; contained at the driver boundary (dsh kick())
+            # 错误已由 _throw_error → agent/error 广播给监听器；此处吞掉是为了
+            # 不让 driver 任务崩溃，失败被包容在活动边界（dsh kick 的 containment）。
             pass
         finally:
             if self._phase.kind == "running":
                 turn = self._phase.turn
                 wake = self._phase.wake_requested
                 self._set_phase(IdlePhase(last_turn=turn))
+                # 活动期间收到过唤醒请求且 inbox 仍有消息 → 立刻补跑下一轮
                 if wake and self.inbox.has_pending:
                     self._wake_driver()
 
@@ -368,7 +378,9 @@ class ReactLoopAgent:
                     await self._dispatch_serial(Events.AGENT_TURN_STOPPING, {"turn": turn, "signal": signal})
                     signal.throw_if_aborted()
                 if turn_ends is not None and not self.inbox.next_step:
+                    # turn 已结束且无 steering 遗留 → 退出步循环
                     break
+                # 有下一步（tool 结果回灌 / steering 注入）→ 继续同 turn 的下一步
                 target = "next-step"
         except asyncio.CancelledError:
             raise
@@ -410,6 +422,8 @@ class ReactLoopAgent:
             {"messages": tuple(claimed), "turn": turn, "step": step, "signal": signal},
             _default,
         )
+        # waterfall 结果：PreStepReject（整步否决，turn 以 blocked 收尾）或
+        # PreStepEnter（默认在认领消息后追加 context 消息）；监听器也可改写 messages
         decision = await self._maybe_await(decision)
         signal.throw_if_aborted()
         return decision, assembly
@@ -563,6 +577,8 @@ class ReactLoopAgent:
         proposed = await self._maybe_await(proposed)
         signal.throw_if_aborted()
         if not proposed.provider or not proposed.model:
+            # 路由缺失即失败：要么 AgentOptions 给默认，要么 agent/request
+            # 监听器改写；否则 adapter 无从绑定，抛 NO_ROUTE。
             raise LlmError(
                 f'agent "{self.id}" has no provider/model: set AgentOptions.provider and '
                 "AgentOptions.model or supply both via the agent/request waterfall",
@@ -572,6 +588,8 @@ class ReactLoopAgent:
         try:
             prepared = llm.prepare_call(proposed, signal)
             prepared = await self._maybe_await(prepared)
+            # 实际路由以 prepared.config 为准：adapter（如 OpenAICompatAdapter）
+            # 会在此改写 model/绑定真实端点——后续请求与会话日志都派生自它
             config: LlmCallConfig = prepared.config
         except LlmError as error:
             # Middleware may serve an unregistered route; terminal dispatch
@@ -588,6 +606,8 @@ class ReactLoopAgent:
             tools=list(assembly.tools),
         )
         baseline = self.session.request_header()
+        # 头部（system/tools/配置快照）只在首次或变化时落日志：日志即推导源，
+        # 冗余记录无意义（dsh canonicalHeader 的变更检测）
         if not self._request_header_logged:
             self.session.append(
                 SessionEvents.REQUEST_HEADER,

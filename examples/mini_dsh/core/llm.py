@@ -96,27 +96,32 @@ async def normalized_stream(
     options: GenerateOptions,
     signal: AbortSignal | None = None,
 ) -> AsyncIterator[Any]:
-    """Wrap a provider stream so failures become terminal finish chunks.
+    """包一层 provider 流，把异常归一化为终止性 finish chunk。
 
-    dsh: ``An adapter implementation may throw, but LlmRuntime.stream()
-    normalizes that failure to a terminal error or aborted finish before
-    exposing it to consumers.``
+    dsh 语义：adapter 实现可以抛错，但 ``LlmRuntime.stream()`` 在暴露给
+    消费方之前必须把失败归一化为 terminal error / aborted finish——
+    这样 agent 循环只认 finish，不感知具体异常形态。
     """
     try:
         async for chunk in stream:
+            # 每个 chunk 之间都是协作式取消点：中止请求 → 抛 AbortError
             if signal is not None:
                 signal.throw_if_aborted()
             yield chunk
     except AbortError:
+        # 取消：终止为 aborted finish（携带取消原因），不算 provider 错误
         if signal is not None and signal.aborted:
             yield FinishChunk(reason=_aborted_finish(signal))
     except Exception as exc:  # noqa: BLE001 — normalized to a terminal finish below
         if signal is not None and signal.aborted:
+            # 取消与异常同时发生：以取消为准
             yield FinishChunk(reason=_aborted_finish(signal))
             return
         if isinstance(exc, LlmError):
+            # 结构化失败（TRANSIENT 等路由码）原样保留，供重试策略决策
             failure: LlmFailure = exc.failure
         else:
+            # 任意异常 → UNKNOWN 码；agent 只认 code 决定可否重试
             failure = LlmFailure(message=str(exc), code="UNKNOWN")
         yield FinishChunk(reason=ErrorFinish(failure=failure))
 
@@ -159,15 +164,24 @@ class BlockAssembler:
         return list(self._blocks)
 
     def push(self, chunk: Any) -> None:
-        """把一个流块收进组装（dsh ``BlockAssembler.push``）。"""
+        """把一个流块收进组装（dsh ``BlockAssembler.push``）。
+
+        块按 index 关联：block-start 打开槽，delta 追加内容，block-end
+        关闭槽并把完整块加入结果列表。index 相同 = 同一块。
+        """
         kind = chunk.type
         if kind == "block-start":
+            # 打开/覆盖该 index 的槽：后续 delta 都进这个槽；
+            # 同 index 二次 start 会覆盖（adapter 必须保证 index 唯一）
             state = {"block_type": chunk.block_type, "text": "", "id": "", "name": None, "args": ""}
             self._open[chunk.index] = state
+            # 按类型记录 index，供中断时按类型物化部分块（_state_for）
             self._index_by_type.setdefault(chunk.block_type, []).append(chunk.index)
         elif kind == "text-delta" or kind == "reasoning-delta":
+            # 文本/思考增量直接拼进对应槽
             self._open[chunk.index]["text"] += chunk.text
         elif kind == "tool-call-delta":
+            # 工具调用是分段到达的（id/name/arguments 各自成块），逐段收拢
             state = self._open[chunk.index]
             if chunk.id:
                 state["id"] = chunk.id
@@ -175,13 +189,14 @@ class BlockAssembler:
                 state["name"] = chunk.name
             state["args"] += chunk.arguments_delta
         elif kind == "block-end":
+            # 收尾：关闭槽并把组装好的块按到达顺序入列
             self._open.pop(chunk.index, None)
             self._blocks.append(chunk.block)
         elif kind == "usage":
             self.usage = chunk.usage
         elif kind == "finish":
             self.finish = chunk.reason
-        else:  # unknown chunk kinds are ignored (merge-extensible protocol)
+        else:  # 未知块类型忽略（协议可合并扩展）
             return
 
     def _state_for(self, block_type: str) -> dict[str, Any] | None:
