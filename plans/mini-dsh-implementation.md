@@ -2599,14 +2599,7 @@ def apply(ctx) -> None:
     ctx.on(Events.AGENT_PRE_STEP, on_pre_step)
 ```
 
-改 `plugins/driver.py`：cwd 优先级 env → baseUrl（替换原 `store.create(cwd=ctx.baseUrl if hasattr(...))`）：
-
-```python
-    cwd = os.environ.get("MINI_DSH_CWD") or getattr(ctx, "baseUrl", None)
-    session = store.create(cwd=cwd)
-```
-
-补 import os。若需真正改文件再改，把 baseline 注入逻辑的 source 检查用 helper 抽出来与 skill_tool 复用（若两处都要读 source.kind 的话；否则各自内联）。
+**driver cwd 不改**（T11 审查定论）：ctx.baseUrl 已由 _compose helper / cli 正确映射 workspace（MINI_DSH_CWD env 由 _compose 读后设 ctx.baseUrl，driver 只读 ctx.baseUrl）。MINI_DSH_CWD 没有任何插件直读——见 T16 审查 P2 #2 留档，未来勿依赖该 env 在 driver 内生效。
 
 - [ ] **步骤 4：跑测试确认通过**
 
