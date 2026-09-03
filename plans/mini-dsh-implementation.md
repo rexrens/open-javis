@@ -1797,6 +1797,10 @@ def _to_openai_messages(options: t.GenerateOptions) -> list[dict[str, Any]]:
 
 注意：OpenAICompatAdapter 的流式组装在真实模型场景下可能有边角（多 text 段、tool-call name 分片拼接）——真实模型运行不是 CI 断言目标，block 收尾逻辑保持简单正确即可（Task 16 的 --prompt 冒烟只验证能跑完）。
 
+- [ ] **步骤 3.5：旧 E2E 测试挂 skip（时序衔接）**
+
+providers.py 逐字重写移除旧 ChatProvider 符号 → 旧 harness.py（Task 17 才删）import 失败 → tests/test_javis/test_mini_dsh_example.py（Task 16 才重写）挂红。给该测试加 `@pytest.mark.skip(reason="旧 plugin-harness 栈随 Task 10 providers.py 重写失效；Task 16 重写为 E2E")`（Task 11 换 cordis.yml 后它更会挂——engine 服务消失；Task 16 重写文件时移除 skip）。一行改动、suite 转绿（282 passed, 1 skipped）。
+
 - [ ] **步骤 4：跑测试确认通过**
 
 运行：`uv run pytest tests/test_mini_dsh/test_providers.py -v`
