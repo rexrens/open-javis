@@ -37,12 +37,39 @@ async def _run(ctx: Context, prompt: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_composition_has_task11_services(monkeypatch: pytest.MonkeyPatch):
-    """Task 11 的 4 个插件提供 7 个服务；skills/compaction 在 Task 13/15 加入，
-    届时由 Task 15 的全量服务断言接管。"""
+async def test_composition_has_all_services(monkeypatch: pytest.MonkeyPatch):
+    """Task 15 收官：8 个插件提供的全部服务都在。"""
     ctx = await _compose(monkeypatch, "text")
-    for service in ("sessions", "llm", "tools", "agentLoop", "systemPrompt", "agent", "session"):
+    for service in (
+        "sessions", "skills", "compaction", "llm", "tools",
+        "agentLoop", "systemPrompt", "agent", "session",
+    ):
         assert ctx.get(service, strict=False) is not None, f"missing service {service}"
+
+
+@pytest.mark.asyncio
+async def test_compaction_scenario_snips_and_shadows(monkeypatch: pytest.MonkeyPatch):
+    ctx = await _compose(monkeypatch, "compaction")
+    session = ctx.get("session")
+    await _run(ctx, "read the big file")
+    # snip：大工具结果被截断并带标记（文本块在 ToolResultBlock.content 里，
+    # 与 tools/steer 场景的 content[0].content 读法一致）
+    def _result_text(event) -> str:
+        block = event.data["message"].content[0]
+        return "".join(getattr(b, "text", "") for b in block.content)
+
+    results = [_result_text(e) for e in session.events_of("tool/result")]
+    assert any("truncated by compaction" in text for text in results)
+    # 事件链成对且有序
+    starts = session.events_of("compaction/start")
+    summaries = session.events_of("compaction/summary")
+    ends = session.events_of("compaction/end")
+    assert len(starts) == len(summaries) == len(ends) == 1
+    assert starts[0].seq < summaries[0].seq < ends[0].seq
+    # shadow 生效：早期消息不在派生历史里，摘要消息在
+    messages = session.derive_messages()
+    assert not any("read the big file" == getattr(m, "text", "") for m in messages)
+    assert any(getattr(m, "text", "").startswith("Earlier context (compacted):") for m in messages)
 
 
 @pytest.mark.asyncio

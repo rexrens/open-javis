@@ -28,3 +28,10 @@
 
 - id: instructions
   name: ./plugins/instructions.py
+
+- id: compaction
+  name: ./plugins/compaction.py
+  config:
+    maxChars: 8000
+    keepMessages: 2
+    snipMaxChars: 8000
