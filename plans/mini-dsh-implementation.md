@@ -662,11 +662,21 @@ async def test_exclusive_barrier_before_parallel_pool():
     agent = _agent()
     turn = step = 1
     calls = [_tc("x", "x", {}), _tc("a", "a", {}), _tc("b", "b", {})]
-    concluded = await execute_tool_calls(ctx, session, agent, turn, step, calls, t.AbortSignal())
-    assert concluded is True
+    # accept_context 是必需位置参（javis parity，无默认值）
+    concluded = await execute_tool_calls(
+        ctx, session, agent, turn, step, calls, t.AbortSignal(), accept_context=lambda msg: None
+    )
+    # javis/dsh 语义：批量工具无 end_session 类 concludes_turn → False，
+    # loop 会再走一步让模型看到结果收尾（demo 场景的最终总结依赖此）
+    assert concluded is False
     order = [entry["tool"] for entry in log]
     assert order == ["x", "a", "b"]  # exclusive 屏障先于 parallel 池
-    results = [e.data["message"].text for e in session.events_of("tool/result")]
+    # tool/result 消息裹 ToolResultBlock：仓库规范读法 = content[0].content 解包
+    # （对照 tests/test_demo_harness.py 的 tool_result_text）
+    results = [
+        "".join(b.text for b in e.data["message"].content[0].content if isinstance(b, t.TextBlock))
+        for e in session.events_of("tool/result")
+    ]
     assert results == ["x-done", "a-done", "b-done"]
 ```
 
