@@ -90,7 +90,12 @@ class Compaction:
 
     def _estimate_chars(self, session: Session) -> int:
         total = 0
+        # 与 _pick_and_summarize 同口径：已被 compaction shadow 的事件不再计入
+        # 可见面（否则压缩成功后估算永不下降，每次 pre-step 都会重复 compact）。
+        shadowed = self._shadowed_so_far(session)
         for event in session.events:
+            if event.seq in shadowed:
+                continue
             message = (event.data or {}).get("message")
             if message is None:
                 continue
