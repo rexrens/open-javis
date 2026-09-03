@@ -14,6 +14,8 @@ from providers import OpenAICompatAdapter, ScriptedAdapter, scenario_script
 
 
 class Config(BaseModel):
+    """llm 插件配置：provider 选择（scripted | openai | auto）。"""
+
     provider: str = "scripted"  # scripted | openai | auto
 
 
@@ -39,5 +41,6 @@ def _resolve(config: Config, scenario: str | None) -> Any:
 
 
 def apply(ctx, config: Config) -> None:
+    """装配：按 env > config > 默认选 adapter，provide "llm" 服务。"""
     scenario = os.environ.get("HARNESS_DEMO_SCENARIO")
     ctx.provide("llm", _resolve(config, scenario))

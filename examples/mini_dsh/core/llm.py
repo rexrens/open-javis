@@ -155,9 +155,11 @@ class BlockAssembler:
 
     @property
     def blocks(self) -> list[Any]:
+        """已组装的块（防御性拷贝）。"""
         return list(self._blocks)
 
     def push(self, chunk: Any) -> None:
+        """把一个流块收进组装（dsh ``BlockAssembler.push``）。"""
         kind = chunk.type
         if kind == "block-start":
             state = {"block_type": chunk.block_type, "text": "", "id": "", "name": None, "args": ""}
@@ -218,7 +220,6 @@ def assemble_finish(blocks: list[Any], usage: TokenUsage | None = None) -> Finis
     return StopFinish()
 
 
-# Convenience for adapters/tests: build a full chunk sequence for one response.
 def chunk_response(
     *,
     text: str | None = None,
@@ -227,6 +228,11 @@ def chunk_response(
     usage: TokenUsage | None = None,
     finish: FinishReason | None = None,
 ) -> list[Any]:
+    """为一次完整响应构造 chunk 序列（供 adapter/测试使用）。
+
+    为 reasoning / text / tool-call 输入发出良构的块流，附带可选的
+    usage chunk 与终止性 finish（对齐 dsh 形状）。
+    """
     chunks: list[Any] = []
     index = 0
     if reasoning is not None:
@@ -291,6 +297,7 @@ class SystemPrompt:
         self._session_id = session_id
 
     def assemble(self, *, agent: Any = None, signal: Any = None) -> PromptAssembly:
+        """组装 persona/context 分节与当前工具 schema。"""
         registry = self._ctx.get("tools")
         schemas = tuple(registry.schemas()) if hasattr(registry, "schemas") else ()
         sections = (
@@ -304,6 +311,7 @@ class SystemPrompt:
         return PromptAssembly(sections=sections, tools=schemas)
 
     def render_prompt(self, assembly: PromptAssembly) -> str:
+        """把 persona 分节渲染成一条系统提示字符串。"""
         parts = [
             f"# {section.title}\n{section.body}"
             for section in assembly.sections
@@ -312,6 +320,7 @@ class SystemPrompt:
         return "\n\n".join(parts)
 
     def render_context(self, assembly: PromptAssembly) -> str:
+        """把 context 分节渲染成步边界上下文字符串。"""
         parts = [
             f"[{section.title}] {section.body}"
             for section in assembly.sections

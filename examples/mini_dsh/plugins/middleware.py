@@ -21,10 +21,12 @@ RETRYABLE_CODES = frozenset({"TRANSIENT"})
 
 
 def apply(ctx) -> None:
+    """装配：agent/request-error waterfall——TRANSIENT 每个 (turn, step) 重试一次。"""
     retried: set[tuple[int, int]] = set()
     observed: list[str] = []
 
     def on_request_error(payload, next):
+        """瀑布监听器：无人认领且码为 TRANSIENT 且未重试过 → 返回 RetryAction。"""
         action = next()
         if action is not None:
             return action

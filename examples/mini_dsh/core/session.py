@@ -68,18 +68,22 @@ class Session:
 
     @property
     def events(self) -> list[SessionEvent]:
+        """事件日志的快照（防御性拷贝）。"""
         return list(self._events)
 
     def find_last(self, type: str) -> SessionEvent | None:
+        """最近一条 ``type`` 类型的事件，无则 None。"""
         for event in reversed(self._events):
             if event.type == type:
                 return event
         return None
 
     def events_of(self, type: str) -> list[SessionEvent]:
+        """全部 ``type`` 类型的事件，按日志顺序。"""
         return [event for event in self._events if event.type == type]
 
     def last_turn(self) -> int:
+        """最近的 ``turn/start`` 的 turn 编号（无则 0）。"""
         event = self.find_last("turn/start")
         return int(event.data["turn"]) if event else 0
 
@@ -155,6 +159,11 @@ class SessionStore:
         self._counter = 0
 
     def create(self, id: str | None = None, cwd: str | None = None) -> Session:
+        """创建并登记一条会话，生命周期绑定到调用方 fiber。
+
+        调用 ``create`` 的 fiber 卸载时，会话会从 store 移除
+        （dsh ``SessionStore.create``）。省略 ``id`` 时自动分配。
+        """
         if id is None:
             self._counter += 1
             id = f"session-{self._counter}"
@@ -163,9 +172,11 @@ class SessionStore:
         session = Session(id, cwd=cwd)
 
         def setup() -> Callable[[], None]:
+            """把会话登记进 store（在 create 时执行）。"""
             self._sessions[id] = session
 
             def disposer() -> None:
+                """所属 fiber 卸载时把会话从 store 移除。"""
                 self._sessions.pop(id, None)
 
             return disposer
@@ -177,6 +188,7 @@ class SessionStore:
         return session
 
     def get(self, id: str) -> Session | None:
+        """按 ``id`` 取已存储的会话，无则 None。"""
         return self._sessions.get(id)
 
 

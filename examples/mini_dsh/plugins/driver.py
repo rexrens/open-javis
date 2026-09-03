@@ -21,6 +21,11 @@ from core.tools import ToolRegistry  # 仅为类型/契约引用
 
 
 def apply(ctx) -> None:
+    """组合根：取 sessions/llm/tools 服务，装配 agent 并发布相关服务。
+
+    发布 ``agentLoop`` / ``session`` / ``systemPrompt`` / ``agent``；session
+    经 ``store.create`` 走 fiber effect 生命周期（见 core/session.SessionStore）。
+    """
     store: SessionStore = ctx.get("sessions")
     _llm = ctx.get("llm")
     _tools: ToolRegistry = ctx.get("tools")

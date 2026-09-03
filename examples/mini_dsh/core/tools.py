@@ -80,14 +80,20 @@ class ToolRegistry:
     # -- registration (reversible: disposers run when the fiber unloads) ----
 
     def register(self, tool: Tool, mode: str | None = None) -> Callable[[], Any]:
+        """登记工具；返回卸载 disposer（fiber 卸载时反注册）。
+
+        Cordis effect 契约：登记在 load 时执行，返回值即卸载函数。
+        """
         if tool.name in self._tools:
             raise ValueError(f"tool {tool.name!r} already registered")
 
         def setup() -> Callable[[], Any]:
+            """把工具写入注册表（effect 的 setup 段）。"""
             self._tools[tool.name] = tool
             self._modes[tool.name] = (mode or tool.mode).lower()
 
             def disposer() -> Any:
+                """卸载时把工具从注册表移除。"""
                 self._tools.pop(tool.name, None)
                 self._modes.pop(tool.name, None)
                 return None
@@ -101,15 +107,19 @@ class ToolRegistry:
     # -- queries -------------------------------------------------------------
 
     def get(self, name: str) -> Tool | None:
+        """按名取工具，未登记返回 None。"""
         return self._tools.get(name)
 
     def all(self) -> list[Tool]:
+        """全部已登记工具，按登记顺序。"""
         return list(self._tools.values())
 
     def schemas(self) -> list[ToolSchema]:
+        """全部工具的 schema（发给模型的 tools 参数）。"""
         return [tool.schema for tool in self._tools.values()]
 
     def execution_mode(self, name: str) -> ExclusiveMode | ParallelMode:
+        """工具的执行模式（exclusive 屏障 / parallel 池）。"""
         if self._modes.get(name, "parallel") == "exclusive":
             return ExclusiveMode()
         return ParallelMode()
@@ -262,6 +272,7 @@ async def _run_group(
     in_flight: dict[int, asyncio.Task] = {}
 
     def commit_ready() -> None:
+        """把按模型顺序连续就绪的结果逐个落库（向前推进 committed）。"""
         nonlocal committed, concluded
         # ``committed`` advances only across contiguous model-order slots.
         while committed < len(group) and slots[committed] is not None:
@@ -275,6 +286,7 @@ async def _run_group(
             committed += 1
 
     async def start_call(index: int) -> None:
+        """发起组内第 ``index`` 个调用：先记 tool/call，再执行、装填结果槽。"""
         nonlocal started
         call = group[index]
         call_seqs[index] = _append_tool_call(session, turn, step, call["block"])

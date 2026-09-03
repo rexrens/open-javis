@@ -20,6 +20,8 @@ inject = ["tools"]
 
 
 class Config(BaseModel):
+    """技能根目录（相对本插件目录解析）。"""
+
     skillsRoot: str = "./skills"
 
 
@@ -29,6 +31,7 @@ def _render_skill(skill: Any) -> UserMessage:
 
 
 def apply(ctx, config: Config) -> None:
+    """装配：provide "skills" + 注册 skill 工具 + 注入与目录发布监听器。"""
     root = Path(config.skillsRoot)
     if not root.is_absolute():
         root = Path(__file__).resolve().parent.parent / root
@@ -39,6 +42,7 @@ def apply(ctx, config: Config) -> None:
     tools = ctx.get("tools")
 
     def load(exec_input: Any) -> Any:
+        """skill 工具 body：按名取全文；未知/不可用返回错误文本。"""
         from core.tools import ToolExecutionResult  # 局部 import 避免循环
 
         skill_name = str((exec_input.arguments or {}).get("name", ""))
@@ -71,6 +75,7 @@ def apply(ctx, config: Config) -> None:
 
     # -- /<name> 显式调用（只扫用户文本消息；注册在目录监听器之前，注入次序靠前） --
     def on_invocation(payload, next):
+        """/<name> 首 token 显式调用：命中技能即在消息后注入其全文。"""
         decision = next()
         if getattr(decision, "kind", None) == "reject":
             return decision
@@ -100,6 +105,7 @@ def apply(ctx, config: Config) -> None:
 
     # -- <available_skills> 目录发布（skill 工具可见即视为已注册；每会话只注入一次） --
     def on_catalog(payload, next):
+        """<available_skills> 目录发布：每会话只在首步注入一次。"""
         decision = next()
         if getattr(decision, "kind", None) == "reject":
             return decision

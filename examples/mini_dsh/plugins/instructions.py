@@ -46,9 +46,11 @@ def _digest(path: Path) -> str:
 
 
 def apply(ctx) -> None:
+    """装配：AGENTS.md/CLAUDE.md 指令注入的 pre-step 监听器。"""
     state = {"digest": None}
 
     def on_pre_step(payload, next):
+        """baseline 注入 + 内容变更重注入（判重跳过 compaction shadowed）。"""
         decision = next()
         if getattr(decision, "kind", None) == "reject":
             return decision

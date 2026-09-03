@@ -37,6 +37,7 @@ def _big_read(_input: Any) -> str:
 
 
 def apply(ctx) -> None:
+    """装配：provide "tools"——demo 工具集（now/weather 并行、set_note/big_read 独占）。"""
     registry = ToolRegistry(ctx)
     ctx.provide("tools", registry)
     registry.register(Tool(name="now", description="Current UTC time", body=_now, mode="parallel"))

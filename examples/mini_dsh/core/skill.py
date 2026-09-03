@@ -27,6 +27,8 @@ def is_skill_name(name: str) -> bool:
 
 @dataclass(frozen=True)
 class SkillSummary:
+    """一条技能目录条目（名字 + 描述，供模型浏览）。"""
+
     name: str
     description: str
     source: str = "filesystem"
@@ -35,16 +37,24 @@ class SkillSummary:
 
 @dataclass(frozen=True)
 class SkillDefinition(SkillSummary):
+    """完整技能定义：内容正文 + 来源路径。"""
+
     content: str = ""
     path: str | None = None
 
 
 class SkillProvider(Protocol):
+    """技能后端协议：发现目录条目 / 按名加载完整定义（dsh provider）。"""
+
     name: str
 
-    def list(self) -> list[SkillSummary]: ...
+    def list(self) -> list[SkillSummary]:
+        """返回全部可用技能摘要。"""
+        ...
 
-    def get(self, name: str) -> SkillDefinition | None: ...
+    def get(self, name: str) -> SkillDefinition | None:
+        """按名返回完整技能定义，无则 None。"""
+        ...
 
 
 def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
@@ -69,6 +79,7 @@ class FileSkillProvider:
         self.name = name
 
     def list(self) -> list[SkillSummary]:
+        """发现 ``<root>/<name>/SKILL.md`` 的全部合法目录包。"""
         out: list[SkillSummary] = []
         if not self.root.is_dir():
             return out
@@ -91,6 +102,7 @@ class FileSkillProvider:
         return out
 
     def get(self, name: str) -> SkillDefinition | None:
+        """按名加载完整定义；名字非法或文件缺失返回 None。"""
         if not is_skill_name(name):
             return None
         skill_file = self.root / name / "SKILL.md"
@@ -116,6 +128,7 @@ class SkillRegistry:
         self._runtime: dict[str, SkillDefinition] = {}
 
     def register_provider(self, provider: SkillProvider) -> None:
+        """追加一个 provider 后端（get 时第一个命中者胜出）。"""
         self._providers.append(provider)
 
     def register_skill(self, definition: SkillDefinition) -> None:
@@ -123,6 +136,7 @@ class SkillRegistry:
         self._runtime[definition.name] = definition
 
     def list(self) -> list[SkillSummary]:
+        """合并目录：provider 摘要在前，runtime 贡献覆盖同名。"""
         seen: dict[str, SkillSummary] = {}
         for provider in self._providers:
             for summary in provider.list():
@@ -137,6 +151,7 @@ class SkillRegistry:
         return list(seen.values())
 
     def get(self, name: str) -> SkillDefinition | None:
+        """runtime 优先，其次按 provider 顺序取第一个命中。"""
         if name in self._runtime:
             return self._runtime[name]
         for provider in self._providers:

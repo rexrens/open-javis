@@ -10,4 +10,5 @@ from core.session import SessionStore
 
 
 def apply(ctx) -> None:
+    """装配：provide "sessions"——SessionStore 服务（session 一等服务）。"""
     ctx.provide("sessions", SessionStore(ctx))

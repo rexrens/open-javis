@@ -38,6 +38,8 @@ _MESSAGE_EVENT_TYPES = frozenset(
 
 @dataclass
 class CompactionResult:
+    """一次完成的压缩：事件序号链 + 被 shadow 的消息序号。"""
+
     compaction_id: str
     start_seq: int
     summary_seq: int
@@ -199,6 +201,7 @@ def make_snip_listener(max_chars: int = DEFAULT_SNIP_MAX_CHARS) -> Callable[...,
     """
 
     def listener(_exec: Any, result: Any, next: Callable[[], Any]) -> Any:
+        """tools/post-execute 监听器：超限工具结果截断（返回决策或 None）。"""
         next()
         text_blocks = [b for b in result.content if isinstance(b, TextBlock)]
         total = sum(len(b.text) for b in text_blocks)

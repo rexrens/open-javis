@@ -24,12 +24,15 @@ name = "compaction"
 
 
 class Config(BaseModel):
+    """compaction 服务配置：压力阈值 / 保留消息数 / 工具结果 snip 上限。"""
+
     maxChars: int = 10_000
     keepMessages: int = 2
     snipMaxChars: int = 8_000
 
 
 def apply(ctx, config: Config) -> None:
+    """装配：provide "compaction" 服务 + 挂 snip 与 pre-step 压力监听器。"""
     service = Compaction(ctx, max_chars=config.maxChars, keep_messages=config.keepMessages)
     ctx.provide("compaction", service)
 
@@ -38,6 +41,7 @@ def apply(ctx, config: Config) -> None:
 
     # pre-step 压力检查：派生消息超阈 → compact_if_needed("pressure")
     def on_pre_step(payload, next):
+        """压力检查：派生消息超阈即压缩（先透传 reject 决定）。"""
         decision = next()
         if getattr(decision, "kind", None) == "reject":
             return decision

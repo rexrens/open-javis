@@ -81,12 +81,16 @@ from .types import (
 
 @dataclass
 class IdlePhase:
+    """代理空闲：没有活跃的 turn，也没有维护任务。"""
+
     kind: str = "idle"
     last_turn: int = 0
 
 
 @dataclass
 class MaintenancePhase:
+    """从空闲相位运行一个非 turn 的维护任务。"""
+
     kind: str = "maintenance"
     abort: AbortController = field(default_factory=AbortController)
     last_turn: int = 0
@@ -95,6 +99,8 @@ class MaintenancePhase:
 
 @dataclass
 class RunningPhase:
+    """turn 活跃中；``turn``/``step`` 记录循环位置。"""
+
     kind: str = "running"
     abort: AbortController = field(default_factory=AbortController)
     turn: int = 0
@@ -143,10 +149,12 @@ class ReactLoopAgent:
 
     @property
     def status(self) -> str:
+        """相位的 ``"idle"``/``"running"`` 视图（maintenance 计为 idle）。"""
         return "idle" if self._phase.kind in ("idle", "maintenance") else "running"
 
     @property
     def last_turn(self) -> int:
+        """会话最近一次启动的 turn 编号。"""
         return self.session.last_turn()
 
     def _set_phase(self, next_phase: Phase) -> None:

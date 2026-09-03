@@ -48,14 +48,17 @@ class Inbox:
 
     @property
     def next_turn(self) -> list[UserMessage]:
+        """next-turn 队列（活队列，下一轮的消息）。"""
         return self._next_turn
 
     @property
     def next_step(self) -> list[UserMessage]:
+        """next-step 队列（活队列，steering 消息）。"""
         return self._next_step
 
     @property
     def has_pending(self) -> bool:
+        """任一队列里还有消息即为 True。"""
         return bool(self._next_turn or self._next_step)
 
     def _queue(self, target: InboxTarget) -> list[UserMessage]:

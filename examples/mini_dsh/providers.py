@@ -127,9 +127,11 @@ class ScriptedAdapter:
         self.on_tool_call = None
 
     def prepare_call(self, config: t.LlmCallConfig, signal: t.AbortSignal | None = None) -> PreparedCall:
+        """脚本化路由：原样接受配置（无真实路由/重试绑定）。"""
         return PreparedCall(config=config)
 
     def stream(self, options: t.GenerateOptions) -> AsyncIterator[Any]:
+        """按脚本逐条吐 StreamChunk；脚本耗尽时回一句收尾短句。"""
         if self._cursor >= len(self._script):
             # 脚本耗尽：收尾短句（REPL/多轮时不会重复最后一条）
             chunks = chunk_response(text="(scripted demo: no more turns)")
@@ -138,6 +140,7 @@ class ScriptedAdapter:
         self._cursor += 1
 
         async def gen():
+            """逐 chunk 产出：遇 _Fault 哨兵抛 TRANSIENT；tool-call 前触发 steer 钩子。"""
             for chunk in chunks:
                 if isinstance(chunk, _Fault):
                     raise t.LlmError(chunk.message, "TRANSIENT")
@@ -174,6 +177,11 @@ class OpenAICompatAdapter:
         self._client: Any = None
 
     def prepare_call(self, config: t.LlmCallConfig, signal: t.AbortSignal | None = None) -> PreparedCall:
+        """绑定路由：把 driver 种子 model 改写为 adapter 的真实 model。
+
+        agent 的 GenerateOptions 与会话日志 request/context 都派生自
+        prepared.config，因此在此改写即全链路生效。
+        """
         # adapter 是 model 属主：driver 的 AgentOptions 种子（"mini-scripted"）
         # 只是占位路由，在这里改写成真实 model——请求的 GenerateOptions 与
         # 会话日志 request/context 都派生自 prepared.config。
@@ -182,9 +190,11 @@ class OpenAICompatAdapter:
         return PreparedCall(config=replace(config, model=self.model))
 
     def close(self) -> None:
+        """释放缓存的客户端（重连时惰性重建）。"""
         self._client = None
 
     async def stream(self, options: t.GenerateOptions) -> AsyncIterator[Any]:
+        """openai SDK 流 → dsh StreamChunk（含 reasoning/文本/工具调用组装）。"""
         from openai import AsyncOpenAI
 
         if self._client is None:
@@ -215,6 +225,7 @@ class OpenAICompatAdapter:
         local = 0
 
         def open_block() -> int:
+            """分配并返回下一个唯一的本地块索引。"""
             nonlocal local
             idx = local
             local += 1

@@ -53,27 +53,34 @@ class AbortSignal:
 
     @property
     def aborted(self) -> bool:
+        """一旦 ``abort()`` 被调用即为 True（单调翻转）。"""
         return self._aborted
 
     @property
     def reason(self) -> AgentCancelCause | None:
+        """首个取消原因；信号仍活跃时为 None。"""
         return self._cause
 
     def abort(self, cause: AgentCancelCause) -> None:
+        """将信号置为已取消；首个原因胜出。"""
         if not self._aborted:  # first cause wins
             self._aborted = True
             self._cause = cause
 
     def throw_if_aborted(self) -> None:
+        """已取消时抛 :class:`AbortError`（携带取消原因）。"""
         if self._aborted:
             raise AbortError(self._cause)
 
 
 @dataclass
 class AbortController:
+    """持有一次活动的中止信号（dsh ``AbortController``）。"""
+
     signal: AbortSignal = field(default_factory=AbortSignal)
 
     def abort(self, cause: AgentCancelCause) -> None:
+        """中止活动；首个原因胜出。"""
         self.signal.abort(cause)
 
 
@@ -142,27 +149,37 @@ class LlmFailure:
 
 @dataclass(frozen=True)
 class StopFinish:
+    """模型正常结束，且无待处理的工具调用。"""
+
     kind: Literal["stop"] = "stop"
 
 
 @dataclass(frozen=True)
 class ToolCallsFinish:
+    """模型请求了工具调用；循环将调度它们。"""
+
     kind: Literal["tool-calls"] = "tool-calls"
 
 
 @dataclass(frozen=True)
 class MaxTokensFinish:
+    """响应达到配置的 max-tokens 上限。"""
+
     kind: Literal["max-tokens"] = "max-tokens"
 
 
 @dataclass(frozen=True)
 class AbortedFinish:
+    """请求在流中途被中止；携带取消原因对应的失败信息。"""
+
     failure: LlmFailure
     kind: Literal["aborted"] = "aborted"
 
 
 @dataclass(frozen=True)
 class ErrorFinish:
+    """请求以 provider/传输层失败告终。"""
+
     failure: LlmFailure
     kind: Literal["error"] = "error"
 
@@ -188,6 +205,8 @@ class TokenUsage:
 
 @dataclass(frozen=True)
 class BlockStartChunk:
+    """在 ``index`` 处打开一个 ``block_type`` 的新块槽（dsh StreamChunk）。"""
+
     index: int
     block_type: str
     type: Literal["block-start"] = "block-start"
@@ -195,6 +214,8 @@ class BlockStartChunk:
 
 @dataclass(frozen=True)
 class TextDeltaChunk:
+    """向 ``index`` 处打开的文本块追加可见文本。"""
+
     index: int
     text: str
     type: Literal["text-delta"] = "text-delta"
@@ -202,6 +223,8 @@ class TextDeltaChunk:
 
 @dataclass(frozen=True)
 class ReasoningDeltaChunk:
+    """向 ``index`` 处打开的思考块追加思考文本。"""
+
     index: int
     text: str
     type: Literal["reasoning-delta"] = "reasoning-delta"
@@ -209,6 +232,8 @@ class ReasoningDeltaChunk:
 
 @dataclass(frozen=True)
 class ToolCallDeltaChunk:
+    """工具调用的一个分片（id / name / arguments 分段到达）。"""
+
     index: int
     id: CallId
     name: str | None = None
@@ -218,6 +243,8 @@ class ToolCallDeltaChunk:
 
 @dataclass(frozen=True)
 class BlockEndChunk:
+    """关闭 ``index`` 处的块，携带已完整组装的块。"""
+
     index: int
     block: ContentBlock
     type: Literal["block-end"] = "block-end"
@@ -225,12 +252,16 @@ class BlockEndChunk:
 
 @dataclass(frozen=True)
 class UsageChunk:
+    """本次调用的 token 用量；adapter 在 finish 之前发出。"""
+
     usage: TokenUsage
     type: Literal["usage"] = "usage"
 
 
 @dataclass(frozen=True)
 class FinishChunk:
+    """终止性 finish 原因；其后不应再有流内容。"""
+
     reason: FinishReason
     type: Literal["finish"] = "finish"
 
@@ -334,6 +365,8 @@ class GenerateOptions:
 
 @dataclass(frozen=True)
 class Message:
+    """会话消息基类：role + 有序内容块 + 来源标记。"""
+
     role: str
     content: tuple[Any, ...] = ()
     #: Provenance: ``{"provider", "model"}`` for assistant, ``{"tool"}`` for results.
@@ -343,24 +376,31 @@ class Message:
 
     @property
     def text(self) -> str:
+        """content 中所有 :class:`TextBlock` 的文本拼接。"""
         return "".join(block.text for block in self.content if isinstance(block, TextBlock))
 
     @property
     def tool_calls(self) -> list[ToolCallBlock]:
+        """content 中按序排列的全部 :class:`ToolCallBlock`。"""
         return [block for block in self.content if isinstance(block, ToolCallBlock)]
 
 
 @dataclass(frozen=True)
 class UserMessage(Message):
+    """面向模型的用户输入，或工具注入的上下文。"""
+
     role: str = "user"
 
     @staticmethod
     def from_text(text: str) -> UserMessage:
+        """把纯文本包成一条含单个 TextBlock 的用户消息。"""
         return UserMessage(content=(TextBlock(text),))
 
 
 @dataclass(frozen=True)
 class AssistantMessage(Message):
+    """模型回复消息（文本 / 思考 / 工具调用）。"""
+
     role: str = "assistant"
 
 
@@ -373,6 +413,7 @@ class ToolResultMessage(Message):
 
     @staticmethod
     def for_call(call_id: CallId, content: Sequence[Any], is_error: bool = False) -> ToolResultMessage:
+        """构造与 ``call_id`` 关联的持久化结果消息。"""
         return ToolResultMessage(
             content=(ToolResultBlock(tool_call_id=call_id, content=tuple(content), is_error=is_error),),
             call_id=call_id,
@@ -410,27 +451,37 @@ class AgentCancelCause:
 
 @dataclass(frozen=True)
 class TurnCompleted:
+    """turn 正常结束。"""
+
     kind: Literal["completed"] = "completed"
 
 
 @dataclass(frozen=True)
 class TurnMaxTokens:
+    """turn 在触达 max-tokens 上限后停止。"""
+
     kind: Literal["max-tokens"] = "max-tokens"
 
 
 @dataclass(frozen=True)
 class TurnBlocked:
+    """turn 在步边界被否决（agent/pre-step reject）。"""
+
     kind: Literal["blocked"] = "blocked"
 
 
 @dataclass(frozen=True)
 class TurnAborted:
+    """turn 被取消；携带取消原因。"""
+
     reason: AgentCancelCause
     kind: Literal["aborted"] = "aborted"
 
 
 @dataclass(frozen=True)
 class TurnError:
+    """turn 以失败告终；携带展平的失败信息。"""
+
     failure: LlmFailure
     kind: Literal["error"] = "error"
 
@@ -476,11 +527,15 @@ RequestErrorAction = RetryAction | None
 
 @dataclass(frozen=True)
 class ExclusiveMode:
+    """该工具单独执行：提交前不并行跑任何其他工具。"""
+
     kind: Literal["exclusive"] = "exclusive"
 
 
 @dataclass(frozen=True)
 class ParallelMode:
+    """该工具加入有界并行池，与其他 parallel 工具并发执行。"""
+
     kind: Literal["parallel"] = "parallel"
 
 
@@ -518,6 +573,7 @@ class ToolExecutionResult:
 
     @staticmethod
     def text(text: str, is_error: bool = False) -> ToolExecutionResult:
+        """构造纯文本结果（content = 单个 TextBlock）。"""
         return ToolExecutionResult(content=[TextBlock(text)], is_error=is_error)
 
 
@@ -540,6 +596,8 @@ TOOL_ABORTED_BEFORE_DISPATCH = "TOOL_ABORTED_BEFORE_DISPATCH"
 
 @dataclass(frozen=True)
 class PromptSection:
+    """系统提示的一段分节（persona → 系统提示，context → 边界消息）。"""
+
     title: str
     body: str
     #: ``"persona"`` sections render into the system prompt; ``"context"``
@@ -587,6 +645,8 @@ class AgentLoop:
 
 
 class SessionEvents:
+    """会话日志词汇表（``Session.append`` 拒绝词汇表之外的任何类型）。"""
+
     TURN_START = "turn/start"
     STEP_START = "step/start"
     USER_MESSAGE = "user/message"

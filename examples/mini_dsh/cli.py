@@ -199,6 +199,7 @@ async def _run_repl() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI 入口：--scenario / --prompt / --repl 三种模式分发。"""
     parser = argparse.ArgumentParser(prog="mini-dsh", description=__doc__)
     parser.add_argument("--scenario", choices=list(SCENARIOS), help="run one demo scenario")
     parser.add_argument("--prompt", help="run one real-model prompt and exit")
