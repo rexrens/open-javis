@@ -20,3 +20,8 @@
 
 - id: middleware
   name: ./plugins/middleware.py
+
+- id: skill-tool
+  name: ./plugins/skill_tool.py
+  config:
+    skillsRoot: ./skills

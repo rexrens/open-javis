@@ -114,3 +114,43 @@ async def test_steer_scenario_injected_at_step_boundary(monkeypatch: pytest.Monk
     steer_msg = [e for e in session.events_of("user/message") if "Tokyo" in (e.data.get("message").text if e.data.get("message") else "")]
     assert steer_msg and step_end_1
     assert steer_msg[0].seq > step_end_1[0].seq
+
+
+@pytest.mark.asyncio
+async def test_skills_scenario_loads_skill_and_follows_it(monkeypatch: pytest.MonkeyPatch):
+    ctx = await _compose(monkeypatch, "skills")
+    session = ctx.get("session")
+    await _run(ctx, "save a note about autumn")
+    # skill 工具被调用
+    calls = [e.data for e in session.events_of("tool/call")]
+    assert any(call.get("name") == "skill" for call in calls)
+    # 结果含技能正文（content[0].content 读法，与 tools 场景既有裁决一致）
+    results = [e for e in session.events_of("tool/result")]
+    texts = []
+    for e in results:
+        block = e.data["message"].content[0]
+        texts.append("".join(getattr(b, "text", "") for b in block.content))
+    assert any("two-line poem" in text for text in texts)
+    # 最终文本体现技能指令（两行诗）
+    messages = session.derive_messages()
+    assert any("autumn leaves" in getattr(m, "text", "") for m in messages)
+    # session 日志里应有 <available_skills> 目录消息（skill 工具可见时注入）
+    catalog_texts = [
+        e.data["message"].text for e in session.events_of("user/message")
+        if "available_skills" in (e.data.get("message").text if e.data.get("message") else "")
+    ]
+    assert catalog_texts
+    assert "poetic-note" in catalog_texts[0]
+
+
+@pytest.mark.asyncio
+async def test_skills_slash_invocation_injects_body(monkeypatch: pytest.MonkeyPatch):
+    """用户显式 /poetic-note 调用：技能正文作为 instructions 注入。"""
+    ctx = await _compose(monkeypatch, "text")  # 无工具调用脚本
+    session = ctx.get("session")
+    await _run(ctx, "/poetic-note please summarize this")
+    injected = [
+        e.data["message"].text for e in session.events_of("user/message")
+        if "two-line poem" in (e.data.get("message").text if e.data.get("message") else "")
+    ]
+    assert injected
