@@ -5,10 +5,10 @@
 > 与 [`examples/cordis`](../cordis/README.md)（只讲插件系统接口的教程）互补：
 > 那里学 `Context` / `Loader` / `inject` / 五种事件模式怎么调用，
 > 这里看它们组合起来装配一个完整 agent harness。
-> 与 [`examples/plugin_harness`](../plugin_harness/README.md) 的对照：
-> 本示例的引擎**由插件装配**（dsh 哲学 "everything is a plugin"）；
-> plugin_harness 的引擎是**独立实现**、插件只做组合根接入宿主——
-> 两种"引擎从哪来"的姿势，见下方对比表。
+> 与 [`examples/mini_dsh`](../mini_dsh/README.md) 的对照：
+> 本示例的生产 core 是 `javis.harness`（生产核心装配）；
+> mini_dsh 的 core 是**从零精简复刻**（教学）——
+> 两种"引擎 core 从哪来"的姿势，见下方对比表。
 
 一个**完整流程、完整契约接口**的 agent harness 演示：参考
 [deepseek-harness](https://github.com/deepseek-harness)（dsh）的主流程
@@ -43,14 +43,15 @@ usage/failure、LlmCallConfig/GenerateOptions、工具执行类型、事件名�
 BlockAssembler）、`tools.py`（ToolRegistry + exclusive/parallel 调度）、
 `agent.py`（ReactLoopAgent 状态机）。
 
-## 与 plugin_harness 的对照（两种引擎姿势）
+## 与 mini_dsh 的对照（两种引擎姿势）
 
-| 维度 | 本示例（dsh_harness） | examples/plugin_harness |
+| 维度 | 本示例（dsh_harness） | examples/mini_dsh |
 |---|---|---|
-| 引擎从哪来 | **由插件装配**：ReactLoopAgent 的 llm/tools/systemPrompt/agentLoop 都是插件 provide 的服务 | **独立实现**：自持 agent loop + 自有 provider 抽象，只依赖 `javis.contracts` |
-| 插件角色 | 提供引擎的每个部件 | 只做组合根：读内建服务、`ctx.provide(ENGINE_SERVICE, engine)` |
-| 宿主 | 自持 cli.py（引导脚本） | 可接真实宿主（`python -m javis --plugins`） |
-| 哲学 | dsh "everything is a plugin" | "AgentEngine 接缝可替换" |
+| 引擎 core | **javis.harness**（生产核心，完整契约面 + 宿主集成） | **从零精简 core**（自包含，唯一外部依赖 `javis.cordis`） |
+| core 代码 | 生产包本身（`javis/harness/`） | `examples/mini_dsh/core/`（独立复刻，同结构同命名） |
+| 插件角色 | 提供引擎的每个部件（llm/tools/systemPrompt/agentLoop 都是插件 provide） | 提供部件 + 组合根（driver 装配 ReactLoopAgent） |
+| 宿主 | 自持 cli.py（4 场景） | 自持 cli.py（7 场景） |
+| 定位 | 生产 core 装配（生产） | 从零精简 core（教学） |
 
 两者的共同点：都是 `cordis.yml` 组合 + `ctx.plugin(Loader, …)` 装配、
 `inject` 依赖驱动、effect 可逆卸载——插件系统本身的用法看

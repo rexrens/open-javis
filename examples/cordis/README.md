@@ -4,7 +4,7 @@
 （一个 `cordis.yml` 组合 + 插件源码），演示 Cordis 对外提供的一组接口。
 它不涉及任何 harness/agent 概念——那是 [`examples/dsh_harness`](../dsh_harness/README.md)
 （在 Cordis 方案下一个 harness 怎么做）和
-[`examples/plugin_harness`](../plugin_harness/README.md)（独立引擎如何接入宿主）
+[`examples/mini_dsh`](../mini_dsh/README.md)（cordis-only 的 dsh 精简 harness（核心自包含、可整体拷贝；装配见插件系统教程））
 的职责。三个目录互补：**先在这里学会插件接口，再去看 harness 怎么用它**。
 
 ## 运行
