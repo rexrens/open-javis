@@ -17,3 +17,6 @@
 - id: driver
   name: ./plugins/driver.py
   inject: [sessions, llm, tools]
+
+- id: middleware
+  name: ./plugins/middleware.py
