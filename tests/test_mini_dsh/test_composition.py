@@ -5,6 +5,7 @@ cordis Context 无公开 dispose——每个测试独立 compose 新 ctx，进�
 """
 import os
 import tempfile
+from pathlib import Path
 
 import pytest
 from core import types as t
@@ -164,3 +165,26 @@ async def test_skills_slash_invocation_injects_body(monkeypatch: pytest.MonkeyPa
         if (e.data.get("message").source or {}).get("kind") == "skill-catalog"
     ]
     assert catalogs and injected[0].seq > catalogs[0].seq
+
+
+@pytest.mark.asyncio
+async def test_instructions_baseline_injected_before_first_assistant(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    (tmp_path / "AGENTS.md").write_text(
+        "# Workspace instructions\n\nAlways answer with at most 5 words.\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("MINI_DSH_CWD", str(tmp_path))
+    ctx = await _compose(monkeypatch, "instructions")
+    session = ctx.get("session")
+    await _run(ctx, "what is your policy?")
+    # baseline 消息存在且 seq 早于首个 assistant/message
+    baseline = [
+        e for e in session.events_of("user/message")
+        if (e.data.get("message") or None) is not None
+        and (getattr(e.data["message"], "source", None) or {}).get("kind") == "agent-instructions"
+    ]
+    assert baseline
+    first_assistant = session.events_of("assistant/message")[0]
+    assert baseline[0].seq < first_assistant.seq
+    # 模型按指令回答（≤5 词——由脚本保证 "Understood. Keeping it brief."）
+    messages = session.derive_messages()
+    assert any("Keeping it brief" in getattr(m, "text", "") for m in messages)

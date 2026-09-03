@@ -25,3 +25,6 @@
   name: ./plugins/skill_tool.py
   config:
     skillsRoot: ./skills
+
+- id: instructions
+  name: ./plugins/instructions.py
