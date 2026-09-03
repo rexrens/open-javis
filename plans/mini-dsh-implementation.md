@@ -430,7 +430,7 @@ def test_splice_ordering():
     inbox = Inbox(Session("s1"))
     inbox.next_step.append(_msg("a"))
     inbox.next_step.append(_msg("c"))
-    inbox.splice("next-step", len(inbox.next_step), 0, [_msg("b")])
+    inbox.splice("next-step", 1, 0, [_msg("b")])  # 中段插入：a 之后、c 之前
     assert [m.text for m in inbox.claim("next-step", 1)] == ["a", "b", "c"]
 ```
 
