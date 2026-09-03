@@ -419,17 +419,17 @@ def _msg(text: str) -> t.UserMessage:
 
 def test_turn_vs_step_targets():
     inbox = Inbox(Session("s1"))
-    inbox.next_turn().append(_msg("a"))
-    inbox.next_step().append(_msg("b"))
+    inbox.next_turn.append(_msg("a"))
+    inbox.next_step.append(_msg("b"))
     assert [m.text for m in inbox.claim("next-turn", 1)] == ["a"]
     assert [m.text for m in inbox.claim("next-step", 1)] == ["b"]
-    assert not inbox.has_pending()
+    assert not inbox.has_pending
 
 
 def test_splice_ordering():
     inbox = Inbox(Session("s1"))
-    inbox.next_step().append(_msg("a"))
-    inbox.next_step().append(_msg("c"))
+    inbox.next_step.append(_msg("a"))
+    inbox.next_step.append(_msg("c"))
     inbox.splice("next-step", len(inbox.next_step), 0, [_msg("b")])
     assert [m.text for m in inbox.claim("next-step", 1)] == ["a", "b", "c"]
 ```
@@ -439,9 +439,11 @@ def test_splice_ordering():
 运行：`uv run pytest tests/test_mini_dsh/test_inbox.py -v`
 预期：FAIL——ModuleNotFoundError
 
-- [ ] **步骤 3：copy 实现**
+- [ ] **步骤 3：copy + 一处语义调整**
 
-复制 `javis/harness/inbox.py` → `examples/mini_dsh/core/inbox.py`，只改 docstring 首行与相对 import（`from .session import Session`、`from .types import ...` 保持相对 import 即可——文件在 core 包内，无需改动相对导入路径；核实 import 是否指向包内模块，若指向 `.session/.types` 则原样保留）。
+复制 `javis/harness/inbox.py` → `examples/mini_dsh/core/inbox.py`，改 docstring 首行；相对 import（`from .session import Session`、`from .types import ...`）原样保留。
+
+**有意偏差（与 javis/harness）**：`next_turn` / `next_step` 由"返回副本的 @property"改为**返回内部活队列的 @property**（去掉 `list(...)` 副本）；`has_pending` 保持 @property。理由：dsh getter 返回内部数组（活队列语义，append 可直接作用于队列）；Task 9 的 agent.py port 以属性形式消费（`len(self.inbox.next_step)` / `self.inbox.has_pending` / claim / splice），不受影响。此偏差经实现者实证（简报原测试与 javis 副本语义互斥）与裁决确认。
 
 - [ ] **步骤 4：跑测试确认通过**
 
