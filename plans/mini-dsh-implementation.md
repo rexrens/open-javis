@@ -360,8 +360,19 @@ class SessionStore:
         if id in self._sessions:
             raise ValueError(f"session {id!r} already exists")
         session = Session(id, cwd=cwd)
-        self._sessions[id] = session
-        self._ctx.effect(lambda: self._sessions.pop(id, None), f"sessions.create({id})")
+
+        def setup() -> Callable[[], None]:
+            self._sessions[id] = session
+
+            def disposer() -> None:
+                self._sessions.pop(id, None)
+
+            return disposer
+
+        # Cordis effect contract: ``execute`` runs at create time, its return
+        # value is the teardown disposer（fiber 卸载时从 store 移除）——
+        # 与 ToolRegistry.register 同款 idiom。
+        self._ctx.effect(setup, f"sessions.create({id})")
         self._ctx.emit("session/created", {"session": session})
         return session
 
