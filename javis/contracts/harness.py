@@ -1,10 +1,10 @@
-"""Agent engine protocol — the single engine seam.
+"""Harness contract — the single agent seam.
 
-The host (runtime / TUI / commands) talks to exactly one object: an
-``AgentEngine`` that owns conversation history and usage, and yields
+The host (runtime / TUI / commands) talks to exactly one object: a
+``Harness`` that owns conversation history and usage, and yields
 ``AgentEvent`` streams per turn. The built-in implementation is
-``javis.harness.engine.HarnessEngine``; engine plugins provide an
-instance of this protocol under the ``engine`` service (see
+``javis.harness.harness.Harness``; a composition row provides an instance
+of this protocol under the ``harness`` service (see
 ``javis.contracts.services``) to replace it.
 
 This replaces the old two-level seam (``AgentBackend`` protocol + a
@@ -22,17 +22,17 @@ from javis.contracts.usage import UsageSnapshot
 
 
 @runtime_checkable
-class AgentEngine(Protocol):
-    """One engine object: history + usage + event-stream turns.
+class Harness(Protocol):
+    """One harness object: history + usage + event-stream turns.
 
     Optional hooks (probed with ``hasattr``, NOT part of the Protocol so a
     minimal implementation can skip them):
 
         def load_history(self, messages: list[ConversationMessage]) -> None:
-            '''Rebuild engine-internal history from javis mirror messages.'''
+            '''Rebuild harness-internal history from javis mirror messages.'''
 
         def clear_history(self) -> None:
-            '''Clear engine-internal history.'''
+            '''Clear harness-internal history.'''
 
         def set_permission_checker(self, checker) -> None:
             '''Attach the host's async permission hook
@@ -73,4 +73,4 @@ class AgentEngine(Protocol):
     def set_effort(self, effort: str | None) -> None: ...
 
 
-__all__ = ["AgentEngine"]
+__all__ = ["Harness"]

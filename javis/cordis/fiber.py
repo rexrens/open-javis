@@ -248,6 +248,15 @@ class Fiber:
         if self.uid is None:
             raise CordisError("INACTIVE_EFFECT")
 
+    @property
+    def error(self) -> BaseException | None:
+        """The exception that failed this fiber's last load (``None`` if none)."""
+        return self._error
+
+    def missing_inject(self) -> list[str]:
+        """Requested service names this fiber has not resolved yet."""
+        return [name for name in self.inject if self._store.get(name) is None]
+
     # -- effects ------------------------------------------------------------
 
     def effect(

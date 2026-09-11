@@ -1,4 +1,4 @@
-"""Minimal test engine implementing the ``AgentEngine`` contract.
+"""Minimal test engine implementing the ``Harness`` contract.
 
 Replaces the deleted MockAgent / FakeBackend: keeps the keyword routing so
 end-to-end tests can exercise every render path (text deltas, tool calls,
@@ -12,7 +12,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-from javis.contracts.engine import AgentEngine
+from javis.contracts.harness import Harness
 from javis.contracts.messages import ConversationMessage, TextBlock
 from javis.contracts.types import (
     AgentError,
@@ -31,7 +31,7 @@ def _prompt_text(prompt: str | ConversationMessage) -> str:
     return prompt or ""
 
 
-class FakeEngine(AgentEngine):
+class FakeEngine(Harness):
     """Canned test engine dispatching on prompt keywords (first match wins):
 
     - contains "error"  → emit ``AgentError`` and stop

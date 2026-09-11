@@ -1,4 +1,4 @@
-"""插件：``"tools"`` 服务 + demo 的 mock 工具。
+"""插件：``"agentTools"`` 服务 + demo 的 mock 工具。
 
 提供一个 :class:`~javis.harness.tools.ToolRegistry`，并注册覆盖调度器
 全部语义的四个工具：
@@ -58,9 +58,9 @@ def _end_session(_exec):
 
 def apply(ctx):
     # 注册表本身是服务：构造时绑定 ctx（effect 语义），
-    # 发布为 "tools" 服务供 driver 装配循环时取用。
+    # 发布为 "agentTools" 服务供 driver 装配循环时取用。
     registry = ToolRegistry(ctx)
-    ctx.provide("tools", registry)
+    ctx.provide("agentTools", registry)
     # 四个工具覆盖调度器的四种语义：
     # parallel × 2（now/weather）+ exclusive 屏障（set_note）
     # + exclusive + concludesTurn（end_session）。

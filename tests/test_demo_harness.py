@@ -273,7 +273,7 @@ async def test_abort_synthesizes_result_for_skipped_calls() -> None:
         return "slow done"
 
     # register the slow tool on the live registry (test-only)
-    registry = _ctx.get("tools")
+    registry = _ctx.get("agentTools")
     registry.register(Tool("slow", "sleeps a bit", body=slow_body), mode="parallel")
 
     agent.followup(UserMessage.from_text("run both"))

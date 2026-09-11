@@ -213,6 +213,7 @@ git commit -m "refactor(contracts): rename AgentEngine protocol to Harness, engi
 **Files:**
 - Rename: `javis/harness/llm.py` → `javis/harness/stream.py`
 - Modify: `javis/harness/types.py`（新增 `PreparedCall` + `LLM`）
+- Modify: `javis/harness/__init__.py:41,61`（`from . import llm as llm` → `from . import stream as stream`；`__all__` 的 `"llm"` → `"stream"`）
 - Modify: `javis/harness/agent.py:44`
 - Modify: `javis/llm/runtime.py:533-536`、`javis/llm/scripted.py:8`、`javis/llm/openai_compat.py:13,121`
 - Modify: 4 个测试 + `examples/dsh_harness/mock_llm.py:27`
@@ -296,6 +297,7 @@ __all__ = [
 
 | 文件 | 改为 |
 |---|---|
+| `javis/harness/__init__.py:41,61` | `from . import stream as stream`；`__all__` 里 `"llm"` → `"stream"` |
 | `javis/harness/agent.py:44` | `from .stream import BlockAssembler, assemble_finish, normalized_stream` |
 | `javis/llm/runtime.py:536` | `from javis.harness.types import PreparedCall`（docstring `:533` 同步：`javis.harness.types.PreparedCall`） |
 | `javis/llm/scripted.py:8` | docstring：`javis.harness.stream.chunk_response` |
@@ -381,8 +383,10 @@ git commit -m "refactor(harness): rename ReactAgentLoop to AgentLoop and the age
 - Modify: `javis/harness/tools.py:196,255`（`ctx.get("tools")` → `AGENT_TOOLS_SERVICE`）
 - Modify: `javis/harness/prompt.py:43`
 - Modify: `javis/harness/tool_adapter.py`（新增 `AgentToolView`，删除 `adapt_registry`）
+- Modify: `javis/harness/__init__.py:48,56`（`adapt_registry` 的 import 与 `__all__` 改 `AgentToolView`，否则删函数即 ImportError）
 - Modify: `javis/harness/engine.py:184-190`（私有 ctx 改 provide `agentTools`）
-- Modify: `examples/dsh_harness/plugins/{demo_tools.py,system_prompt.py,driver.py}` + `cordis.yml`
+- Modify: `examples/dsh_harness/plugins/{demo_tools.py,system_prompt.py,driver.py}` + `cordis.yml` + `README.md`
+- Modify: `tests/test_demo_harness.py:276`（`_ctx.get("tools")` → `agentTools`）
 - Test: `tests/test_harness/test_tool_view.py`（新增）
 
 - [ ] **Step 1: 写失败测试**
@@ -496,7 +500,7 @@ class AgentToolView:
         return adapt_tool(javis_tool, sub_agent_factory=self._sub_agent_factory)
 ```
 
-import 段改为 `from .types import ExclusiveMode, ParallelMode, ToolExecutionResult, ToolSchema`（`ToolExecutionResult` 已有，新增三个）；`__all__ = ["AgentToolView", "adapt_tool"]`。文件 docstring 的 `- ``AgentTool`` …` 段落补充视图说明。
+import 段改为 `from .types import ExclusiveMode, ParallelMode, ToolExecutionResult, ToolSchema`（`ToolExecutionResult` 已有，新增三个）；`__all__ = ["AgentToolView", "adapt_tool"]`。文件 docstring 的 `- ``AgentTool`` …` 段落补充视图说明。`javis/harness/__init__.py:48` 的 `from .tool_adapter import adapt_registry, adapt_tool` 改 `AgentToolView, adapt_tool`，`:56` 的 `"adapt_registry"` 原地改 `"AgentToolView"`（Task 8 会整体重写该列表，此处不做重排）。
 
 - [ ] **Step 4: 跑视图测试**
 
@@ -530,8 +534,9 @@ Expected: `2 passed`
 - `plugins/demo_tools.py`：`ctx.provide("agentTools", registry)`（docstring 同步）。
 - `plugins/system_prompt.py:59`：`self._ctx.get("agentTools")`。
 - `plugins/driver.py:26`：`inject = ["llm", "agentTools", "systemPrompt", "agentLoop"]`；docstring 图示同步。
-- `cordis.yml`：`driver` 条目 `inject: [llm, agentTools, systemPrompt, agentLoop]`。
-- `README.md`：服务名 `tools` → `agentTools` 的说明处同步。
+- `cordis.yml`：`driver` 条目 `inject: [llm, agentTools, systemPrompt, agentLoop]`（`:32`）。
+- `README.md`：服务名说明同步 —— `:33` `provide("tools")`→`provide("agentTools")`、`:36`/`:52`/`:202`/`:246` 的 `inject=[llm, tools, …]` → `agentTools`、`:197` `provide("tools")` → `provide("agentTools")`。**不要动**：场景名（`:26`/`:66`/`:87`/`:106`）与事件名 `tools/execute`、`tools/post-execute`、`tools/result`（`:35`/`:201`/`:214`）。
+- `tests/test_demo_harness.py:276`：`registry = _ctx.get("tools")` → `_ctx.get("agentTools")`（demo 注册表改名后，原查找返回 None，测试会红）。
 
 - [ ] **Step 7: 跑全量测试**
 
@@ -649,38 +654,59 @@ def assert_entries_settled(ctx: "Context") -> None:
     will never appear — would otherwise be silently ignored. Call this right
     after ``settle(ctx)`` as the boot-time entry assertion (dsh
     ``assertEntriesLoaded`` / ``assertEntriesActivated``).
+
+    Group members are mounted as fibers without an entry of their own, so the
+    scan walks the mounted fibers first; entries with no fiber at all are
+    reported afterwards.
     """
     loader = ctx.get("loader")
     if loader is None:
         raise RuntimeError("composition loader is not available (loader service missing)")
+    entries = loader.entries()
     fibers = loader.fibers()
-    for entry_id, entry in loader.entries().items():
-        if entry.disabled:
+
+    for entry_id, fiber in fibers.items():
+        entry = entries.get(entry_id)
+        if entry is not None and entry.disabled:
             continue
-        fiber = fibers.get(entry_id)
-        if fiber is None:
-            raise RuntimeError(
-                f"composition entry {entry_id!r} ({entry.name}) was not mounted"
-            )
         if fiber.state is FiberState.ACTIVE:
             continue
+        label = entry.name if entry is not None else fiber.name
         if fiber.state is FiberState.FAILED:
             raise RuntimeError(
-                f"composition entry {entry_id!r} ({entry.name}) failed: {fiber.error}"
+                f"composition entry {entry_id!r} ({label}) failed: "
+                f"{type(fiber.error).__name__}: {fiber.error}"
             ) from fiber.error
-        missing = fiber.missing_inject()
+        if fiber.state is FiberState.PENDING:
+            missing = fiber.missing_inject()
+            raise RuntimeError(
+                f"composition entry {entry_id!r} ({label}) is PENDING: "
+                f"unresolved services: {', '.join(missing) or '(unknown)'}"
+            )
         raise RuntimeError(
-            f"composition entry {entry_id!r} ({entry.name}) is {fiber.state.name}: "
-            f"unresolved services: {', '.join(missing) or '(unknown)'}"
+            f"composition entry {entry_id!r} ({label}) is {fiber.state.name} (not settled)"
+        )
+
+    for entry_id, entry in entries.items():
+        if entry.disabled or entry_id in fibers:
+            continue
+        raise RuntimeError(
+            f"composition entry {entry_id!r} ({entry.name}) was not mounted"
         )
 ```
+
+> 实现后按质量评审补强：主循环遍历 `fibers()`（覆盖 group 成员——它们不在
+> `entries()` 里，这是初版会静默放过的失败类别），FAILED 消息带异常类型，
+> PENDING 与 LOADING/UNLOADING/DISPOSED 分开措辞。测试共 5 个：
+> 原有的 3 个加 `test_failed_group_member_is_reported` 与
+> `test_missing_loader_service_raises`。
 
 若文件有 `__all__` 则加入 `"assert_entries_settled"`（当前无 `__all__`，可跳过）。
 
 - [ ] **Step 5: 跑测试**
 
 Run: `timeout 300 uv run pytest tests/test_cordis -q`
-Expected: 全绿（含 3 个新测试）
+Expected: 全绿（含 5 个新测试）；全量 `timeout 300 uv run pytest tests/ -q` → 303 passed
 
 - [ ] **Step 6: 提交**
 
@@ -1120,6 +1146,11 @@ class Harness(HarnessContract):
         loop_service = ctx.get(AGENT_LOOP_SERVICE)
         self._loop_config = getattr(loop_service, "config", None) or loop_service
         self._default_max_steps = max(1, int(getattr(self._loop_config, "max_steps_per_turn", 20)))
+        # ctor-level max_turns wins over the row's max_steps_per_turn (parity
+        # with the old ``HarnessEngine`` and ``build()`` path).
+        self._loop_config.max_steps_per_turn = (
+            self._max_turns if self._max_turns is not None else self._default_max_steps
+        )
 
         # -- middleware on the harness's own context -------------------------
         ctx.on(Events.TOOLS_EXECUTE, self._permission_listener)
@@ -1167,8 +1198,8 @@ Run: `git rm javis/harness/build.py`
 ```python
 from . import agent as agent
 from . import inbox as inbox
-from . import llm as llm          # → 改为: from . import stream as stream
 from . import session as session
+from . import stream as stream    # Task 2 已改
 from . import tools as tools
 from . import types as types
 from .build import build          # → 删除
@@ -1177,7 +1208,7 @@ from .engine import HarnessEngine # → 改为: from .harness import Harness
 from .tool_adapter import adapt_registry, adapt_tool  # → 改为: from .tool_adapter import AgentToolView, adapt_tool
 ```
 
-`__all__` 相应把 `"HarnessEngine"`/`"build"`/`"llm"`/`"adapt_registry"` 换成 `"Harness"`/`"stream"`/`"AgentToolView"`（完整版在 Task 8 Step 1 重写）。
+`__all__` 相应把 `"HarnessEngine"`/`"build"`/`"adapt_registry"` 换成 `"Harness"`/`"AgentToolView"`（完整版在 Task 8 Step 1 重写）。
 
 `javis/app/runtime.py`：
 - 删除整个 `_build_default_engine`（`:111-164`）；
@@ -1416,7 +1447,7 @@ async def test_failing_entry_reports_original_error(plugin_workspace, fake_engin
 
 `test_explicit_composition_path`：把 `comp.write_text("[]\n")` 改为写 `DEFAULT_COMPOSITION`；其余断言不变。
 
-删除 `test_invalid_engine_service_falls_back`。
+删除 `test_invalid_engine_service_falls_back`。该测试是文件里 `import logging` 的唯一使用者，删掉它同时删掉这行 import（否则 ruff F401）。
 
 - [ ] **Step 10: 重写 harness 测试的构造入口**
 
@@ -1492,7 +1523,7 @@ def make_harness(
 - 删除 `_engine`，`from tests.test_harness.support import make_harness`，调用点全部 `_engine(x)` → `make_harness(x)`。
 - `test_setters` 中 `assert engine._adapter.model == "other-model"` 删除（adapter 已不在 Harness 手中）—— 改为断言路由生效：`assert engine.model == "other-model"`（已有）。
 - `test_initial_state` / 其余断言不变（`engine._session`、`engine._loop_config` 仍是实现细节，保留）。
-- import：`from javis.harness.harness import Harness`、`from javis.harness.stream import chunk_response`。
+- import：`from javis.harness.harness import Harness`、`from javis.harness.stream import chunk_response`、`from tests.test_harness.support import make_harness`；删除随 `_engine` 一起失效的 `from javis.llm import ScriptedAdapter` 与 `from javis.tools import create_default_tool_registry`（否则 ruff F401）。
 
 `tests/test_harness/test_agent_loop.py`：
 
@@ -1505,7 +1536,7 @@ def make_harness(
     assert {"read_file", "write_file", "edit_file", "bash", "glob", "grep", "agent"} <= names
 ```
 
-- `HarnessEngine` 类型标注 → `Harness`，import 改为 `from javis.harness.harness import Harness` 与 `from javis.harness.stream import chunk_response`。
+- `HarnessEngine` 类型标注 → `Harness`。import 改为 `from javis.harness.harness import Harness` 并新增 `from tests.test_harness.support import make_harness`；删除失效的 `from javis.harness.engine import HarnessEngine`、`from javis.llm import ScriptedAdapter`、`from javis.tools import create_default_tool_registry`（`from javis.harness.stream import chunk_response` 仍被 `_resp` 使用，保留）。
 
 `tests/test_javis/test_runtime.py`（`test_build_javis_runtime_default_engine_is_harness`，`:105-116`）：
 

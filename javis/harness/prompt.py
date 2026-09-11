@@ -33,14 +33,14 @@ class HarnessPromptService:
         self._session_id = session_id
 
     def set_system_prompt(self, prompt: str) -> None:
-        """Host setter (``AgentEngine.set_system_prompt``)."""
+        """Host setter (``Harness.set_system_prompt``)."""
         self._system_prompt = prompt
 
     # -- dsh systemPrompt service surface -----------------------------------
 
     def assemble(self, *, agent: Any = None, signal: Any = None) -> PromptAssembly:
         """One request's assembly: persona + context sections + live tools."""
-        registry = self._ctx.get("tools")
+        registry = self._ctx.get("agentTools")
         tools: tuple[ToolSchema, ...] = ()
         schemas = getattr(registry, "schemas", None)
         if callable(schemas):

@@ -480,7 +480,7 @@ class BackendHost:
     def _inject_permission_checker(self) -> None:
         """Wire the modal permission channel into the engine's tool loop.
 
-        Contract-level hook first (``AgentEngine.set_permission_checker``);
+        Contract-level hook first (``Harness.set_permission_checker``);
         legacy path (``engine.agent.permission_checker``) as a
         fallback. Test doubles that implement neither simply skip injection.
         """

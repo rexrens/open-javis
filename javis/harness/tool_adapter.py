@@ -14,6 +14,8 @@ Mapping:
 - schema — copied verbatim (``name`` / ``description`` / ``parameters``).
 - ``AgentTool`` — its ``sub_agent_factory`` hook is wired by the engine
   (the old corecoder Agent no longer exists).
+- ``AgentToolView`` — the loop-facing ``agentTools`` service: a live view
+  over the host registry (reads adapt on the fly; ``register`` forwards).
 """
 
 from __future__ import annotations
@@ -27,8 +29,7 @@ from javis.contracts.tools import Tool as JavisTool
 from javis.contracts.tools import ToolRegistry as JavisToolRegistry
 
 from .tools import Tool as CoreTool
-from .tools import ToolRegistry as CoreToolRegistry
-from .types import ToolExecutionResult
+from .types import ExclusiveMode, ParallelMode, ToolExecutionResult, ToolSchema
 
 
 def _invoke(javis_tool: JavisTool, arguments: Any) -> ToolExecutionResult:
@@ -80,24 +81,52 @@ def adapt_tool(
     return tool
 
 
-def adapt_registry(
-    javis_registry: JavisToolRegistry,
-    ctx: Any,
-    *,
-    sub_agent_factory: Callable[[str], str] | None = None,
-) -> CoreToolRegistry:
-    """Build the core's tool registry from a javis registry snapshot.
+class AgentToolView:
+    """Live loop-facing view over the host's javis ``ToolRegistry``.
 
-    Called by the engine at build time, AFTER plugins loaded, so
-    plugin-registered tools are included (the runtime passes its ``tools``
-    service here).
+    Read operations delegate to the host registry on every call and adapt
+    the result on the fly — a tool registered after this view was built is
+    still visible to the loop. ``register`` forwards to the host registry,
+    which stays the single source of truth.
+
+    Why not a snapshot: the host ``tools`` service is a *javis* registry
+    (``javis.contracts.tools``) while the loop needs *core* tools
+    (``.tools``), and plugin rows may register tools in any order.
     """
-    registry = CoreToolRegistry(ctx)
-    for javis_tool in javis_registry.all():
-        registry.register(
-            adapt_tool(javis_tool, sub_agent_factory=sub_agent_factory)
-        )
-    return registry
+
+    def __init__(
+        self,
+        host_registry: JavisToolRegistry,
+        ctx: Any,
+        *,
+        sub_agent_factory: Callable[[str], str] | None = None,
+    ) -> None:
+        self._host = host_registry
+        self._ctx = ctx
+        self._sub_agent_factory = sub_agent_factory
+
+    def register(self, javis_tool: JavisTool) -> Any:
+        """Register into the host registry (the single source of truth)."""
+        return self._host.register(javis_tool)
+
+    def get(self, name: str) -> CoreTool | None:
+        javis_tool = self._host.get(name)
+        return None if javis_tool is None else self._adapt(javis_tool)
+
+    def all(self) -> list[CoreTool]:
+        return [self._adapt(javis_tool) for javis_tool in self._host.all()]
+
+    def schemas(self) -> list[ToolSchema]:
+        return [tool.schema for tool in self.all()]
+
+    def execution_mode(self, name: str) -> ExclusiveMode | ParallelMode:
+        javis_tool = self._host.get(name)
+        if javis_tool is not None and getattr(javis_tool, "exclusive", False):
+            return ExclusiveMode()
+        return ParallelMode()
+
+    def _adapt(self, javis_tool: JavisTool) -> CoreTool:
+        return adapt_tool(javis_tool, sub_agent_factory=self._sub_agent_factory)
 
 
-__all__ = ["adapt_registry", "adapt_tool"]
+__all__ = ["AgentToolView", "adapt_tool"]

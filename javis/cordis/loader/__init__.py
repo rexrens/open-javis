@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
+from ..fiber import FiberState
 from ..service import Service
 from .entry import Entry, parse_entries
 
@@ -215,7 +216,14 @@ class Loader(Service):
             mount_ctx = ctx.isolate(entry.isolate) if entry.isolate else ctx
             return mount_ctx.plugin(group_plugin, {})
 
-        module, path = self._resolve_module(entry.name)
+        try:
+            module, path = self._resolve_module(entry.name)
+        except Exception as error:
+            # Boot diagnostics: name the offending entry, not just the module.
+            raise RuntimeError(
+                f"composition entry '{entry_id}': cannot load module "
+                f"'{entry.name}': {error}"
+            ) from error
         plugin = ModulePlugin(module, name=getattr(module, "name", None) or entry.name)
         inject = self._merge_inject(getattr(module, "inject", None), entry.inject)
         if inject:
@@ -410,6 +418,55 @@ class Loader(Service):
 
     def module_paths(self) -> dict[str, str | None]:
         return dict(self._entry_paths)
+
+
+def assert_entries_settled(ctx: Context) -> None:
+    """Fail loud when any composition entry did not activate.
+
+    ``settle()`` gathers fiber inertia with ``return_exceptions=True``, so a
+    FAILED plugin body — or a PENDING fiber still waiting on services that
+    will never appear — would otherwise be silently ignored. Call this right
+    after ``settle(ctx)`` as the boot-time entry assertion (dsh
+    ``assertEntriesLoaded`` / ``assertEntriesActivated``).
+
+    Group members are mounted as fibers without an entry of their own, so the
+    scan walks the mounted fibers first; entries with no fiber at all are
+    reported afterwards.
+    """
+    loader = ctx.get("loader")
+    if loader is None:
+        raise RuntimeError("composition loader is not available (loader service missing)")
+    entries = loader.entries()
+    fibers = loader.fibers()
+
+    for entry_id, fiber in fibers.items():
+        entry = entries.get(entry_id)
+        if entry is not None and entry.disabled:
+            continue
+        if fiber.state is FiberState.ACTIVE:
+            continue
+        label = entry.name if entry is not None else fiber.name
+        if fiber.state is FiberState.FAILED:
+            raise RuntimeError(
+                f"composition entry {entry_id!r} ({label}) failed: "
+                f"{type(fiber.error).__name__}: {fiber.error}"
+            ) from fiber.error
+        if fiber.state is FiberState.PENDING:
+            missing = fiber.missing_inject()
+            raise RuntimeError(
+                f"composition entry {entry_id!r} ({label}) is PENDING: "
+                f"unresolved services: {', '.join(missing) or '(unknown)'}"
+            )
+        raise RuntimeError(
+            f"composition entry {entry_id!r} ({label}) is {fiber.state.name} (not settled)"
+        )
+
+    for entry_id, entry in entries.items():
+        if entry.disabled or entry_id in fibers:
+            continue
+        raise RuntimeError(
+            f"composition entry {entry_id!r} ({entry.name}) was not mounted"
+        )
 
 
 async def _dispose_quietly(fiber: Any) -> None:

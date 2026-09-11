@@ -53,10 +53,10 @@ class SystemPromptService:
     def assemble(self, *, agent=None, signal=None) -> PromptAssembly:
         """一次请求的装配结果：section 列表 + 当前工具注册表的活 schema。
 
-        工具 schema 在每次 assemble 时从 ``tools`` 服务现取——工具注册/
+        工具 schema 在每次 assemble 时从 ``agentTools`` 服务现取——工具注册/
         卸载（fiber effect）后，下一请求的模型立刻看到新工具清单。
         """
-        registry = self._ctx.get("tools")
+        registry = self._ctx.get("agentTools")
         return PromptAssembly(sections=self.sections, tools=tuple(registry.schemas()))
 
     def render_prompt(self, assembly: PromptAssembly) -> str:
@@ -72,5 +72,5 @@ class SystemPromptService:
 
 def apply(ctx):
     # 发布 systemPrompt 服务。注意 ctx 要传进去：assemble 时要靠它
-    # 现取 tools 注册表。
+    # 现取 agentTools 注册表。
     ctx.provide("systemPrompt", SystemPromptService(ctx))

@@ -2,15 +2,16 @@
 
 What remains:
 
-- ``RuntimeBundle`` — engine + commands + app_state + session_backend
-- ``build_runtime`` — assembles a bundle with an ``AgentEngine``
+- ``RuntimeBundle`` — harness + commands + app_state + session_backend
+- ``build_runtime`` — assembles a bundle with a ``Harness``
 - ``handle_line`` — the single dispatch point (slash commands + agent turns)
 
 Plugin wiring lives in ``build_runtime``: a fresh Cordis context provides the
 built-in services (``config`` / ``tools`` / ``commands`` / ``host``), mounts
-the plugin composition via the Cordis loader, and picks the engine from the
-``engine`` service when a plugin provided one (falling back to the built-in
-``HarnessEngine`` otherwise).
+the plugin composition via the Cordis loader, asserts every entry settled, and
+reads the ``harness`` service the composition provided. There is no fallback:
+a composition that provides no ``harness`` service (or fails to load) is a
+hard boot error.
 
 ``handle_line`` yields ``AgentEvent`` straight through to the host's
 ``render_event`` callback — no ``StreamEvent`` translation layer.
@@ -28,19 +29,19 @@ from typing import Any
 from uuid import uuid4
 
 from javis.commands.registry import CommandContext, CommandRegistry, create_default_command_registry
-from javis.contracts.engine import AgentEngine
+from javis.contracts.harness import Harness
 from javis.contracts.host import HostContext
 from javis.contracts.messages import ConversationMessage, sanitize_conversation_messages
 from javis.contracts.services import (
     COMMANDS_SERVICE,
     CONFIG_SERVICE,
-    ENGINE_SERVICE,
+    HARNESS_SERVICE,
     HOST_SERVICE,
     TOOLS_SERVICE,
 )
 from javis.contracts.types import AgentEvent, AgentTextDelta, AgentTurnEnd
 from javis.cordis import Context
-from javis.cordis.loader import Loader
+from javis.cordis.loader import Loader, assert_entries_settled
 from javis.cordis.registry import settle
 from javis.session.config import JavisConfig, ensure_default_composition
 from javis.session.session_storage import JavisSessionBackend
@@ -60,10 +61,10 @@ ClearHandler = Callable[[], Awaitable[None]]
 
 def build_system_prompt(cwd: str | Path | None = None, *, workspace: str | Path | None = None) -> str:
     """Return a short system prompt for the agent."""
-    del cwd, workspace  # signature kept for parity; stored on the engine
+    del cwd, workspace  # signature kept for parity; stored on the harness
     return (
         "You are javis, an agent running on the javis TUI.\n\n"
-        "You are backed by an ``AgentEngine`` implementation. Your responses "
+        "You are backed by a ``Harness`` implementation. Your responses "
         "stream through the React terminal frontend via the JSON-lines wire "
         "protocol."
     )
@@ -73,7 +74,7 @@ def build_system_prompt(cwd: str | Path | None = None, *, workspace: str | Path 
 class RuntimeBundle:
     """Everything the host needs to drive one interactive session."""
 
-    engine: AgentEngine
+    engine: Harness
     cwd: str
     app_state: AppStateStore
     commands: CommandRegistry
@@ -108,62 +109,6 @@ class RuntimeBundle:
             await asyncio.gather(*disposals, return_exceptions=True)
 
 
-def _build_default_engine(
-    *,
-    cfg: JavisConfig,
-    model: str | None,
-    system_prompt: str,
-    cwd: str,
-    max_turns: int | None,
-    tool_metadata: dict[str, Any],
-    workspace: str | Path,
-    javis_tools: Any = None,
-) -> AgentEngine:
-    """Construct the built-in ``HarnessEngine`` from resolved config.
-
-    This is the single seam where the engine is chosen: the runtime no longer
-    accepts an injected engine, and future engine implementations (e.g. the
-    plugin system's ``ctx.provide("engine", impl)``) replace the body of this
-    function instead of threading an engine parameter through the runtime.
-
-    ``javis_tools`` is the runtime's plugin-populated javis tool registry; the
-    harness engine adapts it (built-ins + plugin tools) into its own registry.
-    """
-    from javis.harness import build
-    from javis.session.config import resolve_provider_and_model
-    from javis.session.credentials import resolve_api_key
-
-    provider_name, model_id = resolve_provider_and_model(cfg, cli_model=model)
-    provider_cfg = cfg.providers[provider_name]
-    api_key = resolve_api_key(
-        provider_name,
-        provider_cfg.api_key_env,
-        provider_cfg.api_key,
-        workspace=workspace,
-        cwd=cwd,
-    )
-    max_tokens: int | None = None
-    for m in provider_cfg.models:
-        if m.id == model_id:
-            max_tokens = m.max_tokens
-            break
-    if max_turns is None and cfg.session.max_turns is not None:
-        max_turns = cfg.session.max_turns
-    return build(
-        model=model_id,
-        api_key=api_key or "",
-        base_url=provider_cfg.base_url,
-        provider_name=provider_name,
-        max_tokens=max_tokens,
-        system_prompt=system_prompt,
-        cwd=cwd,
-        workspace=workspace,
-        max_turns=max_turns,
-        tool_metadata=tool_metadata,
-        javis_tools=javis_tools,
-    )
-
-
 async def build_runtime(
     *,
     cwd: str | None = None,
@@ -176,15 +121,16 @@ async def build_runtime(
     workspace: str | Path | None = None,
     plugins: str | Path | None = None,
 ) -> RuntimeBundle:
-    """Assemble a ``RuntimeBundle`` backed by an ``AgentEngine``.
+    """Assemble a ``RuntimeBundle`` backed by a ``Harness``.
 
     Plugin wiring: a fresh Cordis context provides the built-in services
     (``config`` / ``tools`` / ``commands`` / ``host``), mounts the plugin
     composition — CLI ``--plugins`` > ``JAVIS_PLUGINS`` > ``pluginsFile`` >
-    ``<workspace>/cordis.yml`` — and waits for every fiber to settle. A
-    plugin that provided ``engine`` supplies the engine object; otherwise
-    ``_build_default_engine`` builds the built-in ``HarnessEngine`` (the
-    seam tests patch with a fake).
+    ``<workspace>/cordis.yml`` — and waits for every fiber to settle. The
+    composition must provide the ``harness`` service (the default composition
+    does so via ``javis.harness.plugins.harness``); a missing harness, a
+    failed entry, or a pending entry is a hard error — there is no built-in
+    fallback.
     """
     cwd_resolved = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd())
     workspace_root = initialize_workspace(workspace)
@@ -240,30 +186,24 @@ async def build_runtime(
     loader_fiber = ctx.plugin(Loader, {"file": str(composition)})
     try:
         await loader_fiber
-        await settle(ctx)
-    except BaseException:
+    except Exception as exc:
         log.exception("Plugin composition %s failed to load", composition)
-        raise
+        raise RuntimeError(
+            f"plugin composition {composition} failed to load: {exc}"
+        ) from exc
+    await settle(ctx)
+    assert_entries_settled(ctx)
 
-    engine_obj = ctx.get(ENGINE_SERVICE)
-    if engine_obj is None or not isinstance(engine_obj, AgentEngine):
-        if engine_obj is not None:
-            log.warning(
-                "engine service from plugin is not an AgentEngine (%s); "
-                "falling back to the built-in engine",
-                type(engine_obj).__name__,
-            )
-        engine_obj = _build_default_engine(
-            cfg=cfg,
-            model=model,
-            system_prompt=system_prompt_text,
-            cwd=cwd_resolved,
-            max_turns=max_turns,
-            tool_metadata=tool_metadata,
-            workspace=workspace_root,
-            javis_tools=tools_registry,
+    engine_obj = ctx.get(HARNESS_SERVICE)
+    if not isinstance(engine_obj, Harness):
+        got = "no service" if engine_obj is None else type(engine_obj).__name__
+        raise RuntimeError(  # noqa: TRY004 — boot wiring error, not a bad argument type
+            f"composition {composition} provides no 'harness' service ({got}). "
+            "Add a row 'name: javis.harness.plugins.harness' with "
+            "'inject: [llm, agentTools, systemPrompt, agentLoop, config, host]', "
+            "or delete the composition file to regenerate the default one."
         )
-    # Explicit CLI overrides win over the engine's resolved defaults.
+    # Explicit CLI overrides win over the row's resolved defaults.
     if model is not None:
         engine_obj.set_model(model)
     if system_prompt is not None:
@@ -386,7 +326,7 @@ async def handle_line(
             _save_session(bundle)
         return not result.should_exit
 
-    # Normal prompt — feed it to the engine.
+    # Normal prompt — feed it to the harness.
     async for event in bundle.engine.submit_message(user_message or line):
         await render_event(event)
     _save_session(bundle)

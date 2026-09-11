@@ -24,7 +24,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from javis.harness.llm import chunk_response
+from javis.harness.stream import chunk_response
 from javis.harness.types import (
     AbortSignal,
     LlmError,

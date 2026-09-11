@@ -10,8 +10,9 @@ usage / finish).
 
 Merged 2026-09-01 from the former ``javis.llm.providers.OpenAICompatProvider``
 (SDK handling: lazy async client, ``stream_options`` fallback, ``_parse_delta``
-tool-call accumulation) and ``javis.harness.llm_adapter`` (OpenAI serialization
-+ chunk boundary emission) — the two-layer provider→adapter bridge is gone.
+tool-call accumulation) and the old ``javis.harness.llm_adapter`` (OpenAI
+serialization + chunk boundary emission, since moved to ``javis.harness.stream``)
+— the two-layer provider→adapter bridge is gone.
 """
 
 from __future__ import annotations
@@ -118,7 +119,7 @@ class OpenAICompatAdapter(LLMAdapter):
     # -- provider metadata ----------------------------------------------------
 
     def set_model(self, model: str) -> None:
-        """Switch the model this adapter serves (``AgentEngine.set_model``)."""
+        """Switch the model this adapter serves (``Harness.set_model``)."""
         self.model = model
 
     def provider_info(self, provider: str) -> LlmProviderInfo:

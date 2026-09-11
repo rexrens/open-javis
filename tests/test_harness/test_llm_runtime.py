@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from javis.cordis import Context
-from javis.harness.llm import chunk_response
+from javis.harness.stream import chunk_response
 from javis.harness.types import (
     ErrorFinish,
     GenerateOptions,

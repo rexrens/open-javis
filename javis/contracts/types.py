@@ -1,6 +1,6 @@
 """Generic agent event model — the bridge between javis and any agent engine.
 
-``AgentEvent`` is the single event stream protocol. An ``AgentEngine`` yields
+``AgentEvent`` is the single event stream protocol. A ``Harness`` yields
 these; ``BackendHost`` renders them into ``BackendEvent`` for the React
 frontend. No separate ``StreamEvent`` layer — javis collapsed it to reduce
 translation hops.

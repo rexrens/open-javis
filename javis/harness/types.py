@@ -5,21 +5,23 @@ Python port of the deepseek-harness contract types that shape the main flow:
 - ``packages/llm/llm/src/types.ts``        — blocks / chunks / finish / usage / failure
 - ``packages/llm/llm/src/message.ts``      — Message / UserMessage / AssistantMessage / ToolResultMessage
 - ``packages/llm/llm/src/call-config.ts``  — LlmCallConfig + callConfigEquals
+- ``packages/llm/llm/src/index.ts``        — LLM service protocol + PreparedCall
 - ``packages/core/agent/src/runtime-types.ts`` — agent events / decisions / statuses
 - ``packages/core/agent-loop/src/agent.ts`` — TurnEndReason / AgentCancelCause
 - ``packages/core/tools/src/index.ts``     — ToolExecutionInput / Result / modes
 
 Naming is aligned with dsh (camelCase → snake_case); the *shape* and *semantics*
-are what the demo is about. Everything here is a pure data contract: no
-behavior beyond ``AbortController`` / ``AbortSignal`` (Python has no native
-abort primitive).
+are what the demo is about. Everything here is a data contract: the only
+behavior is ``AbortController`` / ``AbortSignal`` (Python has no native abort
+primitive); ``LLM`` is a method-only structural protocol over the same
+vocabulary.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, runtime_checkable
 
 # ---------------------------------------------------------------------------
 # Identifiers
@@ -247,7 +249,8 @@ StreamChunk = (
 
 
 # ---------------------------------------------------------------------------
-# Tools & call config (dsh: llm/types.ts ToolSchema, llm/call-config.ts)
+# Tools & call config (dsh: llm/types.ts ToolSchema, llm/call-config.ts;
+# llm/index.ts PreparedCall / LLM)
 # ---------------------------------------------------------------------------
 
 
@@ -271,6 +274,42 @@ class LlmCallConfig:
     temperature: float | None = None
     max_tokens: int | None = None
     stop: tuple[str, ...] | None = None
+
+
+@dataclass
+class PreparedCall:
+    """The adapter registration that resolved one request's exact-model defaults."""
+
+    config: LlmCallConfig
+    #: Which config fields were supplied by the adapter, not the caller
+    #: (``{"reasoningEffort": True}`` etc.) — logged into the request header.
+    adapter_defaults: dict[str, bool] = field(default_factory=dict)
+    #: Adapter context (``{"contextWindow": int}``) when advertised.
+    context: dict[str, Any] | None = None
+    #: Optional retry policy (consumed by ``agent/request-error`` listeners).
+    retry_policy: dict[str, Any] | None = None
+    #: Adapter-bound stream for this exact-model registration; ``None`` lets
+    #: the loop fall back to the provider's plain ``stream(options)``.
+    stream: Callable[[GenerateOptions], AsyncIterator[Any]] | None = None
+
+
+@runtime_checkable
+class LLM(Protocol):
+    """The model service. Implementations must be SDK-free at this seam."""
+
+    def prepare_call(
+        self, config: LlmCallConfig, signal: AbortSignal | None = None
+    ) -> PreparedCall | Awaitable[PreparedCall]:
+        """Resolve exact-model adapter defaults for ``config``.
+
+        Implementations may be synchronous or asynchronous; consumers should
+        await the result before dispatching the returned ``stream``.
+        """
+        ...
+
+    def stream(self, options: GenerateOptions) -> AsyncIterator[Any]:
+        """Emit the raw streaming protocol for one request (a coroutine object)."""
+        ...
 
 
 def _cfg_field(obj: Any, name: str) -> Any:
@@ -576,10 +615,37 @@ class AgentLoopConfig:
     history_compressor: Any = None
 
 
-class AgentLoop:
+class MutableLoopConfig:
+    """Mutable stand-in for the frozen ``AgentLoopConfig`` dataclass.
+
+    ``Harness.set_max_turns`` mutates ``max_steps_per_turn`` live; the loop
+    reads attributes via ``getattr`` so any object shape works.
+    ``default_max_steps_per_turn`` records the configured default at creation
+    time and is never reassigned, so a re-mount (HMR) can restore it after a
+    ``set_max_turns`` override.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_parallel_tool_calls: int,
+        max_steps_per_turn: int,
+        history_compressor: Any = None,
+        default_max_steps_per_turn: int | None = None,
+    ) -> None:
+        self.max_parallel_tool_calls = max(1, int(max_parallel_tool_calls))
+        self.max_steps_per_turn = max(1, int(max_steps_per_turn))
+        configured = (
+            max_steps_per_turn if default_max_steps_per_turn is None else default_max_steps_per_turn
+        )
+        self.default_max_steps_per_turn = max(1, int(configured))
+        self.history_compressor = history_compressor
+
+
+class AgentLoopService:
     """The ``"agentLoop"`` service: the loop driver's configuration."""
 
-    def __init__(self, config: AgentLoopConfig) -> None:
+    def __init__(self, config: AgentLoopConfig | MutableLoopConfig) -> None:
         self.config = config
 
 
@@ -663,6 +729,7 @@ SESSION_FORMAT_VERSION = 0
 
 
 __all__ = [
+    "LLM",
     "SESSION_EVENT_TYPES",
     "SESSION_FORMAT_VERSION",
     "TOOL_ABORTED_BEFORE_DISPATCH",
@@ -671,8 +738,8 @@ __all__ = [
     "AbortSignal",
     "AbortedFinish",
     "AgentCancelCause",
-    "AgentLoop",
     "AgentLoopConfig",
+    "AgentLoopService",
     "AgentOptions",
     "AgentStatus",
     "AssistantMessage",
@@ -691,11 +758,13 @@ __all__ = [
     "LlmFailure",
     "MaxTokensFinish",
     "Message",
+    "MutableLoopConfig",
     "ParallelMode",
     "PostToolDecision",
     "PreStepDecision",
     "PreStepEnter",
     "PreStepReject",
+    "PreparedCall",
     "PromptAssembly",
     "PromptSection",
     "ReasoningBlock",

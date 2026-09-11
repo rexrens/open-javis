@@ -12,14 +12,16 @@
 
 一个**完整流程、完整契约接口**的 agent harness 演示：参考
 [deepseek-harness](https://github.com/deepseek-harness)（dsh）的主流程
-（`ReactLoopAgent` / Inbox / Session 事件日志 / exclusive-parallel 工具调度 /
+（`AgentLoop` / Inbox / Session 事件日志 / exclusive-parallel 工具调度 /
 agent 事件钩子），用 Python 重新表达，**真实实现全部用 mock 数据**——
 MockLLM 按脚本流式返回 `StreamChunk`，mock 工具返回固定文本。
 
 整个 harness **全部由 Cordis 插件系统装配**（`javis.cordis`）：7 个插件 +
 一份 `cordis.yml` 组合文件，宿主零改动即可驱动。主流程本身（
-`ReactLoopAgent` / Inbox / Session / 工具调度）就在 **`javis.harness`**（生产
+`AgentLoop` / Inbox / Session / 工具调度）就在 **`javis.harness`**（生产
 引擎包本身）——生产引擎与 demo **共享同一份单一来源**，不再有重复拷贝。
+生产侧 `javis.harness.plugins.*`（`javis/harness/plugins/`）是同样的行式装配，
+demo 与生产共用同一套服务契约。
 
 ```
 examples/dsh_harness/
@@ -30,18 +32,18 @@ examples/dsh_harness/
     ├── agent_loop_config.py   # provide("agentLoop")：max_parallel_tool_calls=2
     ├── system_prompt.py       # provide("systemPrompt")：persona/context + 工具 schema
     ├── llm.py                 # provide("llm")：MockLLM（$HARNESS_DEMO_SCENARIO 脚本）
-    ├── demo_tools.py          # provide("tools")：now/weather(并行) + set_note/end_session(独占)
+    ├── demo_tools.py          # provide("agentTools")：now/weather(并行) + set_note/end_session(独占)
     ├── middleware.py          # agent/request、agent/pre-step、agent/request-error 三个 waterfall
     ├── observer.py            # agent/status、inbox/*、tools/result、turn-stopping、error
-    └── driver.py              # inject=[llm, tools, systemPrompt, agentLoop]
-                               # create Session + ReactLoopAgent → provide session/agent
+    └── driver.py              # inject=[llm, agentTools, systemPrompt, agentLoop]
+                               # create Session + AgentLoop → provide session/agent
 ```
 
 架构层（`javis.harness`）的契约面：`types.py`（blocks/chunks/messages/
 usage/failure、LlmCallConfig/GenerateOptions、工具执行类型、事件名常量）、
-`session.py`（事件日志）、`inbox.py`（双队列）、`llm.py`（LLM 服务契约 +
+`session.py`（事件日志）、`inbox.py`（双队列）、`stream.py`（normalized_stream /
 BlockAssembler）、`tools.py`（ToolRegistry + exclusive/parallel 调度）、
-`agent.py`（ReactLoopAgent 状态机）。
+`agent.py`（AgentLoop 状态机）。
 
 ## 与 mini_dsh 的对照（两种引擎姿势）
 
@@ -49,7 +51,7 @@ BlockAssembler）、`tools.py`（ToolRegistry + exclusive/parallel 调度）、
 |---|---|---|
 | 引擎 core | **javis.harness**（生产核心，完整契约面 + 宿主集成） | **从零精简 core**（自包含，唯一外部依赖 `javis.cordis`） |
 | core 代码 | 生产包本身（`javis/harness/`） | `examples/mini_dsh/core/`（独立复刻，同结构同命名） |
-| 插件角色 | 提供引擎的每个部件（llm/tools/systemPrompt/agentLoop 都是插件 provide） | 提供部件 + 组合根（driver 装配 ReactLoopAgent） |
+| 插件角色 | 提供引擎的每个部件（llm/agentTools/systemPrompt/agentLoop 都是插件 provide） | 提供部件 + 组合根（driver 装配 ReactAgentLoop） |
 | 宿主 | 自持 cli.py（4 场景） | 自持 cli.py（7 场景） |
 | 定位 | 生产 core 装配（生产） | 从零精简 core（教学） |
 
@@ -194,13 +196,13 @@ examples/dsh_harness/cli.py
        ├─ agent-loop-config   provide("agentLoop")      max_parallel_tool_calls=2
        ├─ system-prompt       provide("systemPrompt")   persona/context sections + 工具 schema 组装
        ├─ llm                 provide("llm")            MockLLM（$HARNESS_DEMO_SCENARIO 脚本）
-       ├─ demo-tools          provide("tools")          now/weather(并行) + set_note/end_session(独占)
+       ├─ demo-tools          provide("agentTools")     now/weather(并行) + set_note/end_session(独占)
        ├─ middleware          ctx.on(agent/request)          改写路由 mock-mini → mock-mini-2026
        │                       ctx.on(agent/pre-step)         每步追加上下文消息
        │                       ctx.on(agent/request-error)    TRANSIENT 每步重试一次
        ├─ observer            ctx.on(agent/status, inbox/*, tools/result, turn-stopping, error)
-       └─ driver              inject=[llm, tools, systemPrompt, agentLoop]
-                             create Session + ReactLoopAgent
+       └─ driver              inject=[llm, agentTools, systemPrompt, agentLoop]
+                             create Session + AgentLoop
                              provide("session") / provide("agent")
               │
               └─ 宿主只认 Agent 契约：followup / steer / inject / cancel / when_idle
@@ -219,10 +221,10 @@ examples/dsh_harness/cli.py
 
 | dsh | 本 demo |
 |---|---|
-| `ReactLoopAgent`（`packages/core/agent-loop/src/agent.ts`） | `javis/harness/agent.py::ReactLoopAgent` |
+| `ReactLoopAgent`（`packages/core/agent-loop/src/agent.ts`） | `javis/harness/agent.py::AgentLoop` |
 | `Inbox`（next-turn / next-step + splice 日志） | `javis/harness/inbox.py`（`agent/inbox/spliced` 记入 session） |
 | `Session` 事件日志 + `deriveMessages` | `javis/harness/session.py`（同一套事件词汇表） |
-| `LlmRuntime.stream` / `prepareCall` / `BlockAssembler` | `javis/harness/llm.py`（`normalized_stream` 把异常归一化为 `error`/`aborted` finish） |
+| `LlmRuntime.stream` / `prepareCall` / `BlockAssembler` | `javis/harness/stream.py`（`normalized_stream` 把异常归一化为 `error`/`aborted` finish） |
 | `executeToolCalls`（exclusive barrier / parallel pool / `concludesTurn` / abort 合成结果） | `javis/harness/tools.py`（`maxParallelToolCalls` 读 `agentLoop.config`） |
 | 事件：`agent/status|error|inbox/*`、`agent/pre-step|request|request-error`（waterfall）、`agent/turn-stopping`（serial） | `javis/harness/types.py::Events`（javis cordis 的 emit/waterfall/serial 一一对应） |
 | `StreamChunk` / `FinishReason` / `TokenUsage` / `LlmFailure` / `GenerateOptions` | `javis/harness/types.py`（dataclass，命名对齐） |
@@ -243,7 +245,7 @@ examples/dsh_harness/cli.py
 
 ## 关键语义（与 dsh 一致）
 
-- **依赖驱动加载**：`driver` 声明 `inject=[llm, tools, systemPrompt, agentLoop]`，
+- **依赖驱动加载**：`driver` 声明 `inject=[llm, agentTools, systemPrompt, agentLoop]`，
   在任一服务未 ACTIVE 前保持 PENDING——组合文件的书写顺序不重要。
 - **事件钩子可 veto**：waterfall 监听器不调 `next()` 即截断链路；
   `agent/pre-step` 可整步 reject（turn 以 `blocked` 结束）。
@@ -254,6 +256,6 @@ examples/dsh_harness/cli.py
 
 ## 扩展方向
 
-- 把 `plugins/llm.py` 换成真实 adapter（实现 `javis.harness.llm.LLM` 契约即可，引擎零改动）。
+- 把 `plugins/llm.py` 换成真实 adapter（实现 `javis.harness.types.LLM` 契约即可，引擎零改动）。
 - 接 `additional_contexts`（工具结果附带上下文注入 next-step）——契约已就位。
 - HMR：`javis.cordis` 的 Loader 内置热重载——在组合里挂一个 `apply = Hmr` 的包装条目即可（CLI 暂未暴露 `--watch` 开关）。

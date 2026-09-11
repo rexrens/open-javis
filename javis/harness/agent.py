@@ -1,4 +1,4 @@
-"""ReactLoopAgent: the turn/step driver over queued input and step-boundary work.
+"""AgentLoop: the turn/step driver over queued input and step-boundary work.
 
 Port of ``packages/core/agent-loop/src/agent.ts`` (dsh ``ReactLoopAgent``).
 Every request is derived from the session log; the agent owns a phase
@@ -41,8 +41,8 @@ from dataclasses import dataclass, field
 from typing import Any, NoReturn
 
 from .inbox import Inbox
-from .llm import BlockAssembler, assemble_finish, normalized_stream
 from .session import Session
+from .stream import BlockAssembler, assemble_finish, normalized_stream
 from .tools import execute_tool_calls
 from .types import (
     AbortController,
@@ -110,7 +110,7 @@ Phase = IdlePhase | MaintenancePhase | RunningPhase
 # ---------------------------------------------------------------------------
 
 
-class ReactLoopAgent:
+class AgentLoop:
     """Drives one session through turn and step boundaries (dsh ``Agent``)."""
 
     def __init__(
@@ -689,4 +689,4 @@ def _header_equals(a: dict[str, Any], b: dict[str, Any]) -> bool:
     return True
 
 
-__all__ = ["IdlePhase", "MaintenancePhase", "Phase", "ReactLoopAgent", "RunningPhase"]
+__all__ = ["AgentLoop", "IdlePhase", "MaintenancePhase", "Phase", "RunningPhase"]

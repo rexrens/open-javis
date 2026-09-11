@@ -5,7 +5,7 @@ Plays back a fixed script of ``StreamChunk`` sequences, one per
 sampling params; running out of turns is an error (a broken loop shows up
 immediately).
 
-Scripts are built with :func:`javis.harness.llm.chunk_response` — e.g.
+Scripts are built with :func:`javis.harness.stream.chunk_response` — e.g.
 ``ScriptedAdapter([chunk_response(text="hello"), chunk_response(tool_calls=[...])])``.
 """
 

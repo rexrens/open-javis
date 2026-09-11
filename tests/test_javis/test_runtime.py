@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from javis.app.runtime import RuntimeBundle, build_runtime
-from javis.contracts.engine import AgentEngine
+from javis.contracts.harness import Harness
 from javis.session.session_storage import JavisSessionBackend
 from tests.test_javis.fake_backend import FakeEngine
 
@@ -33,7 +33,7 @@ async def test_build_javis_runtime_returns_bundle(isolated_env, fake_engine_fact
 async def test_build_javis_runtime_uses_agent_engine(isolated_env, fake_engine_factory):
     fake_engine_factory()
     bundle = await build_runtime(cwd=str(isolated_env))
-    assert isinstance(bundle.engine, AgentEngine)
+    assert isinstance(bundle.engine, Harness)
     assert isinstance(bundle.engine, FakeEngine)
     assert bundle.engine.model  # non-empty model resolved from env/config
 
@@ -103,8 +103,8 @@ async def test_build_javis_runtime_includes_commands(isolated_env, fake_engine_f
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_default_engine_is_harness(isolated_env, monkeypatch):
-    from javis.harness.agent import ReactLoopAgent
-    from javis.harness.engine import HarnessEngine
+    from javis.harness.agent import AgentLoop
+    from javis.harness.harness import Harness
 
     # The installed openai SDK refuses to construct a client without a
     # non-empty api_key (it validates credentials eagerly). The fixture already
@@ -112,8 +112,8 @@ async def test_build_javis_runtime_default_engine_is_harness(isolated_env, monke
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
     bundle = await build_runtime(cwd=str(isolated_env))
-    assert isinstance(bundle.engine, HarnessEngine)
-    assert isinstance(bundle.engine.agent, ReactLoopAgent)
+    assert isinstance(bundle.engine, Harness)
+    assert isinstance(bundle.engine.agent, AgentLoop)
 
 
 @pytest.mark.asyncio

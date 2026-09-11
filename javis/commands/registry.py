@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from javis.contracts.engine import AgentEngine
+from javis.contracts.harness import Harness
 from javis.contracts.messages import ConversationMessage
 from javis.contracts.usage import UsageSnapshot
 from javis.session.state import AppStateStore
@@ -21,7 +21,7 @@ from javis.session.state import AppStateStore
 class CommandContext:
     """Context passed to a command handler."""
 
-    engine: AgentEngine
+    engine: Harness
     app_state: AppStateStore
     cwd: str
     session_id: str
