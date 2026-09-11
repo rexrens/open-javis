@@ -31,7 +31,7 @@ def apply(ctx):
     # 日志串号。cwd 记录工作区，进 session context 渲染。
     session = Session(f"demo-{uuid.uuid4().hex[:8]}", cwd=_os.getcwd())
     ctx.provide("session", session)
-    # 装配 AgentLoop：循环从 context 取 llm/tools/systemPrompt/
+    # 装配 AgentLoop：循环从 context 取 llm/agentTools/systemPrompt/
     # agentLoop 四个服务（上面 inject 保证它们已 ACTIVE）。
     # provider/model 是初始路由 seed——真正的最终路由由
     # agent/request waterfall 决定（见 middleware.py 的路由改写）。

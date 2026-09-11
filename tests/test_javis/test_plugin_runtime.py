@@ -8,6 +8,7 @@ view, teardown, and the permission-hook injection path.
 
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from javis.app.backend_host import BackendHost
 from javis.app.runtime import RuntimeBundle, build_runtime
 from javis.commands.registry import create_default_command_registry
 from javis.contracts import HARNESS_SERVICE
+from javis.harness.types import Events, PostToolDecision, TextBlock, ToolExecutionResult
 from javis.session.session_storage import JavisSessionBackend
 from javis.session.state import AppState, AppStateStore
 from tests.test_javis.fake_backend import FakeEngine
@@ -285,6 +287,51 @@ async def test_failing_entry_reports_original_error(plugin_workspace):
 
     with pytest.raises(RuntimeError, match="row boom"):
         await build_runtime(cwd=str(plugin_workspace.parent))
+
+
+@pytest.mark.asyncio
+async def test_entry_module_that_fails_to_import_names_the_entry(plugin_workspace):
+    """A row whose module path does not resolve fails with the entry id, the
+    module name and the original import error."""
+    write_composition(plugin_workspace, [
+        {"id": "harness", "name": "javis.harness.plugins.nope"},
+    ])
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await build_runtime(cwd=str(plugin_workspace.parent))
+
+    message = str(excinfo.value)
+    assert "composition entry 'harness'" in message
+    assert "javis.harness.plugins.nope" in message
+    assert "No module named" in message
+
+
+@pytest.mark.asyncio
+async def test_snip_row_wires_tool_output_max_chars(plugin_workspace):
+    """The ``snip`` row reads ``toolOutputMaxChars`` from its composition
+    config into the ``tools/post-execute`` waterfall."""
+    (plugin_workspace / "engine_plugin.py").write_text(ENGINE_PLUGIN, encoding="utf-8")
+    write_composition(plugin_workspace, [
+        {"id": "snip", "name": "javis.harness.plugins.snip",
+         "config": {"toolOutputMaxChars": 20}},
+        {"id": "harness", "name": "./engine_plugin.py", "inject": ["config", "tools", "host"]},
+    ])
+
+    bundle = await build_runtime(cwd=str(plugin_workspace.parent))
+    assert bundle.context is not None
+
+    result = ToolExecutionResult(content=[TextBlock(text="y" * 200)])
+    post = bundle.context.waterfall(
+        Events.TOOLS_POST_EXECUTE, None, result, lambda *_args: None
+    )
+    if inspect.isawaitable(post):
+        post = await post
+
+    assert isinstance(post, PostToolDecision)
+    assert post.content is not None
+    assert "truncated by compression middleware" in post.content[0].text
+    assert len(post.content[0].text) < 200
+    await bundle.close()
 
 
 @pytest.mark.asyncio

@@ -250,12 +250,16 @@ def test_remount_restores_the_row_default_not_the_last_override():
 
 
 def test_missing_required_services_raise_loud_error():
-    """A composition that forgot the prompt/loop rows fails at construction
+    """A composition that forgot the loop-service rows fails at construction
     with one error naming every missing service and the row that provides it."""
     with pytest.raises(RuntimeError) as excinfo:
         Harness(Context(), provider_name="scripted", model="m")
 
     message = str(excinfo.value)
+    assert "llm" in message
+    assert "javis.harness.plugins.llm" in message
+    assert "agentTools" in message
+    assert "javis.harness.plugins.agent_tools" in message
     assert "systemPrompt" in message
     assert "javis.harness.plugins.system_prompt" in message
     assert "agentLoop" in message

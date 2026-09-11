@@ -46,7 +46,12 @@ from javis.contracts.messages import (
 from javis.contracts.messages import (
     ToolResultBlock as JToolResultBlock,
 )
-from javis.contracts.services import AGENT_LOOP_SERVICE, SYSTEM_PROMPT_SERVICE
+from javis.contracts.services import (
+    AGENT_LOOP_SERVICE,
+    AGENT_TOOLS_SERVICE,
+    LLM_SERVICE,
+    SYSTEM_PROMPT_SERVICE,
+)
 from javis.contracts.types import (
     AgentError,
     AgentEvent,
@@ -129,11 +134,18 @@ class Harness(HarnessContract):
         self._append_event: asyncio.Event | None = None
 
         # -- services from the root context (provided by composition rows) ---
+        # These four are what the loop reads on every turn; anything missing is
+        # a broken composition, so name all of them up front instead of failing
+        # later inside the loop.
+        llm = ctx.get(LLM_SERVICE)
+        agent_tools = ctx.get(AGENT_TOOLS_SERVICE)
         self._prompt_service = ctx.get(SYSTEM_PROMPT_SERVICE)
         loop_service = ctx.get(AGENT_LOOP_SERVICE)
         missing = [
             (name, row)
             for name, value, row in (
+                (LLM_SERVICE, llm, "javis.harness.plugins.llm"),
+                (AGENT_TOOLS_SERVICE, agent_tools, "javis.harness.plugins.agent_tools"),
                 (
                     SYSTEM_PROMPT_SERVICE,
                     self._prompt_service,

@@ -216,7 +216,14 @@ class Loader(Service):
             mount_ctx = ctx.isolate(entry.isolate) if entry.isolate else ctx
             return mount_ctx.plugin(group_plugin, {})
 
-        module, path = self._resolve_module(entry.name)
+        try:
+            module, path = self._resolve_module(entry.name)
+        except Exception as error:
+            # Boot diagnostics: name the offending entry, not just the module.
+            raise RuntimeError(
+                f"composition entry '{entry_id}': cannot load module "
+                f"'{entry.name}': {error}"
+            ) from error
         plugin = ModulePlugin(module, name=getattr(module, "name", None) or entry.name)
         inject = self._merge_inject(getattr(module, "inject", None), entry.inject)
         if inject:
