@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
+from ..fiber import FiberState
 from ..service import Service
 from .entry import Entry, parse_entries
 
@@ -410,6 +411,40 @@ class Loader(Service):
 
     def module_paths(self) -> dict[str, str | None]:
         return dict(self._entry_paths)
+
+
+def assert_entries_settled(ctx: "Context") -> None:
+    """Fail loud when any composition entry did not activate.
+
+    ``settle()`` gathers fiber inertia with ``return_exceptions=True``, so a
+    FAILED plugin body — or a PENDING fiber still waiting on services that
+    will never appear — would otherwise be silently ignored. Call this right
+    after ``settle(ctx)`` as the boot-time entry assertion (dsh
+    ``assertEntriesLoaded`` / ``assertEntriesActivated``).
+    """
+    loader = ctx.get("loader")
+    if loader is None:
+        raise RuntimeError("composition loader is not available (loader service missing)")
+    fibers = loader.fibers()
+    for entry_id, entry in loader.entries().items():
+        if entry.disabled:
+            continue
+        fiber = fibers.get(entry_id)
+        if fiber is None:
+            raise RuntimeError(
+                f"composition entry {entry_id!r} ({entry.name}) was not mounted"
+            )
+        if fiber.state is FiberState.ACTIVE:
+            continue
+        if fiber.state is FiberState.FAILED:
+            raise RuntimeError(
+                f"composition entry {entry_id!r} ({entry.name}) failed: {fiber.error}"
+            ) from fiber.error
+        missing = fiber.missing_inject()
+        raise RuntimeError(
+            f"composition entry {entry_id!r} ({entry.name}) is {fiber.state.name}: "
+            f"unresolved services: {', '.join(missing) or '(unknown)'}"
+        )
 
 
 async def _dispose_quietly(fiber: Any) -> None:
