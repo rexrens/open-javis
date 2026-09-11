@@ -1,7 +1,7 @@
 # Harness demo composition — the whole harness is plugins.
 #
 # Load order is decided by the dependency graph (Cordis), not by this list:
-# the driver stays PENDING until llm / tools / systemPrompt / agentLoop are
+# the driver stays PENDING until llm / agentTools / systemPrompt / agentLoop are
 # all ACTIVE. Run it with `examples/dsh_harness/cli.py` (drives the scenarios).
 
 - id: agent-loop-config
@@ -29,4 +29,4 @@
 
 - id: driver
   name: './plugins/driver.py'
-  inject: [llm, tools, systemPrompt, agentLoop]
+  inject: [llm, agentTools, systemPrompt, agentLoop]

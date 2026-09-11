@@ -60,6 +60,7 @@ from javis.contracts.messages import (
 from javis.contracts.messages import (
     ToolResultBlock as JToolResultBlock,
 )
+from javis.contracts.services import AGENT_TOOLS_SERVICE
 from javis.contracts.tools import ToolRegistry as JavisToolRegistry
 from javis.contracts.types import (
     AgentError,
@@ -83,8 +84,7 @@ from .compression import (
 )
 from .prompt import HarnessPromptService
 from .session import Session
-from .tool_adapter import adapt_registry
-from .tools import ToolRegistry as CoreToolRegistry
+from .tool_adapter import AgentToolView
 from .types import (
     AgentLoopService,
     AgentOptions,
@@ -182,12 +182,14 @@ class HarnessEngine(Harness):
         self._llm = LlmRuntime(self._loop_ctx)
         self._llm.register_adapter([provider_name or "javis"], adapter)
         if javis_tools is not None:
-            self._core_tools = adapt_registry(
+            self._core_tools = AgentToolView(
                 javis_tools, self._loop_ctx, sub_agent_factory=self._run_sub_agent
             )
         else:
-            self._core_tools = CoreToolRegistry(self._loop_ctx)
-        self._loop_ctx.provide("tools", self._core_tools)
+            self._core_tools = AgentToolView(
+                JavisToolRegistry(), self._loop_ctx, sub_agent_factory=self._run_sub_agent
+            )
+        self._loop_ctx.provide(AGENT_TOOLS_SERVICE, self._core_tools)
         self._prompt_service = HarnessPromptService(
             self._loop_ctx,
             system_prompt,

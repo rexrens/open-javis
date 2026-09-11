@@ -40,7 +40,7 @@ class HarnessPromptService:
 
     def assemble(self, *, agent: Any = None, signal: Any = None) -> PromptAssembly:
         """One request's assembly: persona + context sections + live tools."""
-        registry = self._ctx.get("tools")
+        registry = self._ctx.get("agentTools")
         tools: tuple[ToolSchema, ...] = ()
         schemas = getattr(registry, "schemas", None)
         if callable(schemas):

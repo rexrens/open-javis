@@ -45,7 +45,7 @@ from . import types as types
 from .build import build
 from .compression import HistoryCompressor, make_snip_listener
 from .engine import HarnessEngine
-from .tool_adapter import adapt_registry, adapt_tool
+from .tool_adapter import AgentToolView, adapt_tool
 
 __version__ = "0.1.0"
 
@@ -53,7 +53,7 @@ __all__ = [
     "HarnessEngine",
     "HistoryCompressor",
     "__version__",
-    "adapt_registry",
+    "AgentToolView",
     "adapt_tool",
     "agent",
     "build",

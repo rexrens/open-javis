@@ -3,7 +3,7 @@
 Port of the ``@deepseek-ai/dsh-tools`` runtime surface and
 ``packages/core/agent-loop/src/tool-calls.ts`` (dsh):
 
-- **``ToolRegistry``** — service ``"tools"``: register (reversibly, via
+- **``ToolRegistry``** — service ``"agentTools"``: register (reversibly, via
   ``ctx.effect``), schema export, ``execution_mode(name)`` lookup, and the
   event hooks ``tools/execute`` (waterfall), ``tools/post-execute``
   (waterfall), ``tools/result`` (emit).
@@ -22,6 +22,8 @@ import inspect
 import json
 from collections.abc import Callable
 from typing import Any
+
+from javis.contracts.services import AGENT_TOOLS_SERVICE
 
 from .session import Session, create_tool_result_message
 from .types import (
@@ -70,7 +72,7 @@ class Tool:
 
 
 class ToolRegistry:
-    """The ``"tools"`` service: reversible registration + execution hooks."""
+    """The ``"agentTools"`` service: reversible registration + execution hooks."""
 
     def __init__(self, ctx: Any) -> None:
         self.ctx = ctx
@@ -193,7 +195,7 @@ async def execute_tool_calls(
     ``concludesTurn``. Abort records synthetic error results for skipped
     calls so replay stays valid.
     """
-    registry: ToolRegistry = ctx.get("tools")
+    registry: ToolRegistry = ctx.get(AGENT_TOOLS_SERVICE)
     max_parallel = _max_parallel_tool_calls(ctx)
 
     planned = [
@@ -252,7 +254,7 @@ async def _run_group(
     started calls, commits their results, and the caller synthesizes results
     for the calls that never started.
     """
-    registry: ToolRegistry = ctx.get("tools")
+    registry: ToolRegistry = ctx.get(AGENT_TOOLS_SERVICE)
     slots: list[ToolExecutionResult | None] = [None] * len(group)
     call_seqs: list[int] = [-1] * len(group)
     committed = 0

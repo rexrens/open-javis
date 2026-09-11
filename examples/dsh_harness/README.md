@@ -30,10 +30,10 @@ examples/dsh_harness/
     ├── agent_loop_config.py   # provide("agentLoop")：max_parallel_tool_calls=2
     ├── system_prompt.py       # provide("systemPrompt")：persona/context + 工具 schema
     ├── llm.py                 # provide("llm")：MockLLM（$HARNESS_DEMO_SCENARIO 脚本）
-    ├── demo_tools.py          # provide("tools")：now/weather(并行) + set_note/end_session(独占)
+    ├── demo_tools.py          # provide("agentTools")：now/weather(并行) + set_note/end_session(独占)
     ├── middleware.py          # agent/request、agent/pre-step、agent/request-error 三个 waterfall
     ├── observer.py            # agent/status、inbox/*、tools/result、turn-stopping、error
-    └── driver.py              # inject=[llm, tools, systemPrompt, agentLoop]
+    └── driver.py              # inject=[llm, agentTools, systemPrompt, agentLoop]
                                # create Session + AgentLoop → provide session/agent
 ```
 
@@ -49,7 +49,7 @@ BlockAssembler）、`tools.py`（ToolRegistry + exclusive/parallel 调度）、
 |---|---|---|
 | 引擎 core | **javis.harness**（生产核心，完整契约面 + 宿主集成） | **从零精简 core**（自包含，唯一外部依赖 `javis.cordis`） |
 | core 代码 | 生产包本身（`javis/harness/`） | `examples/mini_dsh/core/`（独立复刻，同结构同命名） |
-| 插件角色 | 提供引擎的每个部件（llm/tools/systemPrompt/agentLoop 都是插件 provide） | 提供部件 + 组合根（driver 装配 ReactAgentLoop） |
+| 插件角色 | 提供引擎的每个部件（llm/agentTools/systemPrompt/agentLoop 都是插件 provide） | 提供部件 + 组合根（driver 装配 ReactAgentLoop） |
 | 宿主 | 自持 cli.py（4 场景） | 自持 cli.py（7 场景） |
 | 定位 | 生产 core 装配（生产） | 从零精简 core（教学） |
 
@@ -194,12 +194,12 @@ examples/dsh_harness/cli.py
        ├─ agent-loop-config   provide("agentLoop")      max_parallel_tool_calls=2
        ├─ system-prompt       provide("systemPrompt")   persona/context sections + 工具 schema 组装
        ├─ llm                 provide("llm")            MockLLM（$HARNESS_DEMO_SCENARIO 脚本）
-       ├─ demo-tools          provide("tools")          now/weather(并行) + set_note/end_session(独占)
+       ├─ demo-tools          provide("agentTools")     now/weather(并行) + set_note/end_session(独占)
        ├─ middleware          ctx.on(agent/request)          改写路由 mock-mini → mock-mini-2026
        │                       ctx.on(agent/pre-step)         每步追加上下文消息
        │                       ctx.on(agent/request-error)    TRANSIENT 每步重试一次
        ├─ observer            ctx.on(agent/status, inbox/*, tools/result, turn-stopping, error)
-       └─ driver              inject=[llm, tools, systemPrompt, agentLoop]
+       └─ driver              inject=[llm, agentTools, systemPrompt, agentLoop]
                              create Session + AgentLoop
                              provide("session") / provide("agent")
               │
@@ -243,7 +243,7 @@ examples/dsh_harness/cli.py
 
 ## 关键语义（与 dsh 一致）
 
-- **依赖驱动加载**：`driver` 声明 `inject=[llm, tools, systemPrompt, agentLoop]`，
+- **依赖驱动加载**：`driver` 声明 `inject=[llm, agentTools, systemPrompt, agentLoop]`，
   在任一服务未 ACTIVE 前保持 PENDING——组合文件的书写顺序不重要。
 - **事件钩子可 veto**：waterfall 监听器不调 `next()` 即截断链路；
   `agent/pre-step` 可整步 reject（turn 以 `blocked` 结束）。
