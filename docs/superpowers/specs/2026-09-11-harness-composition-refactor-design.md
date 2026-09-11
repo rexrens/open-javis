@@ -83,6 +83,12 @@ snip）仍注册在 `Harness` 所在 context 上。
 
 - **`llm`**：`LlmRuntime` 注册 provider adapter（DeepSeek/Qwen/Kimi/Ollama…），
   从 `config` + `host` 解析 provider/model/api_key/base_url/max_tokens。
+  解析助手 `resolve_provider_and_model`（`javis/session/config.py:228`）/
+  `resolve_api_key`（`javis/session/credentials.py:56`）随装配逻辑一并从
+  runtime 移入该行 —— 这是 `javis/harness/` 首次引入 `javis.session` 依赖边
+  （组合行本就是接线层，方向合理；`javis.session` 不反向依赖，无环）。
+  `javis/llm/` 包本身只改 `openai_compat.py:121` 与 `__init__.py` 的
+  docstring 措辞，结构与代码不动。
 - **`agentTools`**：面向循环的 `ToolRegistry`（dsh 语义：schema 导出、
   `execution_mode`、异步 body）。**实现为宿主 `tools` 的实时视图**，而非
   构建期快照 —— 解决两个问题：
