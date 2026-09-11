@@ -10,7 +10,7 @@ usage / finish).
 
 Merged 2026-09-01 from the former ``javis.llm.providers.OpenAICompatProvider``
 (SDK handling: lazy async client, ``stream_options`` fallback, ``_parse_delta``
-tool-call accumulation) and ``javis.harness.llm_adapter`` (OpenAI serialization
+tool-call accumulation) and ``javis.harness.stream`` (OpenAI serialization
 + chunk boundary emission) — the two-layer provider→adapter bridge is gone.
 """
 

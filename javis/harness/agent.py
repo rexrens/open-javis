@@ -41,8 +41,8 @@ from dataclasses import dataclass, field
 from typing import Any, NoReturn
 
 from .inbox import Inbox
-from .llm import BlockAssembler, assemble_finish, normalized_stream
 from .session import Session
+from .stream import BlockAssembler, assemble_finish, normalized_stream
 from .tools import execute_tool_calls
 from .types import (
     AbortController,

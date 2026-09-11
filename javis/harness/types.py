@@ -17,9 +17,9 @@ abort primitive).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, runtime_checkable
 
 # ---------------------------------------------------------------------------
 # Identifiers
@@ -271,6 +271,42 @@ class LlmCallConfig:
     temperature: float | None = None
     max_tokens: int | None = None
     stop: tuple[str, ...] | None = None
+
+
+@dataclass
+class PreparedCall:
+    """The adapter registration that resolved one request's exact-model defaults."""
+
+    config: LlmCallConfig
+    #: Which config fields were supplied by the adapter, not the caller
+    #: (``{"reasoningEffort": True}`` etc.) — logged into the request header.
+    adapter_defaults: dict[str, bool] = field(default_factory=dict)
+    #: Adapter context (``{"contextWindow": int}``) when advertised.
+    context: dict[str, Any] | None = None
+    #: Optional retry policy (consumed by ``agent/request-error`` listeners).
+    retry_policy: dict[str, Any] | None = None
+    #: Adapter-bound stream for this exact-model registration; ``None`` lets
+    #: the loop fall back to the provider's plain ``stream(options)``.
+    stream: Callable[[GenerateOptions], AsyncIterator[Any]] | None = None
+
+
+@runtime_checkable
+class LLM(Protocol):
+    """The model service. Implementations must be SDK-free at this seam."""
+
+    def prepare_call(
+        self, config: LlmCallConfig, signal: AbortSignal | None = None
+    ) -> PreparedCall | Awaitable[PreparedCall]:
+        """Resolve exact-model adapter defaults for ``config``.
+
+        Implementations may be synchronous or asynchronous; consumers should
+        await the result before dispatching the returned ``stream``.
+        """
+        ...
+
+    def stream(self, options: GenerateOptions) -> AsyncIterator[Any]:
+        """Emit the raw streaming protocol for one request (a coroutine object)."""
+        ...
 
 
 def _cfg_field(obj: Any, name: str) -> Any:
@@ -663,6 +699,7 @@ SESSION_FORMAT_VERSION = 0
 
 
 __all__ = [
+    "LLM",
     "SESSION_EVENT_TYPES",
     "SESSION_FORMAT_VERSION",
     "TOOL_ABORTED_BEFORE_DISPATCH",
@@ -696,6 +733,7 @@ __all__ = [
     "PreStepDecision",
     "PreStepEnter",
     "PreStepReject",
+    "PreparedCall",
     "PromptAssembly",
     "PromptSection",
     "ReasoningBlock",

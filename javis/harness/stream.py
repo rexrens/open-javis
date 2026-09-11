@@ -1,23 +1,19 @@
-"""LLM service contract + stream assembly.
+"""Loop-side stream assembly (dsh ``@deepseek-ai/dsh-llm`` stream surface).
 
-Port of the ``@deepseek-ai/dsh-llm`` runtime surface that the agent loop
-consumes:
-
-- **``LLM``** (dsh ``LlmRuntime``) — ``prepare_call(config)`` for
-  exact-model adapter resolution, ``stream(options)`` for the raw streaming
-  protocol. Adapters may throw; :func:`normalized_stream` turns any
-  producer failure into a terminal ``error``/``aborted`` finish so consumers
-  always see a well-formed stream.
-- **``BlockAssembler``** (dsh ``BlockAssembler``) — folds
+- :func:`normalized_stream` — turn any producer failure into a terminal
+  ``error``/``aborted`` finish so consumers always see a well-formed stream.
+- :class:`BlockAssembler` (dsh ``BlockAssembler``) — folds
   :class:`~javis.harness.types.StreamChunk` deltas into assembled content
   blocks, usage, and the terminal finish reason.
+
+The ``LLM`` service protocol and ``PreparedCall`` live in
+:mod:`javis.harness.types`; provider adapters live in ``javis.llm``.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from collections.abc import AsyncIterator
+from typing import Any
 
 from .types import (
     AbortError,
@@ -28,7 +24,6 @@ from .types import (
     FinishChunk,
     FinishReason,
     GenerateOptions,
-    LlmCallConfig,
     LlmError,
     LlmFailure,
     ReasoningDeltaChunk,
@@ -40,47 +35,6 @@ from .types import (
     ToolCallDeltaChunk,
     ToolCallsFinish,
 )
-
-# ---------------------------------------------------------------------------
-# Adapter / request types (dsh: llm/index.ts PreparedLlmCall, LlmConfigurableProvider)
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class PreparedCall:
-    """The adapter registration that resolved one request's exact-model defaults."""
-
-    config: LlmCallConfig
-    #: Which config fields were supplied by the adapter, not the caller
-    #: (``{"reasoningEffort": True}`` etc.) — logged into the request header.
-    adapter_defaults: dict[str, bool] = field(default_factory=dict)
-    #: Adapter context (``{"contextWindow": int}``) when advertised.
-    context: dict[str, Any] | None = None
-    #: Optional retry policy (consumed by ``agent/request-error`` listeners).
-    retry_policy: dict[str, Any] | None = None
-    #: Adapter-bound stream for this exact-model registration; ``None`` lets
-    #: the loop fall back to the provider's plain ``stream(options)``.
-    stream: Callable[[GenerateOptions], AsyncIterator[Any]] | None = None
-
-
-@runtime_checkable
-class LLM(Protocol):
-    """The model service. Implementations must be SDK-free at this seam."""
-
-    def prepare_call(
-        self, config: LlmCallConfig, signal: AbortSignal | None = None
-    ) -> PreparedCall | Awaitable[PreparedCall]:
-        """Resolve exact-model adapter defaults for ``config``.
-
-        Implementations may be synchronous or asynchronous; consumers should
-        await the result before dispatching the returned ``stream``.
-        """
-        ...
-
-    def stream(self, options: GenerateOptions) -> AsyncIterator[Any]:
-        """Emit the raw streaming protocol for one request (a coroutine object)."""
-        ...
-
 
 # ---------------------------------------------------------------------------
 # Stream normalization
@@ -269,9 +223,7 @@ def _reasoning_block(text: str) -> Any:
 
 
 __all__ = [
-    "LLM",
     "BlockAssembler",
-    "PreparedCall",
     "assemble_finish",
     "chunk_response",
     "normalized_stream",

@@ -38,8 +38,8 @@ from __future__ import annotations
 
 from . import agent as agent
 from . import inbox as inbox
-from . import llm as llm
 from . import session as session
+from . import stream as stream
 from . import tools as tools
 from . import types as types
 from .build import build
@@ -58,9 +58,9 @@ __all__ = [
     "agent",
     "build",
     "inbox",
-    "llm",
     "make_snip_listener",
     "session",
+    "stream",
     "tools",
     "types",
 ]

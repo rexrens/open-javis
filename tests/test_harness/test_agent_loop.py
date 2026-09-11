@@ -14,7 +14,7 @@ import pytest
 
 from javis.contracts.messages import ToolResultBlock
 from javis.harness.engine import HarnessEngine
-from javis.harness.llm import chunk_response
+from javis.harness.stream import chunk_response
 from javis.harness.types import (
     MaxTokensFinish,
     StopFinish,
