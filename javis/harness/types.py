@@ -5,14 +5,16 @@ Python port of the deepseek-harness contract types that shape the main flow:
 - ``packages/llm/llm/src/types.ts``        — blocks / chunks / finish / usage / failure
 - ``packages/llm/llm/src/message.ts``      — Message / UserMessage / AssistantMessage / ToolResultMessage
 - ``packages/llm/llm/src/call-config.ts``  — LlmCallConfig + callConfigEquals
+- ``packages/llm/llm/src/index.ts``        — LLM service protocol + PreparedCall
 - ``packages/core/agent/src/runtime-types.ts`` — agent events / decisions / statuses
 - ``packages/core/agent-loop/src/agent.ts`` — TurnEndReason / AgentCancelCause
 - ``packages/core/tools/src/index.ts``     — ToolExecutionInput / Result / modes
 
 Naming is aligned with dsh (camelCase → snake_case); the *shape* and *semantics*
-are what the demo is about. Everything here is a pure data contract: no
-behavior beyond ``AbortController`` / ``AbortSignal`` (Python has no native
-abort primitive).
+are what the demo is about. Everything here is a data contract: the only
+behavior is ``AbortController`` / ``AbortSignal`` (Python has no native abort
+primitive); ``LLM`` is a method-only structural protocol over the same
+vocabulary.
 """
 
 from __future__ import annotations
@@ -247,7 +249,8 @@ StreamChunk = (
 
 
 # ---------------------------------------------------------------------------
-# Tools & call config (dsh: llm/types.ts ToolSchema, llm/call-config.ts)
+# Tools & call config (dsh: llm/types.ts ToolSchema, llm/call-config.ts;
+# llm/index.ts PreparedCall / LLM)
 # ---------------------------------------------------------------------------
 
 

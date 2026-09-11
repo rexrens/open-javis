@@ -37,6 +37,7 @@ from javis.harness.types import (
     LlmCallConfig,
     LlmError,
     LlmFailure,
+    PreparedCall,
     StreamChunk,
     call_config_equals,
 )
@@ -533,8 +534,6 @@ class LlmRuntime(Service):
         Returns a :class:`javis.harness.types.PreparedCall` whose ``stream`` is
         bound to this registration (dispatch-once, config-change guarded).
         """
-        from javis.harness.types import PreparedCall
-
         registration = self._registration(config.provider)
         adapter_call = await registration.adapter.prepare_call(config.provider, config.model, signal)
         model_info = self._normalize_model_info(registration, config.model, adapter_call.model)
