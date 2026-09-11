@@ -654,38 +654,59 @@ def assert_entries_settled(ctx: "Context") -> None:
     will never appear — would otherwise be silently ignored. Call this right
     after ``settle(ctx)`` as the boot-time entry assertion (dsh
     ``assertEntriesLoaded`` / ``assertEntriesActivated``).
+
+    Group members are mounted as fibers without an entry of their own, so the
+    scan walks the mounted fibers first; entries with no fiber at all are
+    reported afterwards.
     """
     loader = ctx.get("loader")
     if loader is None:
         raise RuntimeError("composition loader is not available (loader service missing)")
+    entries = loader.entries()
     fibers = loader.fibers()
-    for entry_id, entry in loader.entries().items():
-        if entry.disabled:
+
+    for entry_id, fiber in fibers.items():
+        entry = entries.get(entry_id)
+        if entry is not None and entry.disabled:
             continue
-        fiber = fibers.get(entry_id)
-        if fiber is None:
-            raise RuntimeError(
-                f"composition entry {entry_id!r} ({entry.name}) was not mounted"
-            )
         if fiber.state is FiberState.ACTIVE:
             continue
+        label = entry.name if entry is not None else fiber.name
         if fiber.state is FiberState.FAILED:
             raise RuntimeError(
-                f"composition entry {entry_id!r} ({entry.name}) failed: {fiber.error}"
+                f"composition entry {entry_id!r} ({label}) failed: "
+                f"{type(fiber.error).__name__}: {fiber.error}"
             ) from fiber.error
-        missing = fiber.missing_inject()
+        if fiber.state is FiberState.PENDING:
+            missing = fiber.missing_inject()
+            raise RuntimeError(
+                f"composition entry {entry_id!r} ({label}) is PENDING: "
+                f"unresolved services: {', '.join(missing) or '(unknown)'}"
+            )
         raise RuntimeError(
-            f"composition entry {entry_id!r} ({entry.name}) is {fiber.state.name}: "
-            f"unresolved services: {', '.join(missing) or '(unknown)'}"
+            f"composition entry {entry_id!r} ({label}) is {fiber.state.name} (not settled)"
+        )
+
+    for entry_id, entry in entries.items():
+        if entry.disabled or entry_id in fibers:
+            continue
+        raise RuntimeError(
+            f"composition entry {entry_id!r} ({entry.name}) was not mounted"
         )
 ```
+
+> 实现后按质量评审补强：主循环遍历 `fibers()`（覆盖 group 成员——它们不在
+> `entries()` 里，这是初版会静默放过的失败类别），FAILED 消息带异常类型，
+> PENDING 与 LOADING/UNLOADING/DISPOSED 分开措辞。测试共 5 个：
+> 原有的 3 个加 `test_failed_group_member_is_reported` 与
+> `test_missing_loader_service_raises`。
 
 若文件有 `__all__` 则加入 `"assert_entries_settled"`（当前无 `__all__`，可跳过）。
 
 - [ ] **Step 5: 跑测试**
 
 Run: `timeout 300 uv run pytest tests/test_cordis -q`
-Expected: 全绿（含 3 个新测试）
+Expected: 全绿（含 5 个新测试）；全量 `timeout 300 uv run pytest tests/ -q` → 303 passed
 
 - [ ] **Step 6: 提交**
 
