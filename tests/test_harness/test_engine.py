@@ -1,4 +1,4 @@
-"""Tests for the ``Harness``'s Harness contract surface.
+"""Tests for the ``Harness`` (the ``javis.contracts.harness.Harness`` shell).
 
 Covers what the old ``test_corecoder_engine.py`` did (initial state,
 setters, restore, clear, usage across turns, ConversationMessage input,
