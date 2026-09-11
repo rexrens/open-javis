@@ -383,8 +383,10 @@ git commit -m "refactor(harness): rename ReactAgentLoop to AgentLoop and the age
 - Modify: `javis/harness/tools.py:196,255`（`ctx.get("tools")` → `AGENT_TOOLS_SERVICE`）
 - Modify: `javis/harness/prompt.py:43`
 - Modify: `javis/harness/tool_adapter.py`（新增 `AgentToolView`，删除 `adapt_registry`）
+- Modify: `javis/harness/__init__.py:48,56`（`adapt_registry` 的 import 与 `__all__` 改 `AgentToolView`，否则删函数即 ImportError）
 - Modify: `javis/harness/engine.py:184-190`（私有 ctx 改 provide `agentTools`）
-- Modify: `examples/dsh_harness/plugins/{demo_tools.py,system_prompt.py,driver.py}` + `cordis.yml`
+- Modify: `examples/dsh_harness/plugins/{demo_tools.py,system_prompt.py,driver.py}` + `cordis.yml` + `README.md`
+- Modify: `tests/test_demo_harness.py:276`（`_ctx.get("tools")` → `agentTools`）
 - Test: `tests/test_harness/test_tool_view.py`（新增）
 
 - [ ] **Step 1: 写失败测试**
@@ -498,7 +500,7 @@ class AgentToolView:
         return adapt_tool(javis_tool, sub_agent_factory=self._sub_agent_factory)
 ```
 
-import 段改为 `from .types import ExclusiveMode, ParallelMode, ToolExecutionResult, ToolSchema`（`ToolExecutionResult` 已有，新增三个）；`__all__ = ["AgentToolView", "adapt_tool"]`。文件 docstring 的 `- ``AgentTool`` …` 段落补充视图说明。
+import 段改为 `from .types import ExclusiveMode, ParallelMode, ToolExecutionResult, ToolSchema`（`ToolExecutionResult` 已有，新增三个）；`__all__ = ["AgentToolView", "adapt_tool"]`。文件 docstring 的 `- ``AgentTool`` …` 段落补充视图说明。`javis/harness/__init__.py:48` 的 `from .tool_adapter import adapt_registry, adapt_tool` 改 `AgentToolView, adapt_tool`，`:56` 的 `"adapt_registry"` 原地改 `"AgentToolView"`（Task 8 会整体重写该列表，此处不做重排）。
 
 - [ ] **Step 4: 跑视图测试**
 
@@ -532,8 +534,9 @@ Expected: `2 passed`
 - `plugins/demo_tools.py`：`ctx.provide("agentTools", registry)`（docstring 同步）。
 - `plugins/system_prompt.py:59`：`self._ctx.get("agentTools")`。
 - `plugins/driver.py:26`：`inject = ["llm", "agentTools", "systemPrompt", "agentLoop"]`；docstring 图示同步。
-- `cordis.yml`：`driver` 条目 `inject: [llm, agentTools, systemPrompt, agentLoop]`。
-- `README.md`：服务名 `tools` → `agentTools` 的说明处同步。
+- `cordis.yml`：`driver` 条目 `inject: [llm, agentTools, systemPrompt, agentLoop]`（`:32`）。
+- `README.md`：服务名说明同步 —— `:33` `provide("tools")`→`provide("agentTools")`、`:36`/`:52`/`:202`/`:246` 的 `inject=[llm, tools, …]` → `agentTools`、`:197` `provide("tools")` → `provide("agentTools")`。**不要动**：场景名（`:26`/`:66`/`:87`/`:106`）与事件名 `tools/execute`、`tools/post-execute`、`tools/result`（`:35`/`:201`/`:214`）。
+- `tests/test_demo_harness.py:276`：`registry = _ctx.get("tools")` → `_ctx.get("agentTools")`（demo 注册表改名后，原查找返回 None，测试会红）。
 
 - [ ] **Step 7: 跑全量测试**
 
