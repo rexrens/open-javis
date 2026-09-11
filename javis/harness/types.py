@@ -615,10 +615,33 @@ class AgentLoopConfig:
     history_compressor: Any = None
 
 
+class MutableLoopConfig:
+    """Mutable stand-in for the frozen ``AgentLoopConfig`` dataclass.
+
+    ``Harness.set_max_turns`` mutates ``max_steps_per_turn`` live; the loop
+    reads attributes via ``getattr`` so any object shape works.
+    ``default_max_steps_per_turn`` records the configured default at creation
+    time and is never reassigned, so a re-mount (HMR) can restore it after a
+    ``set_max_turns`` override.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_parallel_tool_calls: int,
+        max_steps_per_turn: int,
+        history_compressor: Any = None,
+    ) -> None:
+        self.max_parallel_tool_calls = max(1, int(max_parallel_tool_calls))
+        self.max_steps_per_turn = max(1, int(max_steps_per_turn))
+        self.default_max_steps_per_turn = self.max_steps_per_turn
+        self.history_compressor = history_compressor
+
+
 class AgentLoopService:
     """The ``"agentLoop"`` service: the loop driver's configuration."""
 
-    def __init__(self, config: AgentLoopConfig) -> None:
+    def __init__(self, config: AgentLoopConfig | MutableLoopConfig) -> None:
         self.config = config
 
 
@@ -731,6 +754,7 @@ __all__ = [
     "LlmFailure",
     "MaxTokensFinish",
     "Message",
+    "MutableLoopConfig",
     "ParallelMode",
     "PostToolDecision",
     "PreStepDecision",

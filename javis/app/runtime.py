@@ -186,7 +186,7 @@ async def build_runtime(
     loader_fiber = ctx.plugin(Loader, {"file": str(composition)})
     try:
         await loader_fiber
-    except BaseException as exc:
+    except Exception as exc:
         log.exception("Plugin composition %s failed to load", composition)
         raise RuntimeError(
             f"plugin composition {composition} failed to load: {exc}"

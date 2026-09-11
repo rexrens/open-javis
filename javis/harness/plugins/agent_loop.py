@@ -2,36 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from javis.contracts.services import AGENT_LOOP_SERVICE
 
 from ..compression import HISTORY_MAX_MESSAGES, HistoryCompressor
-from ..types import AgentLoopService
+from ..types import AgentLoopService, MutableLoopConfig
 
 name = "javis.harness.plugins.agent_loop"
-
-
-class MutableLoopConfig:
-    """Mutable stand-in for the frozen ``AgentLoopConfig`` dataclass.
-
-    ``Harness.set_max_turns`` mutates ``max_steps_per_turn`` live; the loop
-    reads attributes via ``getattr`` so any object shape works.
-    """
-
-    def __init__(
-        self,
-        *,
-        max_parallel_tool_calls: int,
-        max_steps_per_turn: int,
-        history_compressor: Any = None,
-    ) -> None:
-        self.max_parallel_tool_calls = max(1, int(max_parallel_tool_calls))
-        self.max_steps_per_turn = max(1, int(max_steps_per_turn))
-        self.history_compressor = history_compressor
 
 
 class Config(BaseModel):

@@ -11,9 +11,13 @@ import pytest
 
 from javis.contracts.messages import ConversationMessage
 from javis.contracts.usage import UsageSnapshot
+from javis.cordis import Context
 from javis.harness.harness import Harness
+from javis.harness.plugins.agent_loop import MutableLoopConfig
 from javis.harness.stream import chunk_response
 from javis.harness.types import (
+    AgentLoopConfig,
+    AgentLoopService,
     MaxTokensFinish,
     StopFinish,
     TokenUsage,
@@ -155,7 +159,7 @@ async def test_tool_metadata_is_mutable():
 
 
 @pytest.mark.asyncio
-async def test_tool_call_round_throughmake_harness(tmp_path):
+async def test_tool_call_round_through_harness(tmp_path):
     target = tmp_path / "f.txt"
     target.write_text("payload", encoding="utf-8")
     engine = make_harness(
@@ -172,3 +176,80 @@ async def test_tool_call_round_throughmake_harness(tmp_path):
 
     results = [e for e in events if isinstance(e, AgentToolCallResult)]
     assert results and "payload" in results[0].output
+
+
+@pytest.mark.asyncio
+async def test_agent_tool_runs_a_sub_agent_end_to_end():
+    """The ``agent`` tool's lazy factory resolves the harness and runs a
+    second scripted turn inside a fresh sub-agent session."""
+    from javis.contracts.types import AgentToolCallResult
+
+    engine = make_harness(
+        [
+            _resp(
+                tool_calls=[_tc(id="c1", name="agent", arguments={"task": "sub task"})],
+                finish_reason="tool_calls",
+            ),
+            _resp(content="sub answer"),
+            _resp(content="parent done"),
+        ]
+    )
+    events = await _drain(engine, "delegate")
+
+    results = [e for e in events if isinstance(e, AgentToolCallResult)]
+    assert results and "sub answer" in results[0].output
+    assert any(getattr(e, "text", "") == "parent done" for e in events)
+
+
+def test_frozen_loop_config_is_copied_not_mutated():
+    """A row may publish the frozen ``AgentLoopConfig``; ``Harness`` must copy
+    its values into a mutable config instead of mutating it in place."""
+    frozen = AgentLoopConfig(max_parallel_tool_calls=2, max_steps_per_turn=7)
+    service = AgentLoopService(frozen)
+
+    engine = make_harness([_resp(content="x")], loop_service=service)
+
+    config = engine._loop_config
+    assert isinstance(config, MutableLoopConfig)
+    assert config is not frozen
+    assert config.max_parallel_tool_calls == 2
+    assert config.max_steps_per_turn == 7
+    assert config.default_max_steps_per_turn == 7
+    assert service.config is config
+    assert frozen.max_steps_per_turn == 7  # never mutated
+
+    engine.set_max_turns(5)
+    assert config.max_steps_per_turn == 5
+    assert frozen.max_steps_per_turn == 7
+
+    engine.set_max_turns(None)
+    assert config.max_steps_per_turn == 7
+    assert frozen.max_steps_per_turn == 7
+
+
+def test_remount_restores_the_row_default_not_the_last_override():
+    """A re-mount (HMR) over the same ``agentLoop`` service restores the row's
+    configured default, not the previous harness's ``set_max_turns`` value."""
+    service = AgentLoopService(
+        MutableLoopConfig(max_parallel_tool_calls=4, max_steps_per_turn=7)
+    )
+    first = make_harness([_resp(content="x")], loop_service=service)
+    first.set_max_turns(5)
+
+    second = make_harness([_resp(content="x")], loop_service=service)
+    second.set_max_turns(None)
+
+    assert second._loop_config.max_steps_per_turn == 7
+
+
+def test_missing_required_services_raise_loud_error():
+    """A composition that forgot the prompt/loop rows fails at construction
+    with one error naming every missing service and the row that provides it."""
+    with pytest.raises(RuntimeError) as excinfo:
+        Harness(Context(), provider_name="scripted", model="m")
+
+    message = str(excinfo.value)
+    assert "systemPrompt" in message
+    assert "javis.harness.plugins.system_prompt" in message
+    assert "agentLoop" in message
+    assert "javis.harness.plugins.agent_loop" in message

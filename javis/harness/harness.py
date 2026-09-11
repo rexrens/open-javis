@@ -65,6 +65,7 @@ from .session import Session
 from .types import (
     AgentOptions,
     Events,
+    MutableLoopConfig,
     ReasoningDeltaChunk,
     SessionEvents,
     TextDeltaChunk,
@@ -130,8 +131,39 @@ class Harness(HarnessContract):
         # -- services from the root context (provided by composition rows) ---
         self._prompt_service = ctx.get(SYSTEM_PROMPT_SERVICE)
         loop_service = ctx.get(AGENT_LOOP_SERVICE)
-        self._loop_config = getattr(loop_service, "config", None) or loop_service
-        self._default_max_steps = max(1, int(getattr(self._loop_config, "max_steps_per_turn", 20)))
+        missing = [
+            (name, row)
+            for name, value, row in (
+                (
+                    SYSTEM_PROMPT_SERVICE,
+                    self._prompt_service,
+                    "javis.harness.plugins.system_prompt",
+                ),
+                (AGENT_LOOP_SERVICE, loop_service, "javis.harness.plugins.agent_loop"),
+            )
+            if value is None
+        ]
+        if missing:
+            details = ", ".join(f"'{name}' (add a row 'name: {row}')" for name, row in missing)
+            raise RuntimeError(f"harness assembly is missing required service(s): {details}")
+        # Never mutate the row's config in place: a third-party row may publish
+        # the frozen ``AgentLoopConfig``. Copy its values into a mutable config
+        # (assigned back so the live loop and ``set_max_turns`` stay in sync).
+        provided = getattr(loop_service, "config", None) or loop_service
+        self._loop_config = MutableLoopConfig(
+            max_parallel_tool_calls=getattr(provided, "max_parallel_tool_calls", 4),
+            max_steps_per_turn=getattr(provided, "max_steps_per_turn", 20),
+            history_compressor=getattr(provided, "history_compressor", None),
+        )
+        if hasattr(loop_service, "config"):
+            loop_service.config = self._loop_config
+        self._default_max_steps = max(
+            1,
+            int(
+                getattr(provided, "default_max_steps_per_turn", None)
+                or getattr(provided, "max_steps_per_turn", 20)
+            ),
+        )
         # ctor-level max_turns wins over the row's max_steps_per_turn (parity
         # with the old ``HarnessEngine`` and ``build()`` path).
         self._loop_config.max_steps_per_turn = (

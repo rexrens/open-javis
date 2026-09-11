@@ -181,10 +181,9 @@ def _seen(workspace: Path) -> dict[str, object]:
 
 
 @pytest.mark.asyncio
-async def test_plugin_harness_provides_instance(plugin_workspace, fake_engine_factory):
-    """A composition row that provides ``harness`` replaces the built-in one
-    and sees the host services (config / tools / host) inside ``apply``."""
-    fake_engine_factory()  # proves the built-in harness is NOT used
+async def test_plugin_harness_provides_instance(plugin_workspace):
+    """A composition row that provides ``harness`` is the harness — no
+    built-in row is mounted — and sees the host services inside ``apply``."""
     (plugin_workspace / "engine_plugin.py").write_text(ENGINE_PLUGIN, encoding="utf-8")
     write_composition(plugin_workspace, [
         {"id": "harness", "name": "./engine_plugin.py", "inject": ["config", "tools", "host"]},
@@ -221,10 +220,9 @@ async def test_missing_composition_writes_full_default(plugin_workspace, fake_en
 
 
 @pytest.mark.asyncio
-async def test_composition_without_harness_row_raises(plugin_workspace, fake_engine_factory):
+async def test_composition_without_harness_row_raises(plugin_workspace):
     """A composition that never provides ``harness`` fails loudly instead of
     silently falling back to a built-in engine."""
-    fake_engine_factory()
     (plugin_workspace / "extra_tools.py").write_text(EXTRA_TOOLS_PLUGIN, encoding="utf-8")
     write_composition(plugin_workspace, [
         {"id": "extra-tools", "name": "./extra_tools.py", "inject": ["tools", "commands"]},
@@ -235,10 +233,37 @@ async def test_composition_without_harness_row_raises(plugin_workspace, fake_eng
 
 
 @pytest.mark.asyncio
-async def test_entry_with_missing_dependency_raises(plugin_workspace, fake_engine_factory):
+async def test_harness_service_with_wrong_type_raises(plugin_workspace):
+    """A row that provides ``harness`` as a non-``Harness`` value fails boot
+    with ``build_runtime`` naming the offending type."""
+    (plugin_workspace / "bad_harness.py").write_text(
+        "from javis.contracts import HARNESS_SERVICE\n"
+        "\n"
+        "\n"
+        "def apply(ctx):\n"
+        '    ctx.provide(HARNESS_SERVICE, "not-a-harness")\n',
+        encoding="utf-8",
+    )
+    write_composition(plugin_workspace, [{"id": "harness", "name": "./bad_harness.py"}])
+
+    with pytest.raises(RuntimeError, match=r"provides no 'harness' service \(str\)"):
+        await build_runtime(cwd=str(plugin_workspace.parent))
+
+
+@pytest.mark.asyncio
+async def test_empty_composition_raises_naming_the_file(plugin_workspace):
+    """An explicitly empty composition (``[]``) boots and settles, then fails
+    loud with the composition file in the error message."""
+    (plugin_workspace / "cordis.yml").write_text("[]\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match=r"cordis\.yml provides no 'harness' service"):
+        await build_runtime(cwd=str(plugin_workspace.parent))
+
+
+@pytest.mark.asyncio
+async def test_entry_with_missing_dependency_raises(plugin_workspace):
     """A row whose ``inject`` names a service nobody provides fails the boot
     assertion with the missing service name (``settle`` would swallow it)."""
-    fake_engine_factory()
     (plugin_workspace / "engine_plugin.py").write_text(ENGINE_PLUGIN, encoding="utf-8")
     write_composition(plugin_workspace, [
         {"id": "broken", "name": "./engine_plugin.py", "inject": ["nosuchservice"]},
@@ -249,9 +274,8 @@ async def test_entry_with_missing_dependency_raises(plugin_workspace, fake_engin
 
 
 @pytest.mark.asyncio
-async def test_failing_entry_reports_original_error(plugin_workspace, fake_engine_factory):
+async def test_failing_entry_reports_original_error(plugin_workspace):
     """A row whose ``apply`` raises surfaces the original exception message."""
-    fake_engine_factory()
     (plugin_workspace / "boom.py").write_text(
         "def apply(ctx):\n    raise ValueError('row boom')\n", encoding="utf-8"
     )
@@ -264,11 +288,10 @@ async def test_failing_entry_reports_original_error(plugin_workspace, fake_engin
 
 
 @pytest.mark.asyncio
-async def test_plugin_tools_and_commands_reach_engine(plugin_workspace, fake_engine_factory):
+async def test_plugin_tools_and_commands_reach_engine(plugin_workspace):
     """Tool/command plugins registered after the live ``agentTools`` view was
     built show up through it (composition order), and commands reach the
     command registry."""
-    fake_engine_factory()
     (plugin_workspace / "extra_tools.py").write_text(EXTRA_TOOLS_PLUGIN, encoding="utf-8")
     (plugin_workspace / "engine_plugin.py").write_text(ENGINE_PLUGIN, encoding="utf-8")
     write_composition(plugin_workspace, [
@@ -289,10 +312,9 @@ async def test_plugin_tools_and_commands_reach_engine(plugin_workspace, fake_eng
 
 
 @pytest.mark.asyncio
-async def test_close_disposes_plugins_and_revokes_harness(plugin_workspace, fake_engine_factory):
+async def test_close_disposes_plugins_and_revokes_harness(plugin_workspace):
     """``bundle.close()`` runs plugin disposers and removes provided services;
     a second close is a no-op."""
-    fake_engine_factory()
     (plugin_workspace / "engine_plugin.py").write_text(ENGINE_PLUGIN, encoding="utf-8")
     write_composition(plugin_workspace, [
         {"id": "engine", "name": "./engine_plugin.py", "inject": ["config", "tools", "host"]},
