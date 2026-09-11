@@ -55,6 +55,19 @@
 - `HarnessEngine` → `Harness`
 - `HarnessEngine.docstring` 中"engine"表述一并更新
 
+LLM 相关命名去歧义（重构后不得出现三个并列的 "llm"）：
+
+- `javis/harness/llm.py` 拆分：`LLM` 协议 + `PreparedCall` 并入
+  `javis/harness/types.py`（循环词汇表，与 `LlmCallConfig` /
+  `GenerateOptions` / `StreamChunk` 同处）；`normalized_stream` /
+  `BlockAssembler` / `assemble_finish` / `chunk_response` 归入新的
+  `javis/harness/stream.py`（循环侧流处理层）。
+- 结果：`javis/llm/`（provider 适配层）是唯一叫 llm 的包；
+  `javis/harness/plugins/llm.py`（组合行，provide `llm` 服务）按
+  "行名 = 服务名"规则保留，与 `agent_tools` / `agent_loop` 一致。
+- 影响 import 共 7 处：`javis/harness/agent.py:44`、
+  `javis/llm/runtime.py:536`、4 个测试、`examples/dsh_harness/mock_llm.py:27`。
+
 `RuntimeBundle.engine` 的**属性名保留**（`javis/app/runtime.py:76`），仅类型
 标注随协议改名 —— app / TUI 消费面零改动。
 
@@ -160,8 +173,9 @@ boot 断言处报出服务名。`agent-loop` / `compression` 无依赖，配置�
 
 ## 6. 迁移顺序
 
-1. **改名**：契约与实现按 §2 术语表重命名，全仓机械替换，测试同步；此步无
-   行为变化，单独提交。
+1. **改名**：契约与实现按 §2 术语表重命名，全仓机械替换，测试同步；含
+   `javis/harness/llm.py` 的拆分（`LLM`/`PreparedCall` → `types.py`，其余 →
+   `stream.py`，7 处 import）。此步无行为变化，单独提交。
 2. **拆插件行**：新增 `javis/harness/plugins/{llm,agent_tools,system_prompt,
    agent_loop,compression,harness}.py`；`ensure_default_composition` 写全量
    组合；`build_runtime` 改为 boot + 断言；删除 `_build_default_engine` 与
@@ -205,9 +219,12 @@ boot 断言处报出服务名。`agent-loop` / `compression` 无依赖，配置�
 
 - `javis/harness/`：`engine.py`→`harness.py` 并去私有装配；`build.py` 删除；
   新增 `plugins/` 包；`tool_adapter.py` 增加实时视图适配；
+  `llm.py`→`stream.py`（`LLM`/`PreparedCall` 并入 `types.py`）；
   `types.AgentLoop` 改名。
 - `javis/contracts/`：`engine.py`→`harness.py`，`ENGINE_SERVICE`→
   `HARNESS_SERVICE`，`AgentEngine`→`Harness`。
 - `javis/session/config.py`：默认组合内容。
-- `javis/commands/`、`javis/llm/`：仅类型名 / docstring 的机械替换。
+- `javis/commands/`：仅类型名 / docstring 的机械替换。
+- `javis/llm/`：结构不动；`openai_compat.py:121`、`__init__.py`、`scripted.py`
+  的 docstring 措辞与 `runtime.py:536` 的惰性 import 更新。
 - 测试与文档。
