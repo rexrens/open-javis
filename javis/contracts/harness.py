@@ -1,4 +1,4 @@
-"""Harness contract — the single engine seam.
+"""Harness contract — the single agent seam.
 
 The host (runtime / TUI / commands) talks to exactly one object: a
 ``Harness`` that owns conversation history and usage, and yields
@@ -29,10 +29,10 @@ class Harness(Protocol):
     minimal implementation can skip them):
 
         def load_history(self, messages: list[ConversationMessage]) -> None:
-            '''Rebuild engine-internal history from javis mirror messages.'''
+            '''Rebuild harness-internal history from javis mirror messages.'''
 
         def clear_history(self) -> None:
-            '''Clear engine-internal history.'''
+            '''Clear harness-internal history.'''
 
         def set_permission_checker(self, checker) -> None:
             '''Attach the host's async permission hook

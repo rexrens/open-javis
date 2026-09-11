@@ -2,11 +2,14 @@
 
 > 状态：已接入 runtime。插件 = `apply(ctx, config)` 模块 + `cordis.yml`
 > 组合条目；宿主在每个会话的 `build_runtime` 中创建 Cordis `Context`、提供
-> 内建服务、挂载组合并等待所有插件 settle。
+> 内建服务、挂载组合并等待所有插件 settle。内置 Harness 本身也是组合行。
 
 ## 组合文件（cordis.yml）
 
-默认 `<workspace>/cordis.yml`（缺失时自动创建为空列表）。解析顺序：
+默认 `<workspace>/cordis.yml`（缺失时自动写入全量六行组合：`llm` /
+`agent-tools` / `system-prompt` / `agent-loop` / `snip` / `harness`）。
+组合是 Harness 的唯一装配来源：空组合 `[]` 启动即 `RuntimeError`，没有内建
+回退。解析顺序：
 
 1. CLI `--plugins <file>`（相对当前目录解析）
 2. 环境变量 `JAVIS_PLUGINS`（相对工作区根解析）
@@ -35,43 +38,33 @@ entry 字段（Cordis Loader 原生支持）：
 | `tools` | `javis.contracts.tools.ToolRegistry` | 每会话新建，预注册 7 个内建工具 |
 | `commands` | `javis.commands.registry.CommandRegistry` | 与 `RuntimeBundle.commands` 同一实例 |
 | `host` | `javis.contracts.host.HostContext` | `cwd` / `workspace` / `session_id` / `tool_metadata` / CLI 覆盖（`model_override` / `max_turns_override` / `system_prompt`） |
-| `engine` | `javis.contracts.engine.AgentEngine` 实例 | **插件提供**：`ctx.provide("engine", impl)` |
-| `llm` | — | 预留，本期不接线（引擎插件用 `config` 自建 provider） |
 
-## 引擎插件
+以下服务全部由 `javis.harness.plugins.*` 组合行提供（可在组合里替换/禁用）：
 
-引擎插件在 `apply` 中直接用 `ctx.get("config")` / `ctx.get("tools")` /
-`ctx.get("host")` 构建 `AgentEngine` 实例并提供：
+| 服务名 | 类型 | 提供行 |
+|---|---|---|
+| `llm` | `javis.llm.LlmRuntime` | `plugins.llm`：provider adapter 注册表 + 路由 |
+| `agentTools` | `AgentToolView`（`ToolRegistry` 兼容视图） | `plugins.agent_tools`：宿主 `tools` 的循环侧实时视图 |
+| `systemPrompt` | `HarnessPromptService` | `plugins.system_prompt`：persona + 步骤 context + 工具 schema |
+| `agentLoop` | `AgentLoopService` | `plugins.agent_loop`：循环配置（并行池上限、每回合步数、压缩钩子） |
+| `harness` | `javis.contracts.harness.Harness` 实例 | `plugins.harness`：Session + AgentLoop + Harness 外壳，**组合行提供** |
 
-```python
-# ~/.javis/my_engine.py
-from javis.contracts import ENGINE_SERVICE
+## 替换 Harness
 
-
-def apply(ctx):
-    cfg = ctx.get('config')
-    tools = ctx.get('tools')
-    host = ctx.get('host')
-    engine = build_my_engine(cfg, tools=tools.all(), host=host)
-    ctx.provide(ENGINE_SERVICE, engine)
-```
+内置 Harness 由组合里的 `harness` 行装配（`javis.harness.plugins.harness`）。
+替换 = 改这一行：把 `name` 指向自己的驱动插件，或 `disabled: true` 后另加自建行。
+服务不可重复 provide，所以不存在两套实现并存。
 
 ```yaml
-# ~/.javis/cordis.yml
-- id: engine
-  name: './my_engine.py'
-  inject: ['config', 'tools', 'host']
+- id: harness
+  name: './my_harness.py'
+  inject: [llm, agentTools, systemPrompt, agentLoop, config, host]
 ```
 
-选择规则：
+缺失 `harness` 行（含空组合 `[]`）→ 启动 `RuntimeError`，错误信息含组合文件路径与补救提示。
 
-- 插件 settle 后宿主读 `ctx.get("engine")`；首个成功提供者生效
-  （Cordis `provide` 对同名服务抛错，后续提供者 FAILED 隔离）。
-- 未提供 / 不是 `AgentEngine` → 告警并回退内建 `HarnessEngine`。
-- 工具快照发生在引擎插件 `apply` 内，因此**工具插件条目要排在引擎条目之前**
-  （同步 `apply` 按组合顺序执行；异步 `apply` 需自行保证注册先于引擎构建）。
-- 宿主随后统一执行 CLI 覆盖（`set_model` / `set_system_prompt`）与
-  会话恢复（`load_messages`），插件引擎无需处理。
+宿主随后统一执行 CLI 覆盖（`set_model` / `set_system_prompt`）与会话恢复
+（`load_messages`），插件侧的 Harness 无需处理。
 
 ## 工具 / 命令插件
 
@@ -105,7 +98,7 @@ def apply(ctx):
 
 ## 权限钩子
 
-`AgentEngine` 可选实现 `set_permission_checker(checker)`（`hasattr` 探测）。
+`Harness` 可选实现 `set_permission_checker(checker)`（`hasattr` 探测）。
 `BackendHost` 启动时优先调用它注入 TUI 的 ask/deny 权限流；旧
 `engine.agent.permission_checker` 路径保留为回退。不实现任何一者的测试替身
 直接跳过注入。
@@ -113,15 +106,13 @@ def apply(ctx):
 ## 生命周期
 
 - 启动：`build_runtime` → `Context` → 内建服务 → `Loader` 挂载组合 →
-  `settle(ctx)` 等所有 fiber 收敛 → 读 `engine`。
+  `settle(ctx)` 等所有 fiber 收敛 → `assert_entries_settled(ctx)` → 读
+  `harness` 服务（缺失或类型不符 → `RuntimeError`）。
 - 退出：`run_backend_mode` / `run_print_mode` 的 finally 调用
   `await bundle.close()`：逆序 dispose 所有插件 fiber（disposer 执行、
   提供的服务撤销），异常只记日志。
 
 ## 扩展点（后续）
 
-- `llm` 服务接线（fallback provider / 插件替换 provider）。
 - HMR：Cordis `Hmr` 服务已可用，接入 runtime 需加 `--watch` 或配置开关。
 - 多组合文件合并 / 目录扫描（改动集中在 `build_runtime` 的组合解析一处）。
-- `engines` → `harness` 包重命名（本期所有插件可见契约已收敛到
-  `javis.contracts`，改名只涉及内部 import 的机械替换）。

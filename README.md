@@ -7,19 +7,19 @@
 You use Claude Code every day, but it's a closed box — you can't shape it to your workflow. javis is a Python-native local assistant built to be **yours**: the frontend, the agent loop, and the extension surface are all open to customization.
 
 - **Frontend** — built on the **openharness** React/Ink terminal UI and continuously customized for javis. You never need to write TypeScript: the frontend is AI-maintained, while you stay in Python.
-- **Backend** — a **self-developed AgentLoop in Python** (`javis/harness/`): a dsh-style ReactAgentLoop (phase state machine, turn/step loop, inbox, session event log) with exclusive/parallel tool scheduling, wired to real LLM providers and tools.
-- **Extensibility** — a **Cordis-style plugin system** (following the DeepSeek Harness approach): tools, slash commands, and even the agent engine itself are pluggable through a `cordis.yml` composition.
+- **Backend** — a **self-developed agent harness in Python** (`javis/harness/`): a dsh-style `AgentLoop` (phase state machine, turn/step loop, inbox, session event log) with exclusive/parallel tool scheduling, assembled from `cordis.yml` composition rows and wired to real LLM providers and tools.
+- **Extensibility** — a **Cordis-style plugin system** (following the DeepSeek Harness approach): tools, slash commands, and even the harness itself are pluggable through a `cordis.yml` composition.
 
 Two layers:
 
-- **`javis/harness/`** — the self-developed AgentLoop (dsh-style ReactAgentLoop): turn/step loop, exclusive/parallel tool scheduling, session event log, compression middleware, retries and cost tracking.
-- **`javis/`** — the shell: CLI, runtime, JSON-lines backend host, engine registry, slash commands, session persistence, and the TUI launcher.
+- **`javis/harness/`** — the self-developed harness: the dsh-style `AgentLoop` (turn/step loop, exclusive/parallel tool scheduling, session event log), compression middleware, retries and cost tracking, plus the `Harness` shell that implements the contract.
+- **`javis/`** — the shell: CLI, runtime, JSON-lines backend host, plugin composition, slash commands, session persistence, and the TUI launcher.
 
 ## Features
 
 - **Built on the openharness frontend** — the React/Ink TUI is forked from openharness and customized for javis; frontend changes are AI-assisted, so you never have to write TypeScript.
-- **Self-developed AgentLoop** — the Python agent engine (`javis/harness/`) is written from scratch: a dsh-style ReactAgentLoop with exclusive/parallel tool scheduling, compression middleware, retries, cost tracking.
-- **Plugin system** — following the DeepSeek Harness **"everything is a plugin"** philosophy: the tool registry, slash commands, and even the agent loop itself are pluggable and swappable via Cordis services.
+- **Self-developed harness** — the Python harness (`javis/harness/`) is written from scratch: a dsh-style `AgentLoop` with exclusive/parallel tool scheduling, compression middleware, retries, cost tracking.
+- **Plugin system** — following the DeepSeek Harness **"everything is a plugin"** philosophy: the tool registry, slash commands, and even the harness itself are pluggable and swappable via Cordis services.
 - **Any OpenAI-compatible model** — DeepSeek, Qwen, Kimi, GLM, Ollama, etc. Switch providers by changing `base_url` + `api_key`. Non-OpenAI providers (Bedrock, Vertex, …) work via the built-in LiteLLM backend.
 - **Agentic tool loop** — `bash`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, plus a nested sub-`agent` tool. Multiple tool calls execute **in parallel** (thread-pool based, inspired by Claude Code's `StreamingToolExecutor`).
 - **Streaming TUI** — React + Ink terminal frontend with markdown rendering, tool transcripts, permission/edit modals, theme/permission/turns selectors, and image attachments.
@@ -27,7 +27,7 @@ Two layers:
 - **Context management** — automatic compression when tool outputs push the conversation past the token budget.
 - **Robust LLM layer** — exponential-backoff retries (rate limit / timeout / 5xx), `stream_options` fallback for providers that reject it, usage tracking and per-model cost estimates.
 - **Session persistence** — atomic JSON snapshots per session under `~/.javis/sessions/`, with `/resume` support from the TUI.
-- **Deterministic offline testing** — `ScriptedAdapter` (and the standalone `examples/dsh_harness` mock reference) let you exercise the engine without network.
+- **Deterministic offline testing** — `ScriptedAdapter` (and the standalone `examples/dsh_harness` mock reference) let you exercise the harness without network.
 
 ## Architecture
 
@@ -40,28 +40,29 @@ The React/Ink frontend is forked from openharness and customized for javis; ever
                 │ OHJSON: {…} JSON-lines        │ requests
                 │ (stdout)                      │ (stdin)
 ┌───────────────┴───────────────────────────────▼────────────────┐
-│  javis.backend_host.JavisBackendHost                          │
-│    (wire protocol, modals, selectors, permission flow)        │
+│  javis.app.backend_host.JavisBackendHost                       │
+│    (wire protocol, modals, selectors, permission flow)         │
 └───────────────────────────▲───────────────────────────────────┘
                             │ AgentEvent stream
 ┌───────────────────────────┴───────────────────────────────────┐
-│  javis.runtime.handle_line (slash commands + agent turns)     │
-│  javis.harness.HarnessEngine (dsh-style loop)               │
+│  javis.app.runtime.handle_line (slash commands + agent turns)  │
+│  javis.contracts.harness.Harness — assembled by the            │
+│    composition rows in javis/harness/plugins/                  │
 └───────────────────────────▲───────────────────────────────────┘
-                            │ AgentBackend protocol (one seam)
+                            │ Harness contract (the only seam)
 ┌───────────────────────────┴───────────────────────────────────┐
-│  javis.harness (ReactAgentLoop, session log) — shared with demo│
+│  javis.harness (AgentLoop, session log) — shared with demo     │
 └───────────────────────────▲───────────────────────────────────┘
                             │
 ┌───────────────────────────┴───────────────────────────────────┐
-│  ReactAgentLoop — turn/step loop, exclusive/parallel tools    │
+│  AgentLoop — turn/step loop, exclusive/parallel tools          │
 │  javis.llm.LlmRuntime — adapter registry, llm/stream waterfall │
-│  javis.llm — OpenAICompatAdapter / ScriptedAdapter            │
-│  javis.tools — bash/read/write/edit/glob/grep/agent           │
+│  javis.llm — OpenAICompatAdapter / ScriptedAdapter             │
+│  javis.tools — bash/read/write/edit/glob/grep/agent            │
 └────────────────────────────────────────────────────────────────┘
 ```
 
-The **`AgentEngine` contract is the only seam**: plugins can replace the built-in `HarnessEngine` (provide `ENGINE_SERVICE`) without touching the host.
+The **`Harness` contract is the only seam**: the composition's `harness` row can point at your own implementation (or be disabled and replaced) without touching the host or the TUI.
 
 ## Quick start
 
@@ -115,8 +116,9 @@ Alternatively, use environment variables (read from `.env` in the working direct
 
 Plugins are Cordis-style `apply(ctx, config)` modules declared in a
 **`cordis.yml` composition** — by default `<workspace>/cordis.yml` (auto-created
-when missing). The runtime mounts the composition on every session and waits
-for all plugins to settle before reading the engine.
+with the full six-row default composition when missing). The runtime mounts the
+composition on every session and waits for all plugins to settle before reading
+the harness.
 
 Resolution order: `--plugins <file>` > `JAVIS_PLUGINS` > `config.json`
 `pluginsFile` > `<workspace>/cordis.yml`. Entry `name:` paths resolve against
@@ -124,32 +126,30 @@ the composition file's directory; absolute paths also work.
 
 ```yaml
 # ~/.javis/cordis.yml
-- id: engine
-  name: './my_engine.py'
-  inject: ['config', 'tools', 'host']
+- id: harness
+  name: './my_harness.py'
+  inject: [llm, agentTools, systemPrompt, agentLoop, config, host]
 - id: extra-tools
   name: './extra_tools.py'
   inject: ['tools']
 ```
 
 ```python
-# my_engine.py — a plugin that replaces the built-in HarnessEngine
-from javis.contracts import ENGINE_SERVICE
-
-
+# my_harness.py — a composition row that replaces the built-in Harness
 def apply(ctx):
-    cfg = ctx.get('config')       # JavisConfig
-    tools = ctx.get('tools')      # ToolRegistry
-    host = ctx.get('host')        # HostContext (cwd/session_id/tool_metadata/…)
-    engine = build_my_engine(cfg, tools=tools.all(), host=host)
-    ctx.provide(ENGINE_SERVICE, engine)
+    cfg = ctx.get('config')        # JavisConfig
+    tools = ctx.get('agentTools')  # ToolRegistry view of the host tools
+    host = ctx.get('host')         # HostContext (cwd/session_id/tool_metadata/…)
+    ctx.provide('harness', build_my_harness(cfg, tools=tools.all(), host=host))
 ```
 
 Built-in services: `config` (`JavisConfig`), `tools` (`ToolRegistry`),
 `commands` (`CommandRegistry`) and `host` (`HostContext`) are provided by the
-host and never revoked; `engine` is provided by a plugin — the first successful
-provider wins, a missing/invalid engine falls back to the built-in harness engine
-engine. `llm` stays reserved for a later milestone.
+host and never revoked. The services the harness needs — `llm`, `agentTools`,
+`systemPrompt`, `agentLoop` and `harness` itself — come from the rows in
+`javis/harness/plugins/`; the default composition wires all six. A composition
+without a `harness` service (including an empty `[]`) is a hard boot error —
+there is no built-in fallback.
 
 Tools/commands plugins follow the disposer pattern so unloads clean up
 automatically:
@@ -206,18 +206,22 @@ uv run mypy javis/
 ### Project layout
 
 ```
-javis/harness/       Harness: dsh-style loop + javis integration
-                     (engine and demo share one source)
+javis/harness/       Harness: dsh-style AgentLoop + javis integration
+                     (the examples/dsh_harness demo mirrors the loop core)
+  plugins/           composition rows that assemble the harness
+  stream.py          loop-side stream assembly
+  harness.py         Harness shell (implements the contract)
+  tool_adapter.py    javis Tool → loop Tool + AgentToolView live view
 javis/llm/            LLM provider implementations (OpenAICompat / Scripted)
 javis/tools/          Host tool registry + 7 built-in tools
 javis/                Host shell: CLI, runtime, backend host, wire protocol
-  contracts/          AgentBackend protocol, event/message models (pure contracts)
-  host/               CLI, runtime, wire protocol, backend host, frontend launcher
-  session/            Session persistence, app state, workspace layout
-  commands/           Slash-command registry
-  engines/            Engine implementations (harness)
-  frontend/terminal   React/Ink TUI (TypeScript)
-tests/                pytest suite
+  app/               Runtime, backend host, wire protocol, TUI launcher
+  contracts/         Harness contract, event/message models (pure contracts)
+  session/           Session persistence, app state, workspace layout
+  commands/          Slash-command registry
+  cordis/            Cordis-style plugin system (Context, Loader, services)
+frontend/terminal    React/Ink TUI (TypeScript)
+tests/               pytest suite
 ```
 
 ## License

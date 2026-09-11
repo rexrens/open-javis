@@ -165,8 +165,8 @@ class Harness(HarnessContract):
                 or getattr(provided, "max_steps_per_turn", 20)
             ),
         )
-        # ctor-level max_turns wins over the row's max_steps_per_turn (parity
-        # with the old ``HarnessEngine`` and ``build()`` path).
+        # ctor-level max_turns wins over the row's max_steps_per_turn (the
+        # CLI ``--max-turns`` override path).
         self._loop_config.max_steps_per_turn = (
             self._max_turns if self._max_turns is not None else self._default_max_steps
         )

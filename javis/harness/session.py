@@ -67,7 +67,7 @@ class Session:
         self._events: list[SessionEvent] = []
         self._seq = 0
         #: Optional ``(seq, type, data)`` observer, fired synchronously after
-        #: each append (used by javis' HarnessEngine event bridge).
+        #: each append (used by the harness's event bridge).
         self.on_append = on_append
 
     # -- read ----------------------------------------------------------------

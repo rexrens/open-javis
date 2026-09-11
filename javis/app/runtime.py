@@ -2,7 +2,7 @@
 
 What remains:
 
-- ``RuntimeBundle`` — engine + commands + app_state + session_backend
+- ``RuntimeBundle`` — harness + commands + app_state + session_backend
 - ``build_runtime`` — assembles a bundle with a ``Harness``
 - ``handle_line`` — the single dispatch point (slash commands + agent turns)
 
@@ -61,7 +61,7 @@ ClearHandler = Callable[[], Awaitable[None]]
 
 def build_system_prompt(cwd: str | Path | None = None, *, workspace: str | Path | None = None) -> str:
     """Return a short system prompt for the agent."""
-    del cwd, workspace  # signature kept for parity; stored on the engine
+    del cwd, workspace  # signature kept for parity; stored on the harness
     return (
         "You are javis, an agent running on the javis TUI.\n\n"
         "You are backed by a ``Harness`` implementation. Your responses "
@@ -326,7 +326,7 @@ async def handle_line(
             _save_session(bundle)
         return not result.should_exit
 
-    # Normal prompt — feed it to the engine.
+    # Normal prompt — feed it to the harness.
     async for event in bundle.engine.submit_message(user_message or line):
         await render_event(event)
     _save_session(bundle)

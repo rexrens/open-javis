@@ -7,15 +7,16 @@ Only pure definitions live here — no runtime logic, no side effects:
 - ``host.py`` — the ``HostContext`` runtime facts the host injects as the
   ``host`` service (cwd / session_id / tool_metadata / CLI overrides)
 - ``services.py`` — stable service names for the plugin system's typed
-  service contracts (``tools`` / ``commands`` / ``config`` / ``host`` /
-  ``harness``)
+  service contracts (host built-ins ``tools`` / ``commands`` / ``config`` /
+  ``host``; composition rows ``llm`` / ``agentTools`` / ``systemPrompt`` /
+  ``agentLoop`` / ``harness``)
 - ``tools.py`` — the ``Tool`` interface and ``ToolRegistry`` (the typed
   ``tools`` service)
 - ``types.py`` — the ``AgentEvent`` stream (text deltas, tool calls, errors…)
 - ``messages.py`` — the ``ConversationMessage`` model and sanitization
 - ``usage.py`` — the ``UsageSnapshot`` token/cost record
 
-Everything above (host, session, engines) may depend on this
+Everything above (host, session, harness) may depend on this
 package; it depends on nothing within javis.
 """
 
