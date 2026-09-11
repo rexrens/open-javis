@@ -615,7 +615,7 @@ class AgentLoopConfig:
     history_compressor: Any = None
 
 
-class AgentLoop:
+class AgentLoopService:
     """The ``"agentLoop"`` service: the loop driver's configuration."""
 
     def __init__(self, config: AgentLoopConfig) -> None:
@@ -711,8 +711,8 @@ __all__ = [
     "AbortSignal",
     "AbortedFinish",
     "AgentCancelCause",
-    "AgentLoop",
     "AgentLoopConfig",
+    "AgentLoopService",
     "AgentOptions",
     "AgentStatus",
     "AssistantMessage",

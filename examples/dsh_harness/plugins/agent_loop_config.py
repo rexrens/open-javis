@@ -3,12 +3,12 @@
 dsh 的工具调用调度器会读 ``ctx.agentLoop.config.maxParallelToolCalls``
 决定并行池上限，这里 ``tools`` 服务以同样方式读取。本插件只干一件事：
 把这份配置以 ``agentLoop`` 服务的名义发布到组合里，供 driver 装配
-ReactAgentLoop 时取用。
+AgentLoop 时取用。
 """
 
 from pydantic import BaseModel, Field
 
-from javis.harness.types import AgentLoop, AgentLoopConfig
+from javis.harness.types import AgentLoopConfig, AgentLoopService
 
 # 插件名：必须与 cordis.yml 组合文件里的条目名一致。
 name = "agent-loop-config"
@@ -26,9 +26,9 @@ class Config(BaseModel):
 
 
 def apply(ctx, config):
-    # 发布 agentLoop 服务：AgentLoop 包着一份 AgentLoopConfig，
+    # 发布 agentLoop 服务：AgentLoopService 包着一份 AgentLoopConfig，
     # 循环的工具调度器从 config.max_parallel_tool_calls 读并行上限。
     ctx.provide(
         "agentLoop",
-        AgentLoop(AgentLoopConfig(max_parallel_tool_calls=config.max_parallel_tool_calls)),
+        AgentLoopService(AgentLoopConfig(max_parallel_tool_calls=config.max_parallel_tool_calls)),
     )

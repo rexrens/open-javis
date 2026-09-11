@@ -1,4 +1,4 @@
-"""HarnessEngine — the javis-side engine over the dsh-style ReactAgentLoop.
+"""HarnessEngine — the javis-side engine over the dsh-style AgentLoop.
 
 ``HarnessEngine`` implements the :class:`javis.contracts.harness.Harness`
 contract (the host's single seam): it owns the javis conversation mirror
@@ -74,7 +74,7 @@ from javis.contracts.types import (
 from javis.contracts.usage import UsageSnapshot
 from javis.cordis import Context
 
-from .agent import ReactAgentLoop
+from .agent import AgentLoop
 from .compression import (
     HISTORY_MAX_MESSAGES,
     MAX_TOOL_OUTPUT_CHARS,
@@ -86,7 +86,7 @@ from .session import Session
 from .tool_adapter import adapt_registry
 from .tools import ToolRegistry as CoreToolRegistry
 from .types import (
-    AgentLoop,
+    AgentLoopService,
     AgentOptions,
     Events,
     ReasoningDeltaChunk,
@@ -135,7 +135,7 @@ class _MutableLoopConfig:
 
 
 class HarnessEngine(Harness):
-    """javis-side engine over a dsh-style ``ReactAgentLoop``."""
+    """javis-side engine over a dsh-style ``AgentLoop``."""
 
     def __init__(
         self,
@@ -201,7 +201,7 @@ class HarnessEngine(Harness):
             max_steps_per_turn=self._max_turns if self._max_turns is not None else self._default_max_steps,
             history_compressor=HistoryCompressor(history_max_messages),
         )
-        self._loop_ctx.provide("agentLoop", AgentLoop(self._loop_config))
+        self._loop_ctx.provide("agentLoop", AgentLoopService(self._loop_config))
 
         # -- middleware on the loop context ---------------------------------
         self._loop_ctx.on(Events.TOOLS_EXECUTE, self._permission_listener)
@@ -218,7 +218,7 @@ class HarnessEngine(Harness):
     def _reset_session(self) -> None:
         """Fresh dsh session + agent (clear / load_messages start from zero)."""
         self._session = Session(self._session_id, cwd=self._cwd, on_append=self._on_append)
-        self._agent = ReactAgentLoop(
+        self._agent = AgentLoop(
             self._loop_ctx,
             self._session_id,
             AgentOptions(provider=self._provider_name or "javis", model=self._model),
@@ -240,7 +240,7 @@ class HarnessEngine(Harness):
         return list(self._messages)
 
     @property
-    def agent(self) -> ReactAgentLoop:
+    def agent(self) -> AgentLoop:
         """The inner dsh-style agent (used by host legacy hooks / tests)."""
         return self._agent
 
@@ -492,14 +492,14 @@ class HarnessEngine(Harness):
             return f"Sub-agent error: {exc}"
 
     async def _run_sub_agent_async(self, task: str) -> str:
-        """Run one sub-task through a fresh ReactAgentLoop (independent
+        """Run one sub-task through a fresh AgentLoop (independent
         session, same llm/tools; recursion depth-capped)."""
         if self._sub_depth >= _SUB_AGENT_MAX_DEPTH:
             return "Error: sub-agent nesting too deep"
         self._sub_depth += 1
         try:
             sub_session = Session(f"{self._session_id}-sub-{uuid4().hex[:6]}")
-            sub = ReactAgentLoop(
+            sub = AgentLoop(
                 self._loop_ctx,
                 sub_session.id,
                 AgentOptions(provider=self._provider_name or "javis", model=self._model),

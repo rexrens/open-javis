@@ -5,7 +5,7 @@ Single source shared by the production engine and the reference demo
 an integration shell; merged into this one package 2026-09-01.
 
 Architecture layer (the dsh port — naming aligned with the dsh reference):
-- ``agent.py`` — ``ReactAgentLoop`` phase state machine (idle / maintenance / running)
+- ``agent.py`` — ``AgentLoop`` phase state machine (idle / maintenance / running)
 - ``inbox.py`` — next-turn / next-step inbox with splice logging
 - ``session.py`` — session event log + ``derive_messages``
 - ``llm.py`` — LLM seam (``prepare_call`` / ``normalized_stream`` / ``BlockAssembler``)

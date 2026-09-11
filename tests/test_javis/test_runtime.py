@@ -103,7 +103,7 @@ async def test_build_javis_runtime_includes_commands(isolated_env, fake_engine_f
 
 @pytest.mark.asyncio
 async def test_build_javis_runtime_default_engine_is_harness(isolated_env, monkeypatch):
-    from javis.harness.agent import ReactAgentLoop
+    from javis.harness.agent import AgentLoop
     from javis.harness.engine import HarnessEngine
 
     # The installed openai SDK refuses to construct a client without a
@@ -113,7 +113,7 @@ async def test_build_javis_runtime_default_engine_is_harness(isolated_env, monke
 
     bundle = await build_runtime(cwd=str(isolated_env))
     assert isinstance(bundle.engine, HarnessEngine)
-    assert isinstance(bundle.engine.agent, ReactAgentLoop)
+    assert isinstance(bundle.engine.agent, AgentLoop)
 
 
 @pytest.mark.asyncio

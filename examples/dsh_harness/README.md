@@ -12,13 +12,13 @@
 
 一个**完整流程、完整契约接口**的 agent harness 演示：参考
 [deepseek-harness](https://github.com/deepseek-harness)（dsh）的主流程
-（`ReactAgentLoop` / Inbox / Session 事件日志 / exclusive-parallel 工具调度 /
+（`AgentLoop` / Inbox / Session 事件日志 / exclusive-parallel 工具调度 /
 agent 事件钩子），用 Python 重新表达，**真实实现全部用 mock 数据**——
 MockLLM 按脚本流式返回 `StreamChunk`，mock 工具返回固定文本。
 
 整个 harness **全部由 Cordis 插件系统装配**（`javis.cordis`）：7 个插件 +
 一份 `cordis.yml` 组合文件，宿主零改动即可驱动。主流程本身（
-`ReactAgentLoop` / Inbox / Session / 工具调度）就在 **`javis.harness`**（生产
+`AgentLoop` / Inbox / Session / 工具调度）就在 **`javis.harness`**（生产
 引擎包本身）——生产引擎与 demo **共享同一份单一来源**，不再有重复拷贝。
 
 ```
@@ -34,14 +34,14 @@ examples/dsh_harness/
     ├── middleware.py          # agent/request、agent/pre-step、agent/request-error 三个 waterfall
     ├── observer.py            # agent/status、inbox/*、tools/result、turn-stopping、error
     └── driver.py              # inject=[llm, tools, systemPrompt, agentLoop]
-                               # create Session + ReactAgentLoop → provide session/agent
+                               # create Session + AgentLoop → provide session/agent
 ```
 
 架构层（`javis.harness`）的契约面：`types.py`（blocks/chunks/messages/
 usage/failure、LlmCallConfig/GenerateOptions、工具执行类型、事件名常量）、
 `session.py`（事件日志）、`inbox.py`（双队列）、`llm.py`（LLM 服务契约 +
 BlockAssembler）、`tools.py`（ToolRegistry + exclusive/parallel 调度）、
-`agent.py`（ReactAgentLoop 状态机）。
+`agent.py`（AgentLoop 状态机）。
 
 ## 与 mini_dsh 的对照（两种引擎姿势）
 
@@ -49,7 +49,7 @@ BlockAssembler）、`tools.py`（ToolRegistry + exclusive/parallel 调度）、
 |---|---|---|
 | 引擎 core | **javis.harness**（生产核心，完整契约面 + 宿主集成） | **从零精简 core**（自包含，唯一外部依赖 `javis.cordis`） |
 | core 代码 | 生产包本身（`javis/harness/`） | `examples/mini_dsh/core/`（独立复刻，同结构同命名） |
-| 插件角色 | 提供引擎的每个部件（llm/tools/systemPrompt/agentLoop 都是插件 provide） | 提供部件 + 组合根（driver 装配 ReactAgentLoop） |
+| 插件角色 | 提供引擎的每个部件（llm/tools/systemPrompt/agentLoop 都是插件 provide） | 提供部件 + 组合根（driver 装配 AgentLoop） |
 | 宿主 | 自持 cli.py（4 场景） | 自持 cli.py（7 场景） |
 | 定位 | 生产 core 装配（生产） | 从零精简 core（教学） |
 
@@ -200,7 +200,7 @@ examples/dsh_harness/cli.py
        │                       ctx.on(agent/request-error)    TRANSIENT 每步重试一次
        ├─ observer            ctx.on(agent/status, inbox/*, tools/result, turn-stopping, error)
        └─ driver              inject=[llm, tools, systemPrompt, agentLoop]
-                             create Session + ReactAgentLoop
+                             create Session + AgentLoop
                              provide("session") / provide("agent")
               │
               └─ 宿主只认 Agent 契约：followup / steer / inject / cancel / when_idle
@@ -219,7 +219,7 @@ examples/dsh_harness/cli.py
 
 | dsh | 本 demo |
 |---|---|
-| `ReactLoopAgent`（`packages/core/agent-loop/src/agent.ts`） | `javis/harness/agent.py::ReactAgentLoop` |
+| `ReactLoopAgent`（`packages/core/agent-loop/src/agent.ts`） | `javis/harness/agent.py::AgentLoop` |
 | `Inbox`（next-turn / next-step + splice 日志） | `javis/harness/inbox.py`（`agent/inbox/spliced` 记入 session） |
 | `Session` 事件日志 + `deriveMessages` | `javis/harness/session.py`（同一套事件词汇表） |
 | `LlmRuntime.stream` / `prepareCall` / `BlockAssembler` | `javis/harness/llm.py`（`normalized_stream` 把异常归一化为 `error`/`aborted` finish） |
