@@ -1,4 +1,4 @@
-"""Tests for the ``HarnessEngine`` Harness contract surface.
+"""Tests for the ``HarnessEngine``'s Harness contract surface.
 
 Covers what the old ``test_corecoder_engine.py`` did (initial state,
 setters, restore, clear, usage across turns, ConversationMessage input,

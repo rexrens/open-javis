@@ -249,8 +249,8 @@ async def build_runtime(
     if engine_obj is None or not isinstance(engine_obj, Harness):
         if engine_obj is not None:
             log.warning(
-                "engine service from plugin is not an Harness (%s); "
-                "falling back to the built-in engine",
+                "harness service from plugin is not a Harness (%s); "
+                "falling back to the built-in harness",
                 type(engine_obj).__name__,
             )
         engine_obj = _build_default_engine(

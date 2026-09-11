@@ -277,7 +277,7 @@ async def test_invalid_engine_service_falls_back(plugin_workspace, fake_engine_f
         bundle = await build_runtime(cwd=str(plugin_workspace.parent))
 
     assert isinstance(bundle.engine, FakeEngine)
-    assert any("not an Harness" in record.message for record in caplog.records)
+    assert any("not a Harness" in record.message for record in caplog.records)
     await bundle.close()
 
 
