@@ -631,10 +631,14 @@ class MutableLoopConfig:
         max_parallel_tool_calls: int,
         max_steps_per_turn: int,
         history_compressor: Any = None,
+        default_max_steps_per_turn: int | None = None,
     ) -> None:
         self.max_parallel_tool_calls = max(1, int(max_parallel_tool_calls))
         self.max_steps_per_turn = max(1, int(max_steps_per_turn))
-        self.default_max_steps_per_turn = self.max_steps_per_turn
+        configured = (
+            max_steps_per_turn if default_max_steps_per_turn is None else default_max_steps_per_turn
+        )
+        self.default_max_steps_per_turn = max(1, int(configured))
         self.history_compressor = history_compressor
 
 

@@ -154,6 +154,7 @@ class Harness(HarnessContract):
             max_parallel_tool_calls=getattr(provided, "max_parallel_tool_calls", 4),
             max_steps_per_turn=getattr(provided, "max_steps_per_turn", 20),
             history_compressor=getattr(provided, "history_compressor", None),
+            default_max_steps_per_turn=getattr(provided, "default_max_steps_per_turn", None),
         )
         if hasattr(loop_service, "config"):
             loop_service.config = self._loop_config

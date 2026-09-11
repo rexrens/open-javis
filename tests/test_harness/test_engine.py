@@ -241,6 +241,13 @@ def test_remount_restores_the_row_default_not_the_last_override():
 
     assert second._loop_config.max_steps_per_turn == 7
 
+    # a further re-mount must still see the row default (the copy forwards
+    # ``default_max_steps_per_turn`` instead of re-recording the live value)
+    third = make_harness([_resp(content="x")], loop_service=service)
+    third.set_max_turns(None)
+
+    assert third._loop_config.max_steps_per_turn == 7
+
 
 def test_missing_required_services_raise_loud_error():
     """A composition that forgot the prompt/loop rows fails at construction
