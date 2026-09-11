@@ -92,6 +92,46 @@ LLM 相关命名去歧义（重构后不得出现三个并列的 "llm"）：
 服务一律从根 context 读取。`.on(...)` 监听器（权限、request 中间件、limit、
 snip）仍注册在 `Harness` 所在 context 上。
 
+### 目标目录结构
+
+```
+javis/
+├── contracts/
+│   ├── harness.py        # Harness 协议（原 engine.py）
+│   ├── host.py           # HostContext（不变）
+│   ├── services.py       # 服务名常量（HARNESS_SERVICE 等）
+│   └── ...               # types / tools（不变）
+├── harness/
+│   ├── __init__.py       # 模块地图 + 导出（重写）
+│   ├── harness.py        # Harness 实现（原 engine.py，去私有装配）
+│   ├── agent.py          # AgentLoop（原 ReactAgentLoop）
+│   ├── stream.py         # 循环侧流处理（原 llm.py）
+│   ├── types.py          # 循环词汇表（+ LLM 协议 + PreparedCall）
+│   ├── session.py        # 事件日志（不变）
+│   ├── inbox.py          # （不变）
+│   ├── tools.py          # 工具调度（不变）
+│   ├── prompt.py         # 提示词服务（经 agentTools）
+│   ├── compression.py    # 历史压缩中间件（不变）
+│   ├── tool_adapter.py   # javis Tool → 循环 Tool（+ 实时视图）
+│   └── plugins/          # 组合行（新增）
+│       ├── __init__.py
+│       ├── llm.py        #   → llm 服务
+│       ├── agent_tools.py#   → agentTools 服务（宿主 tools 实时视图）
+│       ├── system_prompt.py → systemPrompt 服务
+│       ├── agent_loop.py #   → agentLoop 服务（含历史压缩配置）
+│       ├── snip.py       #   tools/post-execute 截断中间件（无服务）
+│       └── harness.py    #   → harness 服务（驱动：Session + AgentLoop + Harness）
+├── app/
+│   └── runtime.py        # boot + 入口断言（装配逻辑移出）
+├── llm/                  # provider 适配层（结构不动）
+├── tools/ session/ commands/ cordis/ cli.py   # 不动
+```
+
+注：工具输出截断行命名为 `snip`（而非 `compression`），避免与
+`javis/harness/compression.py`（历史压缩）同名回响；历史压缩改由
+`agent-loop` 行的 `historyMaxMessages` 配置承载。删除
+`javis/harness/build.py`（装配拆入各行）。
+
 ### 服务职责
 
 - **`llm`**：`LlmRuntime` 注册 provider adapter（DeepSeek/Qwen/Kimi/Ollama…），
@@ -114,7 +154,8 @@ snip）仍注册在 `Harness` 所在 context 上。
 - **`systemPrompt`**：`HarnessPromptService` 从 `agentTools` 读取 schema 组装提示词。
 - **`agentLoop`**：`AgentLoopService` 持有 `AgentLoopConfig`
   （`max_parallel_tool_calls` / `max_steps_per_turn` / `history_compressor`）。
-- **`compression`**：`tools/post-execute` 中间件（工具输出截断），不 provide 服务。
+- **`snip`**：`tools/post-execute` 中间件（工具输出截断，
+  `make_snip_listener`），不 provide 服务。
 - **`harness`**：驱动行 —— 构造 `Session`、`AgentLoop` 实例与 `Harness` 外壳。
 
 ## 4. 默认组合文件
@@ -135,8 +176,9 @@ snip）仍注册在 `Harness` 所在 context 上。
 - id: agent-loop
   name: javis.harness.plugins.agent_loop
   config: {maxParallelToolCalls: 4, maxStepsPerTurn: 20}
-- id: compression
-  name: javis.harness.plugins.compression
+- id: snip
+  name: javis.harness.plugins.snip
+  config: {toolOutputMaxChars: 8000}
 - id: harness
   name: javis.harness.plugins.harness
   inject: [llm, agentTools, systemPrompt, agentLoop, config, host]
@@ -177,7 +219,7 @@ boot 断言处报出服务名。`agent-loop` / `compression` 无依赖，配置�
    `javis/harness/llm.py` 的拆分（`LLM`/`PreparedCall` → `types.py`，其余 →
    `stream.py`，7 处 import）。此步无行为变化，单独提交。
 2. **拆插件行**：新增 `javis/harness/plugins/{llm,agent_tools,system_prompt,
-   agent_loop,compression,harness}.py`；`ensure_default_composition` 写全量
+   agent_loop,snip,harness}.py`；`ensure_default_composition` 写全量
    组合；`build_runtime` 改为 boot + 断言；删除 `_build_default_engine` 与
    `build.py`。
 3. **Harness 去私有装配**：`Harness` 实现删除 `_loop_ctx` 自建部分，服务从
@@ -187,8 +229,18 @@ boot 断言处报出服务名。`agent-loop` / `compression` 无依赖，配置�
    `test_missing_composition_auto_created_and_falls_back`（断言全量组合内容）、
    删除 `test_invalid_engine_service_falls_back`；新增"组合缺 harness 行 →
    `RuntimeError`"与"后注册工具对循环可见"用例。
-5. **文档**：`docs/plugins.md`、`README.md` / `README.zh-CN.md` 术语与组合说明
-   更新（`engine` → `harness`，默认组合为全量）。
+5. **文档**（目录结构与模块地图同步更新）：
+   - `javis/harness/__init__.py`：模块地图 docstring 与 `__all__` 重写
+     （`llm`→`stream`、去 `build`、`HarnessEngine`→`Harness`、加 `plugins`；
+     删除"私有 loop context 提供 llm 服务"等过时表述）。
+   - `docs/plugins.md`：内建服务表（`engine`→`harness`、`llm` 由预留转实装）
+     与"引擎插件"整节重写（去掉"告警并回退内建"、工具条目排序要求，
+     改为组合行替换 + 缺失即报错）。
+   - `README.md`：Project layout 树更新（顺带修掉现存过时项：已不存在的
+     `javis/engines/`、`javis/host/`；补 `javis/harness/plugins/`）；
+     正文 `AgentEngine` / ReactAgentLoop 表述按新术语表更新。
+   - `README.zh-CN.md`：同步对应段落。
+   - `javis/contracts/__init__.py`、`javis/__init__.py` 的包级 docstring。
 
 ## 7. 失败模式与错误消息
 
@@ -220,7 +272,8 @@ boot 断言处报出服务名。`agent-loop` / `compression` 无依赖，配置�
 - `javis/harness/`：`engine.py`→`harness.py` 并去私有装配；`build.py` 删除；
   新增 `plugins/` 包；`tool_adapter.py` 增加实时视图适配；
   `llm.py`→`stream.py`（`LLM`/`PreparedCall` 并入 `types.py`）；
-  `types.AgentLoop` 改名。
+  `types.AgentLoop` 改名；`__init__.py` 模块地图与 `__all__` 重写
+  （见 §6 步骤 5 文档清单）。
 - `javis/contracts/`：`engine.py`→`harness.py`，`ENGINE_SERVICE`→
   `HARNESS_SERVICE`，`AgentEngine`→`Harness`。
 - `javis/session/config.py`：默认组合内容。
