@@ -50,10 +50,10 @@ from .tool_adapter import AgentToolView, adapt_tool
 __version__ = "0.1.0"
 
 __all__ = [
+    "AgentToolView",
     "HarnessEngine",
     "HistoryCompressor",
     "__version__",
-    "AgentToolView",
     "adapt_tool",
     "agent",
     "build",
