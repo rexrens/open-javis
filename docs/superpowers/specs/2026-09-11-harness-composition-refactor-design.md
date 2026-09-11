@@ -128,8 +128,13 @@ javis/
 ├── app/
 │   └── runtime.py        # boot + 入口断言（装配逻辑移出）
 ├── llm/                  # provider 适配层（结构不动）
-├── tools/ session/ commands/ cordis/ cli.py   # 不动
+├── session/              # 宿主侧会话与配置（仅 config.py 改默认组合内容）
+├── tools/ commands/ cordis/ cli.py   # 不动
 ```
+
+命名辨析：`javis/session/`（宿主：磁盘会话持久化 + 配置 + 凭据 + 工作区布局）
+与 `javis/harness/session.py`（循环内事件日志，dsh `Session`）同名不同物，
+两者均按 dsh 原样保留。
 
 注：工具输出截断行命名为 `snip`（而非 `compression`），避免与
 `javis/harness/compression.py`（历史压缩）同名回响；历史压缩改由
