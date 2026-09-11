@@ -1146,6 +1146,11 @@ class Harness(HarnessContract):
         loop_service = ctx.get(AGENT_LOOP_SERVICE)
         self._loop_config = getattr(loop_service, "config", None) or loop_service
         self._default_max_steps = max(1, int(getattr(self._loop_config, "max_steps_per_turn", 20)))
+        # ctor-level max_turns wins over the row's max_steps_per_turn (parity
+        # with the old ``HarnessEngine`` and ``build()`` path).
+        self._loop_config.max_steps_per_turn = (
+            self._max_turns if self._max_turns is not None else self._default_max_steps
+        )
 
         # -- middleware on the harness's own context -------------------------
         ctx.on(Events.TOOLS_EXECUTE, self._permission_listener)
@@ -1442,7 +1447,7 @@ async def test_failing_entry_reports_original_error(plugin_workspace, fake_engin
 
 `test_explicit_composition_path`：把 `comp.write_text("[]\n")` 改为写 `DEFAULT_COMPOSITION`；其余断言不变。
 
-删除 `test_invalid_engine_service_falls_back`。
+删除 `test_invalid_engine_service_falls_back`。该测试是文件里 `import logging` 的唯一使用者，删掉它同时删掉这行 import（否则 ruff F401）。
 
 - [ ] **Step 10: 重写 harness 测试的构造入口**
 
@@ -1518,7 +1523,7 @@ def make_harness(
 - 删除 `_engine`，`from tests.test_harness.support import make_harness`，调用点全部 `_engine(x)` → `make_harness(x)`。
 - `test_setters` 中 `assert engine._adapter.model == "other-model"` 删除（adapter 已不在 Harness 手中）—— 改为断言路由生效：`assert engine.model == "other-model"`（已有）。
 - `test_initial_state` / 其余断言不变（`engine._session`、`engine._loop_config` 仍是实现细节，保留）。
-- import：`from javis.harness.harness import Harness`、`from javis.harness.stream import chunk_response`。
+- import：`from javis.harness.harness import Harness`、`from javis.harness.stream import chunk_response`、`from tests.test_harness.support import make_harness`；删除随 `_engine` 一起失效的 `from javis.llm import ScriptedAdapter` 与 `from javis.tools import create_default_tool_registry`（否则 ruff F401）。
 
 `tests/test_harness/test_agent_loop.py`：
 
@@ -1531,7 +1536,7 @@ def make_harness(
     assert {"read_file", "write_file", "edit_file", "bash", "glob", "grep", "agent"} <= names
 ```
 
-- `HarnessEngine` 类型标注 → `Harness`，import 改为 `from javis.harness.harness import Harness` 与 `from javis.harness.stream import chunk_response`。
+- `HarnessEngine` 类型标注 → `Harness`。import 改为 `from javis.harness.harness import Harness` 并新增 `from tests.test_harness.support import make_harness`；删除失效的 `from javis.harness.engine import HarnessEngine`、`from javis.llm import ScriptedAdapter`、`from javis.tools import create_default_tool_registry`（`from javis.harness.stream import chunk_response` 仍被 `_resp` 使用，保留）。
 
 `tests/test_javis/test_runtime.py`（`test_build_javis_runtime_default_engine_is_harness`，`:105-116`）：
 
