@@ -68,6 +68,17 @@ LLM 相关命名去歧义（重构后不得出现三个并列的 "llm"）：
 - 影响 import 共 7 处：`javis/harness/agent.py:44`、
   `javis/llm/runtime.py:536`、4 个测试、`examples/dsh_harness/mock_llm.py:27`。
 
+提示词服务改名（有意偏离 dsh）：
+
+- 服务名 `systemPrompt` → **`prompt`**；行文件 `plugins/system_prompt.py` →
+  `plugins/prompt.py`（composition id `prompt`，provide `prompt`）。
+  理由见 §3；类名 `HarnessPromptService` 与模块 `javis/harness/prompt.py` 不变。
+- 影响：`javis/harness/agent.py:388,411,424`（`ctx.get("systemPrompt")` →
+  `ctx.get("prompt")`）、默认组合 YAML、`harness` 行的 inject。
+- **`examples/` 下的 dsh demo 不改**：`examples/dsh_harness`、`examples/mini_dsh`
+  是 dsh 对拍参考，保留 dsh 原名（`systemPrompt` 等），本仓正式实现的新命名
+  以本 spec 为准。
+
 `RuntimeBundle.engine` 的**属性名保留**（`javis/app/runtime.py:76`），仅类型
 标注随协议改名 —— app / TUI 消费面零改动。
 
@@ -83,7 +94,7 @@ LLM 相关命名去歧义（重构后不得出现三个并列的 "llm"）：
 ├── host        宿主提供（HostContext：cwd/workspace/session_id/CLI 覆盖）
 ├── llm         插件行 javis.harness.plugins.llm        → LlmRuntime + adapter
 ├── agentTools  插件行 javis.harness.plugins.agent_tools → 面向循环的实时只读视图
-├── systemPrompt 插件行 javis.harness.plugins.system_prompt
+├── prompt      插件行 javis.harness.plugins.prompt       → 提示词装配（persona + 每步 context）
 ├── agentLoop   插件行 javis.harness.plugins.agent_loop  → AgentLoopService（配置）
 └── harness     插件行 javis.harness.plugins.harness     → Harness 实例（驱动）
 ```
@@ -117,7 +128,7 @@ javis/
 │       ├── __init__.py
 │       ├── llm.py        #   → llm 服务
 │       ├── agent_tools.py#   → agentTools 服务（宿主 tools 实时视图）
-│       ├── system_prompt.py → systemPrompt 服务
+│       ├── prompt.py     #   → prompt 服务
 │       ├── agent_loop.py #   → agentLoop 服务（含历史压缩配置）
 │       ├── snip.py       #   tools/post-execute 截断中间件（无服务）
 │       └── harness.py    #   → harness 服务（驱动：Session + AgentLoop + Harness）
@@ -151,7 +162,11 @@ javis/
      后注册的工具对循环不可见。实时视图让注册顺序不再敏感。
   视图机制：读操作（`get` / `all` / `schemas` / `execution_mode`）每次委托
   宿主注册表并即时适配；`register` 转发到宿主（仍是唯一事实源）。
-- **`systemPrompt`**：`HarnessPromptService` 从 `agentTools` 读取 schema 组装提示词。
+- **`prompt`**：`HarnessPromptService` 从 `agentTools` 读取 schema，装配
+  persona 段（进 system slot）与每步 context 段（cwd/workspace/session/date，
+  步边界注入）。服务名刻意不用 dsh 的 `systemPrompt`：该服务装配的不只是
+  system 提示；也不叫 `context`（与 cordis `Context` / `HostContext` 撞词，
+  `ctx.get("context")` 不可读），且 context 只是其 section kind 之一。
 - **`agentLoop`**：`AgentLoopService` 持有 `AgentLoopConfig`
   （`max_parallel_tool_calls` / `max_steps_per_turn` / `history_compressor`）。
 - **`snip`**：`tools/post-execute` 中间件（工具输出截断，
@@ -170,8 +185,8 @@ javis/
 - id: agent-tools
   name: javis.harness.plugins.agent_tools
   inject: [tools]
-- id: system-prompt
-  name: javis.harness.plugins.system_prompt
+- id: prompt
+  name: javis.harness.plugins.prompt
   inject: [config, host, agentTools]
 - id: agent-loop
   name: javis.harness.plugins.agent_loop
@@ -181,11 +196,11 @@ javis/
   config: {toolOutputMaxChars: 8000}
 - id: harness
   name: javis.harness.plugins.harness
-  inject: [llm, agentTools, systemPrompt, agentLoop, config, host]
+  inject: [llm, agentTools, prompt, agentLoop, config, host]
 ```
 
 `inject` 即依赖契约：行只有在其列出的服务全部就绪后才 ACTIVE，缺失则在
-boot 断言处报出服务名。`agent-loop` / `compression` 无依赖，配置经由行
+boot 断言处报出服务名。`agent-loop` / `snip` 无依赖，配置经由行
 `config` 传入（Cordis entry 原生字段）。
 
 用户替换 Harness 的方式从"再 provide 一个 `engine`"改为：**改这一行**
@@ -218,7 +233,7 @@ boot 断言处报出服务名。`agent-loop` / `compression` 无依赖，配置�
 1. **改名**：契约与实现按 §2 术语表重命名，全仓机械替换，测试同步；含
    `javis/harness/llm.py` 的拆分（`LLM`/`PreparedCall` → `types.py`，其余 →
    `stream.py`，7 处 import）。此步无行为变化，单独提交。
-2. **拆插件行**：新增 `javis/harness/plugins/{llm,agent_tools,system_prompt,
+2. **拆插件行**：新增 `javis/harness/plugins/{llm,agent_tools,prompt,
    agent_loop,snip,harness}.py`；`ensure_default_composition` 写全量
    组合；`build_runtime` 改为 boot + 断言；删除 `_build_default_engine` 与
    `build.py`。
