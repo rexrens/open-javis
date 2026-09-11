@@ -1,9 +1,9 @@
-"""ReactLoopAgent turn/step loop over a minimal composed ctx."""
+"""ReactAgentLoop turn/step loop over a minimal composed ctx."""
 import json
 
 import pytest
 from core import types as t
-from core.agent import ReactLoopAgent
+from core.agent import ReactAgentLoop
 from core.llm import PreparedCall, SystemPrompt, chunk_response
 from core.session import Session
 from core.tools import Tool, ToolRegistry
@@ -39,7 +39,7 @@ def _tc(id: str, name: str, arguments: dict) -> t.ToolCallBlock:
     return t.ToolCallBlock(id=id, name=name, arguments=json.dumps(arguments))
 
 
-def _compose(script: list[list], *, tools: list[Tool] | None = None) -> tuple[Context, ReactLoopAgent, Session]:
+def _compose(script: list[list], *, tools: list[Tool] | None = None) -> tuple[Context, ReactAgentLoop, Session]:
     ctx = Context()
     ctx.provide("agentLoop", t.AgentLoop(config=t.AgentLoopConfig(max_parallel_tool_calls=2)))
     session = Session("test-agent", cwd="/tmp")
@@ -50,12 +50,12 @@ def _compose(script: list[list], *, tools: list[Tool] | None = None) -> tuple[Co
     ctx.provide("tools", registry)
     for tool in tools or []:
         registry.register(tool)
-    agent = ReactLoopAgent(ctx, session.id, t.AgentOptions(provider="fake", model="mini"), session)
+    agent = ReactAgentLoop(ctx, session.id, t.AgentOptions(provider="fake", model="mini"), session)
     ctx.provide("agent", agent)
     return ctx, agent, session
 
 
-async def _run_turn(agent: ReactLoopAgent, prompt: str) -> None:
+async def _run_turn(agent: ReactAgentLoop, prompt: str) -> None:
     agent.followup(t.UserMessage.from_text(prompt))
     await agent.when_idle()
 
@@ -129,7 +129,7 @@ async def test_max_steps_per_turn_guard():
     registry = ToolRegistry(ctx)
     ctx.provide("tools", registry)
     registry.register(tools[0])
-    agent = ReactLoopAgent(ctx, session.id, t.AgentOptions(provider="fake", model="mini"), session)
+    agent = ReactAgentLoop(ctx, session.id, t.AgentOptions(provider="fake", model="mini"), session)
     ctx.provide("agent", agent)
     await _run_turn(agent, "go")
     # guard 事件触发，turn 结束（不无限循环）

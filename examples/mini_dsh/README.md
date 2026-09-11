@@ -12,7 +12,7 @@
 
 一个**完整主流程、但刻意裁剪契约面**的 agent harness 示例：参考
 [deepseek-harness](https://github.com/deepseek-harness)（dsh）的主流程
-（`ReactLoopAgent` / Inbox / Session 事件日志 / exclusive-parallel 工具调度 /
+（`ReactAgentLoop` / Inbox / Session 事件日志 / exclusive-parallel 工具调度 /
 agent 事件钩子），用 Python 从零重新表达。`core/` 的 8 个模块与
 `javis/harness` 架构层同结构、同命名、同语义，但**代码是独立复刻**——不
 import `javis.harness` / `javis.llm` / `javis.contracts` 的任何符号，整个
@@ -56,14 +56,14 @@ examples/mini_dsh/
 │   ├── inbox.py               # 双队列（next-turn / next-step）+ splice 语义
 │   ├── llm.py                 # LLM 契约 + BlockAssembler + SystemPrompt + 流归一化
 │   ├── tools.py               # ToolRegistry + execute_tool_calls（exclusive/parallel 调度）
-│   ├── agent.py               # ReactLoopAgent 相位状态机
+│   ├── agent.py               # ReactAgentLoop 相位状态机
 │   ├── compaction.py          # Compaction 服务 + snip 监听器
 │   └── skill.py               # SkillRegistry + 文件系统 provider
 ├── plugins/                   # 8 个 Cordis 插件（组合根）
 │   ├── session.py             # provide("sessions")：SessionStore
 │   ├── llm.py                 # provide("llm")：ScriptedAdapter / OpenAICompatAdapter
 │   ├── tools.py               # provide("tools")：now/weather(并行) + set_note/big_read(独占)
-│   ├── driver.py              # inject=[sessions, llm, tools] → create Session + ReactLoopAgent
+│   ├── driver.py              # inject=[sessions, llm, tools] → create Session + ReactAgentLoop
 │   ├── middleware.py          # agent/request-error waterfall：TRANSIENT 每步重试一次
 │   ├── skill_tool.py          # provide("skills") + skill 工具 + /<name> + 目录发布
 │   ├── instructions.py        # agent/pre-step：AGENTS.md 注入 + 哈希重注入
@@ -164,7 +164,7 @@ provider 选择：`cordis.yml` 的 `llm.config.provider`（`scripted` | `openai`
 
 | dsh | mini_dsh core / plugins |
 |---|---|
-| `ReactLoopAgent`（`packages/core/agent-loop/src/agent.ts`） | `core/agent.py::ReactLoopAgent`（相位状态机） |
+| `ReactLoopAgent`（`packages/core/agent-loop/src/agent.ts`） | `core/agent.py::ReactAgentLoop`（相位状态机） |
 | `Inbox`（next-turn / next-step + splice 日志） | `core/inbox.py`（双队列 + `agent/inbox/spliced` 记入 session） |
 | `Session` 事件日志 + `deriveMessages` | `core/session.py`（append-only + 白名单词汇） |
 | `SessionStore`（`ctx.sessions`） | `core/session.py::SessionStore`（一等服务） |

@@ -3,7 +3,7 @@
 dsh 的工具调用调度器会读 ``ctx.agentLoop.config.maxParallelToolCalls``
 决定并行池上限，这里 ``tools`` 服务以同样方式读取。本插件只干一件事：
 把这份配置以 ``agentLoop`` 服务的名义发布到组合里，供 driver 装配
-ReactLoopAgent 时取用。
+ReactAgentLoop 时取用。
 """
 
 from pydantic import BaseModel, Field

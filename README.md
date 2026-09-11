@@ -7,18 +7,18 @@
 You use Claude Code every day, but it's a closed box — you can't shape it to your workflow. javis is a Python-native local assistant built to be **yours**: the frontend, the agent loop, and the extension surface are all open to customization.
 
 - **Frontend** — built on the **openharness** React/Ink terminal UI and continuously customized for javis. You never need to write TypeScript: the frontend is AI-maintained, while you stay in Python.
-- **Backend** — a **self-developed AgentLoop in Python** (`javis/harness/`): a dsh-style ReactLoopAgent (phase state machine, turn/step loop, inbox, session event log) with exclusive/parallel tool scheduling, wired to real LLM providers and tools.
+- **Backend** — a **self-developed AgentLoop in Python** (`javis/harness/`): a dsh-style ReactAgentLoop (phase state machine, turn/step loop, inbox, session event log) with exclusive/parallel tool scheduling, wired to real LLM providers and tools.
 - **Extensibility** — a **Cordis-style plugin system** (following the DeepSeek Harness approach): tools, slash commands, and even the agent engine itself are pluggable through a `cordis.yml` composition.
 
 Two layers:
 
-- **`javis/harness/`** — the self-developed AgentLoop (dsh-style ReactLoopAgent): turn/step loop, exclusive/parallel tool scheduling, session event log, compression middleware, retries and cost tracking.
+- **`javis/harness/`** — the self-developed AgentLoop (dsh-style ReactAgentLoop): turn/step loop, exclusive/parallel tool scheduling, session event log, compression middleware, retries and cost tracking.
 - **`javis/`** — the shell: CLI, runtime, JSON-lines backend host, engine registry, slash commands, session persistence, and the TUI launcher.
 
 ## Features
 
 - **Built on the openharness frontend** — the React/Ink TUI is forked from openharness and customized for javis; frontend changes are AI-assisted, so you never have to write TypeScript.
-- **Self-developed AgentLoop** — the Python agent engine (`javis/harness/`) is written from scratch: a dsh-style ReactLoopAgent with exclusive/parallel tool scheduling, compression middleware, retries, cost tracking.
+- **Self-developed AgentLoop** — the Python agent engine (`javis/harness/`) is written from scratch: a dsh-style ReactAgentLoop with exclusive/parallel tool scheduling, compression middleware, retries, cost tracking.
 - **Plugin system** — following the DeepSeek Harness **"everything is a plugin"** philosophy: the tool registry, slash commands, and even the agent loop itself are pluggable and swappable via Cordis services.
 - **Any OpenAI-compatible model** — DeepSeek, Qwen, Kimi, GLM, Ollama, etc. Switch providers by changing `base_url` + `api_key`. Non-OpenAI providers (Bedrock, Vertex, …) work via the built-in LiteLLM backend.
 - **Agentic tool loop** — `bash`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, plus a nested sub-`agent` tool. Multiple tool calls execute **in parallel** (thread-pool based, inspired by Claude Code's `StreamingToolExecutor`).
@@ -50,11 +50,11 @@ The React/Ink frontend is forked from openharness and customized for javis; ever
 └───────────────────────────▲───────────────────────────────────┘
                             │ AgentBackend protocol (one seam)
 ┌───────────────────────────┴───────────────────────────────────┐
-│  javis.harness (ReactLoopAgent, session log) — shared with demo│
+│  javis.harness (ReactAgentLoop, session log) — shared with demo│
 └───────────────────────────▲───────────────────────────────────┘
                             │
 ┌───────────────────────────┴───────────────────────────────────┐
-│  ReactLoopAgent — turn/step loop, exclusive/parallel tools    │
+│  ReactAgentLoop — turn/step loop, exclusive/parallel tools    │
 │  javis.llm.LlmRuntime — adapter registry, llm/stream waterfall │
 │  javis.llm — OpenAICompatAdapter / ScriptedAdapter            │
 │  javis.tools — bash/read/write/edit/glob/grep/agent           │

@@ -1,4 +1,4 @@
-"""Tests for the harness agent loop (``HarnessEngine`` over ``ReactLoopAgent``).
+"""Tests for the harness agent loop (``HarnessEngine`` over ``ReactAgentLoop``).
 
 Successor of the old ``corecoder.Agent`` loop tests: the javis side now
 drives the dsh-style loop through ``HarnessEngine.submit_message`` (an

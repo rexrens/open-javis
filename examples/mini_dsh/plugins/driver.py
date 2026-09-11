@@ -1,4 +1,4 @@
-"""插件：组合根——从 services 装配 ReactLoopAgent。
+"""插件：组合根——从 services 装配 ReactAgentLoop。
 
 dsh 原样：宿主不直接构造 Session——session 走 ``sessions`` 服务的
 ``create()``（fiber effect 生命周期）；driver 只做组合：取 services，
@@ -14,7 +14,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from core import types as t
-from core.agent import ReactLoopAgent
+from core.agent import ReactAgentLoop
 from core.llm import SystemPrompt
 from core.session import SessionStore  # 仅为类型/契约引用
 from core.tools import ToolRegistry  # 仅为类型/契约引用
@@ -39,7 +39,7 @@ def apply(ctx) -> None:
         "systemPrompt",
         SystemPrompt(ctx, "You are mini_dsh, a small cordis-assembled agent.", cwd=session.header.cwd or "", session_id=session.id),
     )
-    agent = ReactLoopAgent(
+    agent = ReactAgentLoop(
         ctx,
         session.id,
         t.AgentOptions(provider="scripted", model="mini-scripted"),

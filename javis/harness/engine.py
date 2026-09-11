@@ -1,4 +1,4 @@
-"""HarnessEngine — the javis-side engine over the dsh-style ReactLoopAgent.
+"""HarnessEngine — the javis-side engine over the dsh-style ReactAgentLoop.
 
 ``HarnessEngine`` implements the :class:`javis.contracts.engine.AgentEngine`
 contract (the host's single seam): it owns the javis conversation mirror
@@ -74,7 +74,7 @@ from javis.contracts.types import (
 from javis.contracts.usage import UsageSnapshot
 from javis.cordis import Context
 
-from .agent import ReactLoopAgent
+from .agent import ReactAgentLoop
 from .compression import (
     HISTORY_MAX_MESSAGES,
     MAX_TOOL_OUTPUT_CHARS,
@@ -135,7 +135,7 @@ class _MutableLoopConfig:
 
 
 class HarnessEngine(AgentEngine):
-    """javis-side engine over a dsh-style ``ReactLoopAgent``."""
+    """javis-side engine over a dsh-style ``ReactAgentLoop``."""
 
     def __init__(
         self,
@@ -218,7 +218,7 @@ class HarnessEngine(AgentEngine):
     def _reset_session(self) -> None:
         """Fresh dsh session + agent (clear / load_messages start from zero)."""
         self._session = Session(self._session_id, cwd=self._cwd, on_append=self._on_append)
-        self._agent = ReactLoopAgent(
+        self._agent = ReactAgentLoop(
             self._loop_ctx,
             self._session_id,
             AgentOptions(provider=self._provider_name or "javis", model=self._model),
@@ -240,7 +240,7 @@ class HarnessEngine(AgentEngine):
         return list(self._messages)
 
     @property
-    def agent(self) -> ReactLoopAgent:
+    def agent(self) -> ReactAgentLoop:
         """The inner dsh-style agent (used by host legacy hooks / tests)."""
         return self._agent
 
@@ -492,14 +492,14 @@ class HarnessEngine(AgentEngine):
             return f"Sub-agent error: {exc}"
 
     async def _run_sub_agent_async(self, task: str) -> str:
-        """Run one sub-task through a fresh ReactLoopAgent (independent
+        """Run one sub-task through a fresh ReactAgentLoop (independent
         session, same llm/tools; recursion depth-capped)."""
         if self._sub_depth >= _SUB_AGENT_MAX_DEPTH:
             return "Error: sub-agent nesting too deep"
         self._sub_depth += 1
         try:
             sub_session = Session(f"{self._session_id}-sub-{uuid4().hex[:6]}")
-            sub = ReactLoopAgent(
+            sub = ReactAgentLoop(
                 self._loop_ctx,
                 sub_session.id,
                 AgentOptions(provider=self._provider_name or "javis", model=self._model),

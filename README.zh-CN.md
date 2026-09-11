@@ -53,7 +53,7 @@
 └───────────────────────────▲───────────────────────────────────┘
                             │
 ┌───────────────────────────┴───────────────────────────────────┐
-│  ReactLoopAgent — turn/step 循环、exclusive/parallel 工具          │
+│  ReactAgentLoop — turn/step 循环、exclusive/parallel 工具          │
 │  javis.llm.LlmRuntime — adapter 注册表、llm/stream waterfall        │
 │  javis.llm — OpenAICompatAdapter / ScriptedAdapter                  │
 │  javis.tools — bash/read/write/edit/glob/grep/agent                │

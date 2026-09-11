@@ -8,7 +8,7 @@ its own context window.
 The sub-agent runs to completion and returns a text summary.
 
 The old corecoder implementation constructed a ``corecoder.Agent`` directly
-from ``..agent``. The harness engine owns a different loop (ReactLoopAgent),
+from ``..agent``. The harness engine owns a different loop (ReactAgentLoop),
 so the spawner is injected instead: the engine sets ``sub_agent_factory``
 (a ``(task) -> str`` callable that runs one sub-task to completion and
 returns its final text).
