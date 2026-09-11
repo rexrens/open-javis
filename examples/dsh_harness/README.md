@@ -49,7 +49,7 @@ BlockAssembler）、`tools.py`（ToolRegistry + exclusive/parallel 调度）、
 |---|---|---|
 | 引擎 core | **javis.harness**（生产核心，完整契约面 + 宿主集成） | **从零精简 core**（自包含，唯一外部依赖 `javis.cordis`） |
 | core 代码 | 生产包本身（`javis/harness/`） | `examples/mini_dsh/core/`（独立复刻，同结构同命名） |
-| 插件角色 | 提供引擎的每个部件（llm/tools/systemPrompt/agentLoop 都是插件 provide） | 提供部件 + 组合根（driver 装配 AgentLoop） |
+| 插件角色 | 提供引擎的每个部件（llm/tools/systemPrompt/agentLoop 都是插件 provide） | 提供部件 + 组合根（driver 装配 ReactAgentLoop） |
 | 宿主 | 自持 cli.py（4 场景） | 自持 cli.py（7 场景） |
 | 定位 | 生产 core 装配（生产） | 从零精简 core（教学） |
 

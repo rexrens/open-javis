@@ -689,4 +689,4 @@ def _header_equals(a: dict[str, Any], b: dict[str, Any]) -> bool:
     return True
 
 
-__all__ = ["IdlePhase", "MaintenancePhase", "Phase", "AgentLoop", "RunningPhase"]
+__all__ = ["AgentLoop", "IdlePhase", "MaintenancePhase", "Phase", "RunningPhase"]
