@@ -11,6 +11,7 @@ from javis.app.backend_host import (
     decide_permission,
 )
 from javis.app.runtime import build_runtime
+from tests.test_javis.fake_backend import FakeEngine
 
 # --- pure decision logic ---
 
@@ -67,19 +68,14 @@ class _FakeCoreAgent:
         self.permission_checker = None
 
 
-class _BackendWithAgent:
-    """Minimal engine double with an ``agent`` attribute (for the permission
-    checker wiring test); satisfies the setters the runtime applies."""
+class _BackendWithAgent(FakeEngine):
+    """``FakeEngine`` double with a legacy ``agent`` attribute (for the
+    permission checker wiring test); deliberately does NOT implement
+    ``set_permission_checker`` so the host takes the legacy path."""
 
     def __init__(self) -> None:
+        super().__init__()
         self.agent = _FakeCoreAgent()
-        self.model = "m"
-
-    def set_model(self, model: str) -> None:
-        self.model = model
-
-    def set_system_prompt(self, prompt: str) -> None:
-        del prompt
 
 
 @pytest.mark.asyncio

@@ -20,12 +20,11 @@ Three javis additions over the plain dsh port:
   hook applied after ``derive_messages()`` (the compression middleware slot)
 
 Javis integration shell:
-- ``engine.py`` — ``HarnessEngine`` implements ``javis.contracts.Harness``
+- ``harness.py`` — ``Harness`` implements ``javis.contracts.Harness``
   (message mirror, usage, session save/restore, permission/request/compression
-  middleware wired onto the ``agent/*`` / ``tools/*`` waterfalls); its private
-  loop context provides the ``llm`` service as a ``javis.llm.LlmRuntime``
-  (adapter registry) — the LLM layer itself lives in ``javis.llm``
-- ``build.py`` — engine construction (``javis_tools`` = plugin tools bridge)
+  middleware wired onto the ``agent/*`` / ``tools/*`` waterfalls); its
+  services come from the root context — assembled by
+  ``javis.harness.plugins`` rows, not in-engine
 - ``tool_adapter.py`` — adapts javis ``Tool`` → dsh ``Tool``
 - ``prompt.py`` — prompt assembly (sections + tool schemas)
 - ``compression.py`` — history compression middleware (snip + cap)
@@ -42,21 +41,19 @@ from . import session as session
 from . import stream as stream
 from . import tools as tools
 from . import types as types
-from .build import build
 from .compression import HistoryCompressor, make_snip_listener
-from .engine import HarnessEngine
+from .harness import Harness
 from .tool_adapter import AgentToolView, adapt_tool
 
 __version__ = "0.1.0"
 
 __all__ = [
     "AgentToolView",
-    "HarnessEngine",
+    "Harness",
     "HistoryCompressor",
     "__version__",
     "adapt_tool",
     "agent",
-    "build",
     "inbox",
     "make_snip_listener",
     "session",

@@ -172,13 +172,39 @@ def ensure_default_config(workspace: str | Path | None = None) -> Path:
     return path
 
 
+#: Default composition: the harness is assembled by these rows and nothing
+#: else. Written when ``<workspace>/cordis.yml`` is missing; an existing file
+#: (even an empty one) is never rewritten — an empty composition now fails
+#: loudly at boot instead of silently falling back to a built-in engine.
+DEFAULT_COMPOSITION = """\
+- id: llm
+  name: javis.harness.plugins.llm
+  inject: [config, host]
+- id: agent-tools
+  name: javis.harness.plugins.agent_tools
+  inject: [tools]
+- id: system-prompt
+  name: javis.harness.plugins.system_prompt
+  inject: [config, host, agentTools]
+- id: agent-loop
+  name: javis.harness.plugins.agent_loop
+  config: {maxParallelToolCalls: 4, maxStepsPerTurn: 20}
+- id: snip
+  name: javis.harness.plugins.snip
+  config: {toolOutputMaxChars: 8000}
+- id: harness
+  name: javis.harness.plugins.harness
+  inject: [llm, agentTools, systemPrompt, agentLoop, config, host]
+"""
+
+
 def ensure_default_composition(workspace: str | Path | None = None) -> Path:
-    """Create ``<workspace>/cordis.yml`` with an empty composition if missing."""
+    """Create ``<workspace>/cordis.yml`` with the full default composition."""
     root = get_workspace_root(workspace)
     root.mkdir(parents=True, exist_ok=True)
     path = root / COMPOSITION_FILENAME
     if not path.exists():
-        path.write_text("[]\n", encoding="utf-8")
+        path.write_text(DEFAULT_COMPOSITION, encoding="utf-8")
         log.info("Created default plugin composition at %s", path)
     return path
 
@@ -255,6 +281,7 @@ def resolve_provider_and_model(
 __all__ = [
     "COMPOSITION_FILENAME",
     "CONFIG_FILENAME",
+    "DEFAULT_COMPOSITION",
     "DEFAULT_ENGINE",
     "DEFAULT_TEMPLATE",
     "AppearanceConfig",

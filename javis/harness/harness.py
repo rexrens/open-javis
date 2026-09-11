@@ -1,38 +1,27 @@
-"""HarnessEngine — the javis-side engine over the dsh-style AgentLoop.
+"""Harness — the javis-side harness over the dsh-style ``AgentLoop``.
 
-``HarnessEngine`` implements the :class:`javis.contracts.harness.Harness`
-contract (the host's single seam): it owns the javis conversation mirror
-(``ConversationMessage``), accumulates usage, and yields ``AgentEvent``
-streams per turn — exactly like the old ``CoreCoderEngine`` did, but driven
-by the dsh-style loop from ``javis.harness`` (phase state
-machine, inbox, session event log, exclusive/parallel tool scheduling,
-``agent/*`` waterfalls).
+``Harness`` implements :class:`javis.contracts.harness.Harness` (the host's
+single seam): it owns the javis conversation mirror (``ConversationMessage``),
+accumulates usage, and yields ``AgentEvent`` streams per turn — driven by the
+dsh-style loop in ``javis.harness.agent`` (phase state machine, inbox, session
+event log, exclusive/parallel tool scheduling, ``agent/*`` waterfalls).
 
-Assembly (mirrors the demo's ``driver`` plugin, in-engine):
+Assembly (mirrors the demo's ``driver`` plugin):
 
-- a private loop context provides the four dsh services: ``llm`` (a
-  ``javis.llm.LlmRuntime`` adapter registry with the engine's
-  ``OpenAICompatAdapter``/``ScriptedAdapter`` registered under
-  ``provider_name``), ``tools`` (the core registry adapted from the javis
-  tool registry the runtime provided — plugins included), ``systemPrompt``
-  (the runtime's system prompt + session context) and ``agentLoop`` (loop
-  config);
-- middleware registered on the loop context: ``tools/execute`` permission
-  checker (``Harness.set_permission_checker``), ``tools/post-execute``
-  tool-output snip (compression), ``agent/request`` model routing so
-  ``set_model`` takes effect, ``agent/limit`` max-steps status;
+- every service the loop needs comes from the root context and was provided by
+  its own composition row — ``llm`` (``javis.llm.LlmRuntime`` adapter
+  registry), ``agentTools`` (the live view over the host tool registry),
+  ``systemPrompt``, ``agentLoop``. ``Harness`` builds nothing privately;
+  ``javis.harness.plugins.harness`` is the row that constructs it.
+- middleware registered on this context: ``tools/execute`` permission checker
+  (``Harness.set_permission_checker``), ``agent/request`` model routing so
+  ``set_model`` takes effect, ``agent/limit`` max-steps status. Tool-output
+  snip lives in its own ``snip`` row.
 
 The turn bridge maps the session event log to ``AgentEvent`` (text/reasoning
 deltas, tool start/result, turn end with per-turn usage) and maintains the
 javis message mirror (user / tool results as user messages / assistant with
 tool uses) so session save/restore round-trips.
-
-Design note (double-context): javis' plugin context and the engine's loop
-context are deliberately separate — the two contracts share service names
-(``tools`` / ``llm``) with different shapes. Cost: javis plugins can't hook
-the dsh waterfalls directly (v1 accepts this; the engine owns its
-middleware). V2 evolution: the loop context becomes a child of the plugin
-context with ``isolate("tools")`` so events flow to plugin listeners.
 """
 
 from __future__ import annotations
@@ -43,13 +32,10 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import uuid4
 
-if TYPE_CHECKING:
-    from javis.llm import LLMAdapter
-
-from javis.contracts.harness import Harness
+from javis.contracts.harness import Harness as HarnessContract
 from javis.contracts.messages import (
     ConversationMessage,
     ToolUseBlock,
@@ -60,8 +46,7 @@ from javis.contracts.messages import (
 from javis.contracts.messages import (
     ToolResultBlock as JToolResultBlock,
 )
-from javis.contracts.services import AGENT_TOOLS_SERVICE
-from javis.contracts.tools import ToolRegistry as JavisToolRegistry
+from javis.contracts.services import AGENT_LOOP_SERVICE, SYSTEM_PROMPT_SERVICE
 from javis.contracts.types import (
     AgentError,
     AgentEvent,
@@ -76,17 +61,8 @@ from javis.contracts.usage import UsageSnapshot
 from javis.cordis import Context
 
 from .agent import AgentLoop
-from .compression import (
-    HISTORY_MAX_MESSAGES,
-    MAX_TOOL_OUTPUT_CHARS,
-    HistoryCompressor,
-    make_snip_listener,
-)
-from .prompt import HarnessPromptService
 from .session import Session
-from .tool_adapter import AgentToolView
 from .types import (
-    AgentLoopService,
     AgentOptions,
     Events,
     ReasoningDeltaChunk,
@@ -116,31 +92,13 @@ _IMAGE_PLACEHOLDER = "[image omitted: engine does not process images]"
 _SUB_AGENT_MAX_DEPTH = 2
 
 
-class _MutableLoopConfig:
-    """Mutable stand-in for the frozen ``AgentLoopConfig`` dataclass.
-
-    ``set_max_turns`` mutates ``max_steps_per_turn`` live; the core reads
-    attributes via ``getattr`` so any object shape works.
-    """
+class Harness(HarnessContract):
+    """javis-side harness over a dsh-style ``AgentLoop``."""
 
     def __init__(
         self,
-        max_parallel_tool_calls: int,
-        max_steps_per_turn: int,
-        history_compressor: Any,
-    ) -> None:
-        self.max_parallel_tool_calls = max(1, int(max_parallel_tool_calls))
-        self.max_steps_per_turn = max(1, int(max_steps_per_turn))
-        self.history_compressor = history_compressor
-
-
-class HarnessEngine(Harness):
-    """javis-side engine over a dsh-style ``AgentLoop``."""
-
-    def __init__(
-        self,
+        ctx: Context,
         *,
-        adapter: LLMAdapter,
         provider_name: str,
         model: str,
         system_prompt: str = "",
@@ -149,13 +107,8 @@ class HarnessEngine(Harness):
         session_id: str = "",
         max_turns: int | None = None,
         tool_metadata: dict[str, Any] | None = None,
-        javis_tools: JavisToolRegistry | None = None,
-        max_parallel_tool_calls: int = 4,
-        max_steps_per_turn: int = 20,
-        history_max_messages: int = HISTORY_MAX_MESSAGES,
-        tool_output_max_chars: int = MAX_TOOL_OUTPUT_CHARS,
     ) -> None:
-        self._adapter = adapter
+        self._ctx = ctx
         self._provider_name = provider_name
         self._model = model
         self._system_prompt = system_prompt
@@ -173,43 +126,22 @@ class HarnessEngine(Harness):
         self._sub_depth = 0
         self._loop: asyncio.AbstractEventLoop | None = None
         self._append_event: asyncio.Event | None = None
-        self._default_max_steps = max(1, int(max_steps_per_turn))
 
-        # -- inner loop context: the four dsh services ----------------------
-        self._loop_ctx = Context()
-        from javis.llm import LlmRuntime
-
-        self._llm = LlmRuntime(self._loop_ctx)
-        self._llm.register_adapter([provider_name or "javis"], adapter)
-        if javis_tools is not None:
-            self._core_tools = AgentToolView(
-                javis_tools, self._loop_ctx, sub_agent_factory=self._run_sub_agent
-            )
-        else:
-            self._core_tools = AgentToolView(
-                JavisToolRegistry(), self._loop_ctx, sub_agent_factory=self._run_sub_agent
-            )
-        self._loop_ctx.provide(AGENT_TOOLS_SERVICE, self._core_tools)
-        self._prompt_service = HarnessPromptService(
-            self._loop_ctx,
-            system_prompt,
-            cwd=self._cwd,
-            workspace=self._workspace,
-            session_id=self._session_id,
+        # -- services from the root context (provided by composition rows) ---
+        self._prompt_service = ctx.get(SYSTEM_PROMPT_SERVICE)
+        loop_service = ctx.get(AGENT_LOOP_SERVICE)
+        self._loop_config = getattr(loop_service, "config", None) or loop_service
+        self._default_max_steps = max(1, int(getattr(self._loop_config, "max_steps_per_turn", 20)))
+        # ctor-level max_turns wins over the row's max_steps_per_turn (parity
+        # with the old ``HarnessEngine`` and ``build()`` path).
+        self._loop_config.max_steps_per_turn = (
+            self._max_turns if self._max_turns is not None else self._default_max_steps
         )
-        self._loop_ctx.provide("systemPrompt", self._prompt_service)
-        self._loop_config = _MutableLoopConfig(
-            max_parallel_tool_calls=max_parallel_tool_calls,
-            max_steps_per_turn=self._max_turns if self._max_turns is not None else self._default_max_steps,
-            history_compressor=HistoryCompressor(history_max_messages),
-        )
-        self._loop_ctx.provide("agentLoop", AgentLoopService(self._loop_config))
 
-        # -- middleware on the loop context ---------------------------------
-        self._loop_ctx.on(Events.TOOLS_EXECUTE, self._permission_listener)
-        self._loop_ctx.on(Events.TOOLS_POST_EXECUTE, make_snip_listener(tool_output_max_chars))
-        self._loop_ctx.on(Events.AGENT_REQUEST, self._request_middleware)
-        self._loop_ctx.on(Events.AGENT_LIMIT, self._on_agent_limit)
+        # -- middleware on the harness's own context -------------------------
+        ctx.on(Events.TOOLS_EXECUTE, self._permission_listener)
+        ctx.on(Events.AGENT_REQUEST, self._request_middleware)
+        ctx.on(Events.AGENT_LIMIT, self._on_agent_limit)
 
         self._reset_session()
 
@@ -221,7 +153,7 @@ class HarnessEngine(Harness):
         """Fresh dsh session + agent (clear / load_messages start from zero)."""
         self._session = Session(self._session_id, cwd=self._cwd, on_append=self._on_append)
         self._agent = AgentLoop(
-            self._loop_ctx,
+            self._ctx,
             self._session_id,
             AgentOptions(provider=self._provider_name or "javis", model=self._model),
             self._session,
@@ -276,7 +208,6 @@ class HarnessEngine(Harness):
 
     def set_model(self, model: str) -> None:
         self._model = model
-        self._adapter.set_model(model)
 
     def set_effort(self, effort: str | None) -> None:
         self._effort = effort
@@ -439,7 +370,7 @@ class HarnessEngine(Harness):
         return None
 
     # ------------------------------------------------------------------
-    # Middleware listeners (loop context)
+    # Middleware listeners (root context)
     # ------------------------------------------------------------------
 
     async def _permission_listener(self, exec_input: Any, next: Any) -> Any:
@@ -481,7 +412,7 @@ class HarnessEngine(Harness):
     # Sub-agent spawner (wired into the adapted AgentTool)
     # ------------------------------------------------------------------
 
-    def _run_sub_agent(self, task: str) -> str:
+    def run_sub_agent(self, task: str) -> str:
         """Synchronous entry (called from the tool adapter's worker thread):
         bridge onto the engine's event loop and run a fresh sub-agent."""
         if self._loop is None:
@@ -502,7 +433,7 @@ class HarnessEngine(Harness):
         try:
             sub_session = Session(f"{self._session_id}-sub-{uuid4().hex[:6]}")
             sub = AgentLoop(
-                self._loop_ctx,
+                self._ctx,
                 sub_session.id,
                 AgentOptions(provider=self._provider_name or "javis", model=self._model),
                 sub_session,
@@ -589,4 +520,4 @@ def _parse_args(raw: str) -> dict[str, Any]:
         return {}
 
 
-__all__ = ["HarnessEngine"]
+__all__ = ["Harness"]

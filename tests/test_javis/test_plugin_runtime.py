@@ -1,14 +1,14 @@
 """Plugin-ization tests: cordis composition mounted inside ``build_runtime``.
 
 Covers the reserved service seams (``config`` / ``tools`` / ``commands`` /
-``host`` / ``engine``), engine selection precedence, plugin tool/command
-registration, teardown, and the permission-hook injection path.
+``host`` / ``harness``), harness selection (composition row or loud boot
+error), plugin tool/command registration through the live ``agentTools``
+view, teardown, and the permission-hook injection path.
 """
 
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 
 import pytest
@@ -146,14 +146,6 @@ def apply(ctx):
     ctx.effect(lambda: commands.register(Command("hello", "Say hello", hello_handler)))
 '''
 
-BAD_ENGINE_PLUGIN = '''
-from javis.contracts import HARNESS_SERVICE
-
-
-def apply(ctx):
-    ctx.provide(HARNESS_SERVICE, "not-an-engine")
-'''
-
 
 # ---------------------------------------------------------------------------
 # fixtures & helpers
@@ -189,13 +181,13 @@ def _seen(workspace: Path) -> dict[str, object]:
 
 
 @pytest.mark.asyncio
-async def test_plugin_engine_provides_instance(plugin_workspace, fake_engine_factory):
-    """A composition engine plugin replaces the built-in engine and sees the
-    built-in services (config / tools / host) inside ``apply``."""
-    fake_engine_factory()  # proves the fallback is NOT used
+async def test_plugin_harness_provides_instance(plugin_workspace, fake_engine_factory):
+    """A composition row that provides ``harness`` replaces the built-in one
+    and sees the host services (config / tools / host) inside ``apply``."""
+    fake_engine_factory()  # proves the built-in harness is NOT used
     (plugin_workspace / "engine_plugin.py").write_text(ENGINE_PLUGIN, encoding="utf-8")
     write_composition(plugin_workspace, [
-        {"id": "engine", "name": "./engine_plugin.py", "inject": ["config", "tools", "host"]},
+        {"id": "harness", "name": "./engine_plugin.py", "inject": ["config", "tools", "host"]},
     ])
 
     bundle = await build_runtime(cwd=str(plugin_workspace.parent))
@@ -204,33 +196,83 @@ async def test_plugin_engine_provides_instance(plugin_workspace, fake_engine_fac
     seen = _seen(plugin_workspace)
     assert seen["has_config"] == "JavisConfig"
     assert seen["session_id"] == bundle.session_id
-    assert seen["cwd"] == str(plugin_workspace.parent)
     assert {"bash", "read_file", "write_file", "edit_file", "glob", "grep", "agent"} <= set(seen["tool_names"])
     await bundle.close()
 
 
 @pytest.mark.asyncio
-async def test_missing_composition_auto_created_and_falls_back(plugin_workspace, fake_engine_factory):
-    """No composition (or an empty one) → default engine via the patched
-    ``_build_default_engine`` seam, and ``<workspace>/cordis.yml`` is created."""
-    fake_engine_factory()
+async def test_missing_composition_writes_full_default(plugin_workspace, fake_engine_factory):
+    """No composition → the full six-row default composition is written, every
+    row activates, and the harness service is the patched test double."""
+    from javis.session.config import DEFAULT_COMPOSITION
 
+    fake_engine_factory()
     bundle = await build_runtime(cwd=str(plugin_workspace.parent))
 
     assert isinstance(bundle.engine, FakeEngine)
-    assert (plugin_workspace / "cordis.yml").exists()
-    assert (plugin_workspace / "cordis.yml").read_text(encoding="utf-8") == "[]\n"
+    composition = (plugin_workspace / "cordis.yml").read_text(encoding="utf-8")
+    assert composition == DEFAULT_COMPOSITION
+    assert bundle.context is not None
+    assert bundle.context.get("agentTools") is not None
+    assert bundle.context.get("systemPrompt") is not None
+    assert bundle.context.get("agentLoop") is not None
+    assert bundle.context.get("llm") is not None
     await bundle.close()
 
 
 @pytest.mark.asyncio
+async def test_composition_without_harness_row_raises(plugin_workspace, fake_engine_factory):
+    """A composition that never provides ``harness`` fails loudly instead of
+    silently falling back to a built-in engine."""
+    fake_engine_factory()
+    (plugin_workspace / "extra_tools.py").write_text(EXTRA_TOOLS_PLUGIN, encoding="utf-8")
+    write_composition(plugin_workspace, [
+        {"id": "extra-tools", "name": "./extra_tools.py", "inject": ["tools", "commands"]},
+    ])
+
+    with pytest.raises(RuntimeError, match="provides no 'harness' service"):
+        await build_runtime(cwd=str(plugin_workspace.parent))
+
+
+@pytest.mark.asyncio
+async def test_entry_with_missing_dependency_raises(plugin_workspace, fake_engine_factory):
+    """A row whose ``inject`` names a service nobody provides fails the boot
+    assertion with the missing service name (``settle`` would swallow it)."""
+    fake_engine_factory()
+    (plugin_workspace / "engine_plugin.py").write_text(ENGINE_PLUGIN, encoding="utf-8")
+    write_composition(plugin_workspace, [
+        {"id": "broken", "name": "./engine_plugin.py", "inject": ["nosuchservice"]},
+    ])
+
+    with pytest.raises(RuntimeError, match="nosuchservice"):
+        await build_runtime(cwd=str(plugin_workspace.parent))
+
+
+@pytest.mark.asyncio
+async def test_failing_entry_reports_original_error(plugin_workspace, fake_engine_factory):
+    """A row whose ``apply`` raises surfaces the original exception message."""
+    fake_engine_factory()
+    (plugin_workspace / "boom.py").write_text(
+        "def apply(ctx):\n    raise ValueError('row boom')\n", encoding="utf-8"
+    )
+    write_composition(plugin_workspace, [
+        {"id": "boom", "name": "./boom.py"},
+    ])
+
+    with pytest.raises(RuntimeError, match="row boom"):
+        await build_runtime(cwd=str(plugin_workspace.parent))
+
+
+@pytest.mark.asyncio
 async def test_plugin_tools_and_commands_reach_engine(plugin_workspace, fake_engine_factory):
-    """Tool/command plugins registered before the engine plugin snapshot its
-    tools (composition order) show up in the engine and the command registry."""
+    """Tool/command plugins registered after the live ``agentTools`` view was
+    built show up through it (composition order), and commands reach the
+    command registry."""
     fake_engine_factory()
     (plugin_workspace / "extra_tools.py").write_text(EXTRA_TOOLS_PLUGIN, encoding="utf-8")
     (plugin_workspace / "engine_plugin.py").write_text(ENGINE_PLUGIN, encoding="utf-8")
     write_composition(plugin_workspace, [
+        {"id": "agent-tools", "name": "javis.harness.plugins.agent_tools", "inject": ["tools"]},
         {"id": "extra-tools", "name": "./extra_tools.py", "inject": ["tools", "commands"]},
         {"id": "engine", "name": "./engine_plugin.py", "inject": ["config", "tools", "host"]},
     ])
@@ -239,11 +281,15 @@ async def test_plugin_tools_and_commands_reach_engine(plugin_workspace, fake_eng
 
     assert "hello_tool" in _seen(plugin_workspace)["tool_names"]
     assert {cmd.name for cmd in bundle.commands.list_commands()} >= {"hello", "help", "status"}
+    assert bundle.context is not None
+    view = bundle.context.get("agentTools")
+    assert view.get("hello_tool") is not None
+    assert "hello_tool" in {schema.name for schema in view.schemas()}
     await bundle.close()
 
 
 @pytest.mark.asyncio
-async def test_close_disposes_plugins_and_revokes_engine(plugin_workspace, fake_engine_factory):
+async def test_close_disposes_plugins_and_revokes_harness(plugin_workspace, fake_engine_factory):
     """``bundle.close()`` runs plugin disposers and removes provided services;
     a second close is a no-op."""
     fake_engine_factory()
@@ -264,30 +310,14 @@ async def test_close_disposes_plugins_and_revokes_engine(plugin_workspace, fake_
 
 
 @pytest.mark.asyncio
-async def test_invalid_engine_service_falls_back(plugin_workspace, fake_engine_factory, caplog):
-    """A plugin-provided value that is not an Harness is rejected with a
-    warning and the built-in engine is used."""
-    fake_engine_factory()
-    (plugin_workspace / "bad_engine.py").write_text(BAD_ENGINE_PLUGIN, encoding="utf-8")
-    write_composition(plugin_workspace, [
-        {"id": "engine", "name": "./bad_engine.py", "inject": ["config", "tools", "host"]},
-    ])
-
-    with caplog.at_level(logging.WARNING, logger="javis.app.runtime"):
-        bundle = await build_runtime(cwd=str(plugin_workspace.parent))
-
-    assert isinstance(bundle.engine, FakeEngine)
-    assert any("not a Harness" in record.message for record in caplog.records)
-    await bundle.close()
-
-
-@pytest.mark.asyncio
 async def test_explicit_composition_path(plugin_workspace, fake_engine_factory, tmp_path):
     """``plugins=`` (CLI override) selects a specific composition file; a
     missing explicit file is a hard error."""
+    from javis.session.config import DEFAULT_COMPOSITION
+
     fake_engine_factory()
     comp = tmp_path / "plugins.yml"
-    comp.write_text("[]\n", encoding="utf-8")
+    comp.write_text(DEFAULT_COMPOSITION, encoding="utf-8")
 
     bundle = await build_runtime(cwd=str(plugin_workspace.parent), plugins=str(comp))
     assert isinstance(bundle.engine, FakeEngine)

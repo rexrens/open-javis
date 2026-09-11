@@ -1,8 +1,8 @@
-"""Tests for the ``HarnessEngine``'s Harness contract surface.
+"""Tests for the ``Harness``'s Harness contract surface.
 
 Covers what the old ``test_corecoder_engine.py`` did (initial state,
 setters, restore, clear, usage across turns, ConversationMessage input,
-tool metadata) against the harness engine.
+tool metadata) against the harness shell.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import pytest
 
 from javis.contracts.messages import ConversationMessage
 from javis.contracts.usage import UsageSnapshot
-from javis.harness.engine import HarnessEngine
+from javis.harness.harness import Harness
 from javis.harness.stream import chunk_response
 from javis.harness.types import (
     MaxTokensFinish,
@@ -20,8 +20,7 @@ from javis.harness.types import (
     ToolCallBlock,
     ToolCallsFinish,
 )
-from javis.llm import ScriptedAdapter
-from javis.tools import create_default_tool_registry
+from tests.test_harness.support import make_harness
 
 
 def _tc(id: str, name: str, arguments: dict) -> ToolCallBlock:
@@ -59,27 +58,12 @@ def _resp(
     )
 
 
-
-def _engine(script: list[object], **kwargs: object) -> HarnessEngine:
-    return HarnessEngine(
-        adapter=ScriptedAdapter(script=script),
-        provider_name="scripted",
-        model="scripted-demo",
-        system_prompt="test prompt",
-        cwd="/tmp",
-        workspace="/tmp",
-        session_id="sess",
-        javis_tools=create_default_tool_registry(),
-        **kwargs,
-    )
-
-
-async def _drain(engine: HarnessEngine, prompt: str) -> list[object]:
+async def _drain(engine: Harness, prompt: str) -> list[object]:
     return [event async for event in engine.submit_message(prompt)]
 
 
 def test_initial_state():
-    engine = _engine([_resp(content="x")])
+    engine = make_harness([_resp(content="x")])
     assert engine.messages == []
     assert engine.total_usage == UsageSnapshot()
     assert engine.model == "scripted-demo"
@@ -89,10 +73,9 @@ def test_initial_state():
 
 
 def test_setters():
-    engine = _engine([_resp(content="x")])
+    engine = make_harness([_resp(content="x")])
     engine.set_model("other-model")
     assert engine.model == "other-model"
-    assert engine._adapter.model == "other-model"
     engine.set_system_prompt("new prompt")
     assert engine.system_prompt == "new prompt"
     engine.set_max_turns(5)
@@ -106,7 +89,7 @@ def test_setters():
 
 @pytest.mark.asyncio
 async def test_set_effort_is_written_to_next_request():
-    engine = _engine([_resp(content="x")])
+    engine = make_harness([_resp(content="x")])
     engine.set_effort("high")
     await _drain(engine, "go")
     assert engine._session.request_header()["config"]["reasoningEffort"] == "high"
@@ -114,7 +97,7 @@ async def test_set_effort_is_written_to_next_request():
 
 @pytest.mark.asyncio
 async def test_load_messages_restores_history():
-    engine = _engine(
+    engine = make_harness(
         [_resp(content="restored and answered", prompt_tokens=3, completion_tokens=2)]
     )
     saved = [
@@ -130,7 +113,7 @@ async def test_load_messages_restores_history():
 
 @pytest.mark.asyncio
 async def test_clear_resets_inner_loop():
-    engine = _engine([_resp(content="hi", prompt_tokens=1, completion_tokens=1)])
+    engine = make_harness([_resp(content="hi", prompt_tokens=1, completion_tokens=1)])
     await _drain(engine, "one")
     assert engine.total_usage.input_tokens == 1
     engine.clear()
@@ -142,7 +125,7 @@ async def test_clear_resets_inner_loop():
 
 @pytest.mark.asyncio
 async def test_usage_accumulates_across_turns():
-    engine = _engine(
+    engine = make_harness(
         [
             _resp(content="first", prompt_tokens=10, completion_tokens=2),
             _resp(content="second", prompt_tokens=20, completion_tokens=4),
@@ -156,7 +139,7 @@ async def test_usage_accumulates_across_turns():
 
 @pytest.mark.asyncio
 async def test_submit_message_with_conversation_message_object():
-    engine = _engine([_resp(content="handled", prompt_tokens=2, completion_tokens=1)])
+    engine = make_harness([_resp(content="handled", prompt_tokens=2, completion_tokens=1)])
     message = ConversationMessage.from_user_text("as an object")
     events = [event async for event in engine.submit_message(message)]
     assert any(getattr(e, "text", "") == "handled" for e in events)
@@ -165,17 +148,17 @@ async def test_submit_message_with_conversation_message_object():
 
 @pytest.mark.asyncio
 async def test_tool_metadata_is_mutable():
-    engine = _engine([_resp(content="x")], tool_metadata={"permission_mode": "default"})
+    engine = make_harness([_resp(content="x")], tool_metadata={"permission_mode": "default"})
     assert engine.tool_metadata["permission_mode"] == "default"
     engine.tool_metadata["permission_mode"] = "acceptEdits"
     assert engine.tool_metadata["permission_mode"] == "acceptEdits"
 
 
 @pytest.mark.asyncio
-async def test_tool_call_round_through_engine(tmp_path):
+async def test_tool_call_round_throughmake_harness(tmp_path):
     target = tmp_path / "f.txt"
     target.write_text("payload", encoding="utf-8")
-    engine = _engine(
+    engine = make_harness(
         [
             _resp(
                 tool_calls=[_tc(id="c1", name="read_file", arguments={"file_path": str(target)})],
