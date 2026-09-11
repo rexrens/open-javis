@@ -3,7 +3,8 @@
 > 日期：2026-09-11
 > 状态：已评审通过，待实现
 > 范围：`javis/harness/`、`javis/app/runtime.py`、`javis/contracts/`、`javis/session/config.py`、测试与文档
-> 明确不动：TUI（`frontend/`）、`javis/app` 的宿主职责边界、`commands` 契约
+> 明确不动：TUI（`frontend/`）、app 对外消费契约（`RuntimeBundle` 形态与 `Harness` 协议方法面）、`commands` 契约
+> 注意：`javis/app/runtime.py` **会被修改**（本次重构的落点之一），改动范围见 §8
 
 ## 1. 背景与目标
 
@@ -34,7 +35,8 @@
 - 本期不做 dsh 式补丁层（`cordis.patch.yml` 按 id 叠加）；默认文件即全量组合，
   用户直接编辑该文件。补丁层留作后续演进。
 - 不自动改写已存在的空 `[]` 组合文件（可能是用户有意为之）；启动时报错并提示。
-- 不重构 TUI / `app` 层结构，不改宿主与 Harness 的职责分工。
+- 不重构 TUI / `app` 层结构，不改宿主与 Harness 的职责分工。`runtime.py` 的
+  装配逻辑改动是本次重构的必然落点（见 §8），但不重排 app 内部职责。
 
 ## 2. 术语
 
@@ -178,12 +180,26 @@ boot 断言处报出服务名。`agent-loop` / `compression` 无依赖，配置�
 
 ## 8. 影响面
 
-- `javis/app/runtime.py`：`_build_default_engine` 删除，`build_runtime` 简化。
+### `javis/app`（本次会被修改）
+
+- `runtime.py`：
+  - 删除 `_build_default_engine`（`:111-164`）；
+  - `build_runtime` 的兜底段（`:248-265`）替换为 boot 断言 + `ctx.get(HARNESS_SERVICE)`；
+  - `RuntimeBundle.engine` 类型标注改名（属性名不变）；
+  - 导入与 docstring 更新（`:6`、`:31`、`:37`、`:66`、`:76`、`:179-186`）。
+- `backend_host.py`：仅 `:483` 一处 docstring 中的 `AgentEngine` 字样。
+- `app.py` / `wire.py` / `react_launcher.py`：不动（TUI 管道，与本次无关）。
+
+边界原则：不动 app 的职责划分、`RuntimeBundle` 字段与 `Harness` 协议方法面；
+改的只是"引擎从哪来、怎么装"这段逻辑的落点（从 runtime 函数移入组合行）。
+
+### 其余
+
 - `javis/harness/`：`engine.py`→`harness.py` 并去私有装配；`build.py` 删除；
   新增 `plugins/` 包；`tool_adapter.py` 增加实时视图适配；
   `types.AgentLoop` 改名。
 - `javis/contracts/`：`engine.py`→`harness.py`，`ENGINE_SERVICE`→
   `HARNESS_SERVICE`，`AgentEngine`→`Harness`。
 - `javis/session/config.py`：默认组合内容。
-- `javis/commands/`、`javis/app/backend_host.py`：仅类型名与属性名的机械替换。
+- `javis/commands/`、`javis/llm/`：仅类型名 / docstring 的机械替换。
 - 测试与文档。
