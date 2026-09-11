@@ -213,6 +213,7 @@ git commit -m "refactor(contracts): rename AgentEngine protocol to Harness, engi
 **Files:**
 - Rename: `javis/harness/llm.py` → `javis/harness/stream.py`
 - Modify: `javis/harness/types.py`（新增 `PreparedCall` + `LLM`）
+- Modify: `javis/harness/__init__.py:41,61`（`from . import llm as llm` → `from . import stream as stream`；`__all__` 的 `"llm"` → `"stream"`）
 - Modify: `javis/harness/agent.py:44`
 - Modify: `javis/llm/runtime.py:533-536`、`javis/llm/scripted.py:8`、`javis/llm/openai_compat.py:13,121`
 - Modify: 4 个测试 + `examples/dsh_harness/mock_llm.py:27`
@@ -296,6 +297,7 @@ __all__ = [
 
 | 文件 | 改为 |
 |---|---|
+| `javis/harness/__init__.py:41,61` | `from . import stream as stream`；`__all__` 里 `"llm"` → `"stream"` |
 | `javis/harness/agent.py:44` | `from .stream import BlockAssembler, assemble_finish, normalized_stream` |
 | `javis/llm/runtime.py:536` | `from javis.harness.types import PreparedCall`（docstring `:533` 同步：`javis.harness.types.PreparedCall`） |
 | `javis/llm/scripted.py:8` | docstring：`javis.harness.stream.chunk_response` |
@@ -1167,8 +1169,8 @@ Run: `git rm javis/harness/build.py`
 ```python
 from . import agent as agent
 from . import inbox as inbox
-from . import llm as llm          # → 改为: from . import stream as stream
 from . import session as session
+from . import stream as stream    # Task 2 已改
 from . import tools as tools
 from . import types as types
 from .build import build          # → 删除
@@ -1177,7 +1179,7 @@ from .engine import HarnessEngine # → 改为: from .harness import Harness
 from .tool_adapter import adapt_registry, adapt_tool  # → 改为: from .tool_adapter import AgentToolView, adapt_tool
 ```
 
-`__all__` 相应把 `"HarnessEngine"`/`"build"`/`"llm"`/`"adapt_registry"` 换成 `"Harness"`/`"stream"`/`"AgentToolView"`（完整版在 Task 8 Step 1 重写）。
+`__all__` 相应把 `"HarnessEngine"`/`"build"`/`"adapt_registry"` 换成 `"Harness"`/`"AgentToolView"`（完整版在 Task 8 Step 1 重写）。
 
 `javis/app/runtime.py`：
 - 删除整个 `_build_default_engine`（`:111-164`）；
