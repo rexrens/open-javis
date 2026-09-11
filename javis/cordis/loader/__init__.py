@@ -421,29 +421,44 @@ def assert_entries_settled(ctx: "Context") -> None:
     will never appear — would otherwise be silently ignored. Call this right
     after ``settle(ctx)`` as the boot-time entry assertion (dsh
     ``assertEntriesLoaded`` / ``assertEntriesActivated``).
+
+    Group members are mounted as fibers without an entry of their own, so the
+    scan walks the mounted fibers first; entries with no fiber at all are
+    reported afterwards.
     """
     loader = ctx.get("loader")
     if loader is None:
         raise RuntimeError("composition loader is not available (loader service missing)")
+    entries = loader.entries()
     fibers = loader.fibers()
-    for entry_id, entry in loader.entries().items():
-        if entry.disabled:
+
+    for entry_id, fiber in fibers.items():
+        entry = entries.get(entry_id)
+        if entry is not None and entry.disabled:
             continue
-        fiber = fibers.get(entry_id)
-        if fiber is None:
-            raise RuntimeError(
-                f"composition entry {entry_id!r} ({entry.name}) was not mounted"
-            )
         if fiber.state is FiberState.ACTIVE:
             continue
+        label = entry.name if entry is not None else fiber.name
         if fiber.state is FiberState.FAILED:
             raise RuntimeError(
-                f"composition entry {entry_id!r} ({entry.name}) failed: {fiber.error}"
+                f"composition entry {entry_id!r} ({label}) failed: "
+                f"{type(fiber.error).__name__}: {fiber.error}"
             ) from fiber.error
-        missing = fiber.missing_inject()
+        if fiber.state is FiberState.PENDING:
+            missing = fiber.missing_inject()
+            raise RuntimeError(
+                f"composition entry {entry_id!r} ({label}) is PENDING: "
+                f"unresolved services: {', '.join(missing) or '(unknown)'}"
+            )
         raise RuntimeError(
-            f"composition entry {entry_id!r} ({entry.name}) is {fiber.state.name}: "
-            f"unresolved services: {', '.join(missing) or '(unknown)'}"
+            f"composition entry {entry_id!r} ({label}) is {fiber.state.name} (not settled)"
+        )
+
+    for entry_id, entry in entries.items():
+        if entry.disabled or entry_id in fibers:
+            continue
+        raise RuntimeError(
+            f"composition entry {entry_id!r} ({entry.name}) was not mounted"
         )
 
 

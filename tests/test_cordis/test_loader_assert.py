@@ -51,3 +51,20 @@ async def test_pending_entry_lists_missing_services(tmp_path):
     )
     with pytest.raises(RuntimeError, match="notARealService"):
         assert_entries_settled(ctx)
+
+
+@pytest.mark.asyncio
+async def test_failed_group_member_is_reported(tmp_path):
+    member = tmp_path / "member.py"
+    member.write_text("name = 'member'\ndef apply(ctx):\n    raise ValueError('member boom')\n", encoding="utf-8")
+    ctx = await _boot(
+        tmp_path,
+        "- id: grp\n  group:\n    - name: ./member.py\n",
+    )
+    with pytest.raises(RuntimeError, match="member boom"):
+        assert_entries_settled(ctx)
+
+
+def test_missing_loader_service_raises():
+    with pytest.raises(RuntimeError, match="loader"):
+        assert_entries_settled(Context())
