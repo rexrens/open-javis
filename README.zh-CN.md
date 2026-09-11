@@ -54,6 +54,10 @@
 └───────────────────────────▲───────────────────────────────────┘
                             │
 ┌───────────────────────────┴───────────────────────────────────┐
+│  javis.harness（AgentLoop、会话日志）— 与 demo 共享            │
+└───────────────────────────▲───────────────────────────────────┘
+                            │
+┌───────────────────────────┴───────────────────────────────────┐
 │  AgentLoop — turn/step 循环、exclusive/parallel 工具           │
 │  javis.llm.LlmRuntime — adapter 注册表、llm/stream waterfall   │
 │  javis.llm — OpenAICompatAdapter / ScriptedAdapter             │
@@ -143,7 +147,7 @@ def apply(ctx):
 内建服务：`config`（`JavisConfig`）、`tools`（`ToolRegistry`）、`commands`
 （`CommandRegistry`）、`host`（`HostContext`）由宿主提供、不可撤销。Harness
 所需的 `llm` / `agentTools` / `systemPrompt` / `agentLoop` / `harness` 由
-`javis/harness/plugins/` 的组合行提供，默认组合已全部接好；组合缺少 `harness`
+`javis/harness/plugins/` 的组合行提供，默认组合的六行已全部接好；组合缺少 `harness`
 服务（含空组合 `[]`）即启动报错，没有内建回退。
 
 工具/命令插件使用 disposer 模式，卸载时自动清理：
@@ -151,9 +155,9 @@ def apply(ctx):
 ```python
 def apply(ctx):
     tools = ctx.get('tools')
-    ctx.effect(tools.register(MyTool()))          # 卸载时自动反注册
+    ctx.effect(lambda: tools.register(MyTool()))  # 卸载时自动反注册
     commands = ctx.get('commands')
-    ctx.effect(commands.register(Command('hello', 'Say hello', handler)))
+    ctx.effect(lambda: commands.register(Command('hello', 'Say hello', handler)))
 ```
 
 完整契约参考 [docs/plugins.md](docs/plugins.md)。
@@ -201,7 +205,7 @@ uv run mypy javis/
 
 ```
 javis/harness/       Harness：dsh 风格 AgentLoop + javis 集成
-                     （examples/dsh_harness demo 镜像同一套循环核心）
+                     （examples/dsh_harness 是基于同一套循环核心的独立 demo）
   plugins/           装配 Harness 的组合行
   stream.py          循环侧流装配
   harness.py         Harness 外壳（实现契约）

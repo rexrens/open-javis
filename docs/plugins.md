@@ -61,6 +61,9 @@ entry 字段（Cordis Loader 原生支持）：
   inject: [llm, agentTools, systemPrompt, agentLoop, config, host]
 ```
 
+替换的只是 `harness` 这一行：`llm` / `agent-tools` / `system-prompt` /
+`agent-loop` / `snip` 行仍须保留（自建驱动一般仍 `inject` 其中的服务）。
+
 缺失 `harness` 行（含空组合 `[]`）→ 启动 `RuntimeError`，错误信息含组合文件路径与补救提示。
 
 宿主随后统一执行 CLI 覆盖（`set_model` / `set_system_prompt`）与会话恢复
@@ -99,9 +102,9 @@ def apply(ctx):
 ## 权限钩子
 
 `Harness` 可选实现 `set_permission_checker(checker)`（`hasattr` 探测）。
-`BackendHost` 启动时优先调用它注入 TUI 的 ask/deny 权限流；旧
-`engine.agent.permission_checker` 路径保留为回退。不实现任何一者的测试替身
-直接跳过注入。
+`BackendHost` 启动时优先调用它注入 TUI 的 ask/deny 权限流；未实现该方法的
+自定义 Harness 若带有 `agent.permission_checker` 属性，则走旧属性注入路径
+作为回退。两者都不提供则直接跳过注入。
 
 ## 生命周期
 

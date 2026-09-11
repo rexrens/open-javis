@@ -413,7 +413,7 @@ class Loader(Service):
         return dict(self._entry_paths)
 
 
-def assert_entries_settled(ctx: "Context") -> None:
+def assert_entries_settled(ctx: Context) -> None:
     """Fail loud when any composition entry did not activate.
 
     ``settle()`` gathers fiber inertia with ``return_exceptions=True``, so a

@@ -147,7 +147,7 @@ Built-in services: `config` (`JavisConfig`), `tools` (`ToolRegistry`),
 `commands` (`CommandRegistry`) and `host` (`HostContext`) are provided by the
 host and never revoked. The services the harness needs — `llm`, `agentTools`,
 `systemPrompt`, `agentLoop` and `harness` itself — come from the rows in
-`javis/harness/plugins/`; the default composition wires all six. A composition
+`javis/harness/plugins/`; the default composition wires all six rows. A composition
 without a `harness` service (including an empty `[]`) is a hard boot error —
 there is no built-in fallback.
 
@@ -157,9 +157,9 @@ automatically:
 ```python
 def apply(ctx):
     tools = ctx.get('tools')
-    ctx.effect(tools.register(MyTool()))          # unregister on unload
+    ctx.effect(lambda: tools.register(MyTool()))  # unregister on unload
     commands = ctx.get('commands')
-    ctx.effect(commands.register(Command('hello', 'Say hello', handler)))
+    ctx.effect(lambda: commands.register(Command('hello', 'Say hello', handler)))
 ```
 
 See [docs/plugins.md](docs/plugins.md) for the full contract reference.
@@ -197,7 +197,7 @@ Interactive selectors (from the TUI command picker): **permissions** (Default / 
 ## Development
 
 ```bash
-uv run pytest tests/ -q          # 84 tests, all green
+uv run pytest tests/ -q          # 311 tests, all green
 uv run pytest tests/ --cov=javis --cov=javis/harness   # coverage report
 uv run ruff check javis/
 uv run mypy javis/
@@ -207,7 +207,7 @@ uv run mypy javis/
 
 ```
 javis/harness/       Harness: dsh-style AgentLoop + javis integration
-                     (the examples/dsh_harness demo mirrors the loop core)
+                     (examples/dsh_harness: a standalone demo on the same loop)
   plugins/           composition rows that assemble the harness
   stream.py          loop-side stream assembly
   harness.py         Harness shell (implements the contract)
