@@ -2,7 +2,7 @@
 
 When the runtime assembles a session it provides this object under the
 ``HOST_SERVICE`` name.  An engine plugin reads it (together with ``config``
-and ``tools``) to construct its ``AgentEngine`` instance inside ``apply``:
+and ``tools``) to construct its ``Harness`` instance inside ``apply``:
 
     def apply(ctx):
         host = ctx.get("host")       # HostContext

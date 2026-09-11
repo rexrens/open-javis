@@ -17,7 +17,7 @@ import yaml
 from javis.app.backend_host import BackendHost
 from javis.app.runtime import RuntimeBundle, build_runtime
 from javis.commands.registry import create_default_command_registry
-from javis.contracts import ENGINE_SERVICE
+from javis.contracts import HARNESS_SERVICE
 from javis.session.session_storage import JavisSessionBackend
 from javis.session.state import AppState, AppStateStore
 from tests.test_javis.fake_backend import FakeEngine
@@ -34,13 +34,13 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from javis.contracts import ENGINE_SERVICE, AgentEngine
+from javis.contracts import HARNESS_SERVICE, Harness
 from javis.contracts.messages import ConversationMessage, TextBlock
 from javis.contracts.types import AgentEvent, AgentTextDelta, AgentTurnEnd
 from javis.contracts.usage import UsageSnapshot
 
 
-class PluginEngine(AgentEngine):
+class PluginEngine(Harness):
     model = "plugin-model"
 
     def __init__(self):
@@ -109,7 +109,7 @@ def apply(ctx):
         "tool_names": [t.name for t in ctx.get("tools").all()],
     }
     Path(host.workspace, "plugin_seen.json").write_text(json.dumps(seen), encoding="utf-8")
-    ctx.provide(ENGINE_SERVICE, PluginEngine())
+    ctx.provide(HARNESS_SERVICE, PluginEngine())
 
     def _dispose():
         Path(host.workspace, "disposed.txt").write_text("yes", encoding="utf-8")
@@ -147,11 +147,11 @@ def apply(ctx):
 '''
 
 BAD_ENGINE_PLUGIN = '''
-from javis.contracts import ENGINE_SERVICE
+from javis.contracts import HARNESS_SERVICE
 
 
 def apply(ctx):
-    ctx.provide(ENGINE_SERVICE, "not-an-engine")
+    ctx.provide(HARNESS_SERVICE, "not-an-engine")
 '''
 
 
@@ -259,13 +259,13 @@ async def test_close_disposes_plugins_and_revokes_engine(plugin_workspace, fake_
 
     assert (plugin_workspace / "disposed.txt").read_text(encoding="utf-8") == "yes"
     assert bundle.context is not None
-    assert bundle.context.get(ENGINE_SERVICE) is None
+    assert bundle.context.get(HARNESS_SERVICE) is None
     await bundle.close()  # idempotent
 
 
 @pytest.mark.asyncio
 async def test_invalid_engine_service_falls_back(plugin_workspace, fake_engine_factory, caplog):
-    """A plugin-provided value that is not an AgentEngine is rejected with a
+    """A plugin-provided value that is not an Harness is rejected with a
     warning and the built-in engine is used."""
     fake_engine_factory()
     (plugin_workspace / "bad_engine.py").write_text(BAD_ENGINE_PLUGIN, encoding="utf-8")
@@ -277,7 +277,7 @@ async def test_invalid_engine_service_falls_back(plugin_workspace, fake_engine_f
         bundle = await build_runtime(cwd=str(plugin_workspace.parent))
 
     assert isinstance(bundle.engine, FakeEngine)
-    assert any("not an AgentEngine" in record.message for record in caplog.records)
+    assert any("not an Harness" in record.message for record in caplog.records)
     await bundle.close()
 
 

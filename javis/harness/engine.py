@@ -1,6 +1,6 @@
 """HarnessEngine — the javis-side engine over the dsh-style ReactAgentLoop.
 
-``HarnessEngine`` implements the :class:`javis.contracts.engine.AgentEngine`
+``HarnessEngine`` implements the :class:`javis.contracts.harness.Harness`
 contract (the host's single seam): it owns the javis conversation mirror
 (``ConversationMessage``), accumulates usage, and yields ``AgentEvent``
 streams per turn — exactly like the old ``CoreCoderEngine`` did, but driven
@@ -18,7 +18,7 @@ Assembly (mirrors the demo's ``driver`` plugin, in-engine):
   (the runtime's system prompt + session context) and ``agentLoop`` (loop
   config);
 - middleware registered on the loop context: ``tools/execute`` permission
-  checker (``AgentEngine.set_permission_checker``), ``tools/post-execute``
+  checker (``Harness.set_permission_checker``), ``tools/post-execute``
   tool-output snip (compression), ``agent/request`` model routing so
   ``set_model`` takes effect, ``agent/limit`` max-steps status;
 
@@ -49,7 +49,7 @@ from uuid import uuid4
 if TYPE_CHECKING:
     from javis.llm import LLMAdapter
 
-from javis.contracts.engine import AgentEngine
+from javis.contracts.harness import Harness
 from javis.contracts.messages import (
     ConversationMessage,
     ToolUseBlock,
@@ -134,7 +134,7 @@ class _MutableLoopConfig:
         self.history_compressor = history_compressor
 
 
-class HarnessEngine(AgentEngine):
+class HarnessEngine(Harness):
     """javis-side engine over a dsh-style ``ReactAgentLoop``."""
 
     def __init__(
@@ -232,7 +232,7 @@ class HarnessEngine(AgentEngine):
             self._append_event.set()
 
     # ------------------------------------------------------------------
-    # AgentEngine properties
+    # Harness properties
     # ------------------------------------------------------------------
 
     @property
@@ -286,7 +286,7 @@ class HarnessEngine(AgentEngine):
         )
 
     def set_permission_checker(self, checker: Any) -> None:
-        """Optional AgentEngine hook: the host's async permission callback
+        """Optional Harness hook: the host's async permission callback
         (``checker(tool_name, arguments) -> "allow" | deny-reason``) is
         consulted by the ``tools/execute`` middleware before every tool run."""
         self._permission_checker = checker

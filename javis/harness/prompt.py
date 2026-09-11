@@ -33,7 +33,7 @@ class HarnessPromptService:
         self._session_id = session_id
 
     def set_system_prompt(self, prompt: str) -> None:
-        """Host setter (``AgentEngine.set_system_prompt``)."""
+        """Host setter (``Harness.set_system_prompt``)."""
         self._system_prompt = prompt
 
     # -- dsh systemPrompt service surface -----------------------------------

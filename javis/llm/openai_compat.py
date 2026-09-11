@@ -118,7 +118,7 @@ class OpenAICompatAdapter(LLMAdapter):
     # -- provider metadata ----------------------------------------------------
 
     def set_model(self, model: str) -> None:
-        """Switch the model this adapter serves (``AgentEngine.set_model``)."""
+        """Switch the model this adapter serves (``Harness.set_model``)."""
         self.model = model
 
     def provider_info(self, provider: str) -> LlmProviderInfo:

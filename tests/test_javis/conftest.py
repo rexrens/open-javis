@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from javis.contracts.engine import AgentEngine
+from javis.contracts.harness import Harness
 from tests.test_javis.fake_backend import FakeEngine
 
 
@@ -24,7 +24,7 @@ def fake_engine_factory(monkeypatch):
         bundle = await build_runtime(cwd=..., ...)
     """
 
-    def _patch(engine: AgentEngine | None = None) -> FakeEngine:
+    def _patch(engine: Harness | None = None) -> FakeEngine:
         impl = engine if engine is not None else FakeEngine()
         monkeypatch.setattr("javis.app.runtime._build_default_engine", lambda **_: impl)
         return impl

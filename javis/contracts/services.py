@@ -2,7 +2,7 @@
 
 A service is ``(name, type)``: plugins look it up by name and validate the
 type via ``ctx.get(name, Type)``. The host provides built-ins (owner=None,
-never revoked); plugins provide their own with ``ctx.provide``.
+never revoked); composition rows provide their own with ``ctx.provide``.
 
 Names are stable strings — changing one breaks every plugin using it. The
 contract *types* live in ``javis.contracts`` (``ToolRegistry`` /
@@ -16,18 +16,28 @@ from __future__ import annotations
 TOOLS_SERVICE = "tools"
 COMMANDS_SERVICE = "commands"
 CONFIG_SERVICE = "config"
-LLM_SERVICE = "llm"
 HOST_SERVICE = "host"
 
-# A plugin that provides "engine" replaces the built-in HarnessEngine
-# (see javis.app.runtime.build_runtime).
-ENGINE_SERVICE = "engine"
+# -- harness rows (javis.harness.plugins.*) --------------------------------
+#: Loop-facing tool registry (the live view over the host ``tools``).
+AGENT_TOOLS_SERVICE = "agentTools"
+#: Prompt assembly (persona + step context + tool schemas).
+SYSTEM_PROMPT_SERVICE = "systemPrompt"
+#: Loop driver configuration.
+AGENT_LOOP_SERVICE = "agentLoop"
+#: The model service (a ``javis.llm.LlmRuntime`` adapter registry).
+LLM_SERVICE = "llm"
+#: The whole agent: a ``javis.contracts.harness.Harness`` instance.
+HARNESS_SERVICE = "harness"
 
 __all__ = [
+    "AGENT_LOOP_SERVICE",
+    "AGENT_TOOLS_SERVICE",
     "COMMANDS_SERVICE",
     "CONFIG_SERVICE",
-    "ENGINE_SERVICE",
+    "HARNESS_SERVICE",
     "HOST_SERVICE",
     "LLM_SERVICE",
+    "SYSTEM_PROMPT_SERVICE",
     "TOOLS_SERVICE",
 ]

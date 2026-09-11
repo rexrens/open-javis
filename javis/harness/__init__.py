@@ -20,7 +20,7 @@ Three javis additions over the plain dsh port:
   hook applied after ``derive_messages()`` (the compression middleware slot)
 
 Javis integration shell:
-- ``engine.py`` — ``HarnessEngine`` implements ``javis.contracts.AgentEngine``
+- ``engine.py`` — ``HarnessEngine`` implements ``javis.contracts.Harness``
   (message mirror, usage, session save/restore, permission/request/compression
   middleware wired onto the ``agent/*`` / ``tools/*`` waterfalls); its private
   loop context provides the ``llm`` service as a ``javis.llm.LlmRuntime``

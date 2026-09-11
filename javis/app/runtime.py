@@ -3,7 +3,7 @@
 What remains:
 
 - ``RuntimeBundle`` — engine + commands + app_state + session_backend
-- ``build_runtime`` — assembles a bundle with an ``AgentEngine``
+- ``build_runtime`` — assembles a bundle with a ``Harness``
 - ``handle_line`` — the single dispatch point (slash commands + agent turns)
 
 Plugin wiring lives in ``build_runtime``: a fresh Cordis context provides the
@@ -28,13 +28,13 @@ from typing import Any
 from uuid import uuid4
 
 from javis.commands.registry import CommandContext, CommandRegistry, create_default_command_registry
-from javis.contracts.engine import AgentEngine
+from javis.contracts.harness import Harness
 from javis.contracts.host import HostContext
 from javis.contracts.messages import ConversationMessage, sanitize_conversation_messages
 from javis.contracts.services import (
     COMMANDS_SERVICE,
     CONFIG_SERVICE,
-    ENGINE_SERVICE,
+    HARNESS_SERVICE,
     HOST_SERVICE,
     TOOLS_SERVICE,
 )
@@ -63,7 +63,7 @@ def build_system_prompt(cwd: str | Path | None = None, *, workspace: str | Path 
     del cwd, workspace  # signature kept for parity; stored on the engine
     return (
         "You are javis, an agent running on the javis TUI.\n\n"
-        "You are backed by an ``AgentEngine`` implementation. Your responses "
+        "You are backed by a ``Harness`` implementation. Your responses "
         "stream through the React terminal frontend via the JSON-lines wire "
         "protocol."
     )
@@ -73,7 +73,7 @@ def build_system_prompt(cwd: str | Path | None = None, *, workspace: str | Path 
 class RuntimeBundle:
     """Everything the host needs to drive one interactive session."""
 
-    engine: AgentEngine
+    engine: Harness
     cwd: str
     app_state: AppStateStore
     commands: CommandRegistry
@@ -118,7 +118,7 @@ def _build_default_engine(
     tool_metadata: dict[str, Any],
     workspace: str | Path,
     javis_tools: Any = None,
-) -> AgentEngine:
+) -> Harness:
     """Construct the built-in ``HarnessEngine`` from resolved config.
 
     This is the single seam where the engine is chosen: the runtime no longer
@@ -176,7 +176,7 @@ async def build_runtime(
     workspace: str | Path | None = None,
     plugins: str | Path | None = None,
 ) -> RuntimeBundle:
-    """Assemble a ``RuntimeBundle`` backed by an ``AgentEngine``.
+    """Assemble a ``RuntimeBundle`` backed by a ``Harness``.
 
     Plugin wiring: a fresh Cordis context provides the built-in services
     (``config`` / ``tools`` / ``commands`` / ``host``), mounts the plugin
@@ -245,11 +245,11 @@ async def build_runtime(
         log.exception("Plugin composition %s failed to load", composition)
         raise
 
-    engine_obj = ctx.get(ENGINE_SERVICE)
-    if engine_obj is None or not isinstance(engine_obj, AgentEngine):
+    engine_obj = ctx.get(HARNESS_SERVICE)
+    if engine_obj is None or not isinstance(engine_obj, Harness):
         if engine_obj is not None:
             log.warning(
-                "engine service from plugin is not an AgentEngine (%s); "
+                "engine service from plugin is not an Harness (%s); "
                 "falling back to the built-in engine",
                 type(engine_obj).__name__,
             )
