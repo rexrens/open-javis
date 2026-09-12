@@ -91,7 +91,13 @@ class PermissionConfig(BaseModel):
 class JavisConfig(BaseModel):
     """Top-level validated configuration."""
 
-    model_config = ConfigDict(extra="allow")  # tolerate plugin namespaces
+    # camelCase aliases keep ``config.json`` keys matching the docs
+    # (``pluginsFile``); ``populate_by_name=True`` keeps snake_case working too.
+    model_config = ConfigDict(
+        extra="allow",  # tolerate plugin namespaces
+        alias_generator=_to_camel,
+        populate_by_name=True,
+    )
 
     provider: str | None = None
     model: str | None = None

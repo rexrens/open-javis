@@ -107,6 +107,32 @@ def test_unknown_keys_tolerated(isolated_env):
     assert cfg.model_extra == {"my-plugin": {"x": 1}}
 
 
+def test_top_level_camel_case_keys_accepted(isolated_env):
+    (get_workspace_root() / "config.json").write_text(
+        json.dumps(
+            {
+                "pluginsFile": "custom/cordis.yml",
+                "fallbackProvider": "backup",
+                "fallbackModel": "backup-model",
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_config()
+    assert cfg.plugins_file == "custom/cordis.yml"
+    assert cfg.fallback_provider == "backup"
+    assert cfg.fallback_model == "backup-model"
+    # Documented camelCase keys must not fall through to the plugin namespace.
+    assert not cfg.model_extra
+
+
+def test_top_level_snake_case_keys_still_accepted():
+    cfg = JavisConfig.model_validate({"plugins_file": "x.yml", "model": "m"})
+    assert cfg.plugins_file == "x.yml"
+    assert cfg.model == "m"
+    assert not cfg.model_extra
+
+
 def test_invalid_field_value_rejected(isolated_env):
     (get_workspace_root() / "config.json").write_text(
         json.dumps({"session": {"permission_mode": "bogus"}}), encoding="utf-8"
