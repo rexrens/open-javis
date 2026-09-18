@@ -419,8 +419,21 @@ class Harness(HarnessContract):
         """Map one session event to an AgentEvent (and update the javis mirror
         for durable events). Context user messages are deliberately NOT
         mirrored — the mirror is the javis conversation, not the dsh log."""
+        # 这张表是“日志 → UI”的唯一翻译层，每个事件只有两种归宿：
+        #   ① 产出 AgentEvent（交给宿主渲染：文本增量、工具开始/结果、错误……）
+        #   ② 只维护 javis 会话镜像，返回 None（例：组装好的 assistant/message）
+        # 下面两类事件**故意不在这里处理**，一律走到最后的兜底 return None：
+        #   - 循环内部记账：turn/start、step/start、step/end、request/header、
+        #     request/context、agent/inbox/spliced —— 供重放/审计，没有 UI 语义；
+        #   - user/message（含每步注入的 context 消息）—— 镜像里的用户消息由
+        #     submit_message 自己 append、load_messages 由 _append_to_session 回灌，
+        #     都不从 dsh 日志翻译（docstring 那句“故意不镜像”指的就是这条）。
         kind = event.type
         if kind == SessionEvents.ASSISTANT_CHUNK:
+            # token 级增量：正文与思考各走一条通道，前端分别渲染（正文进主缓冲区、
+            # 思考进独立缓冲区）。其余的 chunk（block-start/end、tool-call-delta、
+            # usage、finish）不产 UI 事件——“工具开始”由后面的 tool/call 事件负责，
+            # 因为 tool-call-delta 是累积快照，同一个调用的参数会分多帧到达。
             chunk = event.data["chunk"]
             if isinstance(chunk, TextDeltaChunk):
                 return AgentTextDelta(text=chunk.text)
@@ -428,16 +441,25 @@ class Harness(HarnessContract):
                 return AgentReasoningDelta(text=chunk.text)
             return None
         if kind == SessionEvents.TOOL_CALL:
+            # 先登记 call_id → 工具名：后面的 tool/result 只带 call_id，
+            # 要还原“是哪个工具”得靠这张映射表（它是本轮的，submit_message 开头清空）。
+            # arguments 在日志里是 JSON 字符串，交给 _parse_args 解析成 dict 给 UI
+            # （空值/解析失败/不是对象都回 {}，不抛）。
             name = event.data["name"]
             call_id = event.data["callId"]
             self._call_names[call_id] = name
             return AgentToolCallStart(tool_name=name, tool_input=_parse_args(event.data["arguments"]))
         if kind == SessionEvents.TOOL_RESULT:
+            # 结果消息的读法：content[0] 是 ToolResultBlock，正文要从块里抽
+            # （ToolResultMessage.text 恒为空——工具结果的文本藏在块内部）。
             message = event.data["message"]
             call_id = getattr(message, "call_id", "")
             block = message.content[0] if message.content else None
             text = _tool_result_text(message)
             is_error = bool(getattr(block, "is_error", False)) if block is not None else False
+            # 镜像规则（Anthropic 风格）：工具结果在 javis 会话里是 **role="user"**
+            # 且 content 为 ToolResultBlock——它属于“喂回模型的那一侧”，
+            # 这样保存/恢复后重新拼请求时角色与顺序才是对的。
             self._messages.append(
                 ConversationMessage(
                     role="user",
@@ -445,11 +467,17 @@ class Harness(HarnessContract):
                 )
             )
             return AgentToolCallResult(
+                # 查表失败用 "?" 兜底：正常不会发生（同一步一定先有 tool/call），
+                # 但 UI 不该因为一条异常日志就崩。
                 tool_name=self._call_names.get(call_id, "?"),
                 output=text,
                 is_error=is_error,
             )
         if kind == SessionEvents.ASSISTANT_MESSAGE:
+            # 组装好的完整助手消息：把 dsh 块翻译成 javis 块（文本 + 工具调用）
+            # 追加进镜像，供会话保存/恢复与后续轮次的上下文使用。
+            # **不产 UI 事件**（返回 None）是刻意的：正文已通过上面的 delta 增量发过，
+            # 再发一次前端会显示两遍；这里落盘的是“完整版”，与 delta 是同一事实的两种粒度。
             dsh_message = event.data["message"]
             content: list[Any] = []
             for block in dsh_message.content:
@@ -461,6 +489,8 @@ class Harness(HarnessContract):
                     )
             self._messages.append(ConversationMessage(role="assistant", content=content))
             return None
+        # 兜底：未列出的类型（turn/step 记账、request/*、inbox splice、user/message
+        # 等）既不产 UI 事件，也不进镜像。
         return None
 
     # ------------------------------------------------------------------
