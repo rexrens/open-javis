@@ -21,6 +21,7 @@ from javis.harness.types import (
     TokenUsage,
     ToolCallBlock,
     ToolCallsFinish,
+    UserMessage,
 )
 from tests.test_harness.support import make_harness
 
@@ -217,3 +218,30 @@ async def test_default_tools_include_core_set():
     engine = make_harness([_resp(content="ok")])
     names = {tool.name for tool in engine._ctx.get("agentTools").all()}
     assert {"read_file", "write_file", "edit_file", "bash", "glob", "grep", "agent"} <= names
+
+
+@pytest.mark.asyncio
+async def test_steer_while_idle_is_read_by_the_opening_step():
+    """A steer submitted while idle starts a turn and is claimed by step 1.
+
+    Upstream: ``claim('next-turn')`` drains all ``next-step`` input first, so
+    an idle steer never burns a model call on a context-only step.
+    """
+    # exactly one response is scripted: a second model call would exhaust the
+    # script and turn the turn into an error, which is the old behaviour.
+    engine = make_harness([_resp(content="understood")])
+
+    engine.agent.steer(UserMessage.from_text("steering text"))
+    await engine.agent.when_idle()
+
+    session = engine._session
+    step_starts = session.events_of("step/start")
+    step_ends = session.events_of("step/end")
+    assert [(e.data["turn"], e.data["step"]) for e in step_starts] == [(1, 1)]
+
+    steer_seq = next(
+        event.seq for event in session.events_of("user/message") if event.data["message"].text == "steering text"
+    )
+    assert steer_seq < step_ends[0].seq, "steering must enter the opening step"
+    assert len(session.events_of("assistant/message")) == 1
+
