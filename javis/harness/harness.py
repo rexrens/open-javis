@@ -207,6 +207,11 @@ class Harness(HarnessContract):
     def _on_append(self, _seq: int, _type: str, _data: dict[str, Any]) -> None:
         """Session append observer → wake the turn bridge (thread-safe enough:
         appends and bridge runs on the same event loop)."""
+        # 这个回调由 Session.append 在**每次写入后**同步调用（session.py）。
+        # 它不是“交数据”，只是按门铃：事件本体已经在日志里，桥醒来后自己按游标去取。
+        # 所以三个参数都不用（名字前缀下划线就是这个意思）。
+        # 为什么不是 asyncio.Queue：队列会引入“谁消费/漏消费”的状态；
+        # Event + 游标扫描是幂等的——多叫醒几次无害，醒来先扫快照也不会丢事件。
         if self._append_event is not None:
             self._append_event.set()
 
@@ -290,55 +295,95 @@ class Harness(HarnessContract):
     async def submit_message(self, prompt: str | ConversationMessage) -> AsyncIterator[AgentEvent]:
         """Run one user turn through the dsh loop, bridging the session event
         log to the ``AgentEvent`` stream (ends with ``AgentTurnEnd``)."""
+        # 契约入口（javis/contracts/harness.py）：异步生成器，调用方用
+        # ``async for event in engine.submit_message(prompt)`` 边收边渲染。
+        # 本方法**不自己跑循环**：它只做两件事——把消息投进 dsh inbox（followup），
+        # 然后盯住 session 日志，把新事件翻译成 AgentEvent 逐个 yield 出去。
+        # 事件约定：每个 yield 都是“日志里已经落盘的事实”的派生，正常以
+        # AgentTurnEnd 收尾，失败时以 AgentError 收尾并 return。
         user_message = (
             prompt
             if isinstance(prompt, ConversationMessage)
             else ConversationMessage.from_user_text(prompt)
         )
+        # javis 会话镜像先落地：UI 展示与会话保存/恢复都读它；
+        # 而且即便后面的 dsh 循环立刻抛错，用户说过的话也不会丢。
         self._messages.append(user_message)
+        # call_id → 工具名 的映射是本轮的：工具结果事件只带 call_id，
+        # 要还原工具名全靠这张表，所以每次提交先清空（跨轮不残留）。
         self._call_names.clear()
+        # 缓存事件循环：子 agent（run_sub_agent）会从工具的工作线程用
+        # run_coroutine_threadsafe 回到这个 loop 上跑。
         if self._loop is None:
             self._loop = asyncio.get_running_loop()
+        # 懒创建唤醒信号（必须在一个正在跑的 loop 里创建），之后反复复用。
         if self._append_event is None:
             self._append_event = asyncio.Event()
 
+        # 本轮的“起跑线”：只翻译这之后新增的事件，不会把历史事件当新鲜事重发。
+        # 注意 cursor 是**下标**而 start_seq 是**seq**，这里能直接相等，是因为
+        # Session.append 让 seq 从 1 开始且逐条 +1 —— seq 为 N+1 的事件恰好落在下标 N。
+        # 若将来支持“带种子事件恢复会话”（seq 不连续），这行就必须改成按 seq 定位。
         start_seq = self._session.events[-1].seq if self._session.events else 0
+        # 真正让 agent 动起来的一步：消息进 next-turn 队列并唤醒 driver。
+        # 它立即返回（不 await 循环本体），后续进展只能通过日志观察。
         self._agent.followup(_to_dsh_user(user_message))
 
         cursor = start_seq
         snapshot = self._session.events
         turn_ends: Any = None
         while True:
+            # ① 扫完当前快照里所有新事件：逐条映射并 yield。
+            #    turn/end 只记录、不提前 break，保证它之前的事件都已发出。
             while cursor < len(snapshot):
                 event = snapshot[cursor]
                 cursor += 1
                 if event.type == SessionEvents.TURN_END:
                     turn_ends = event
+                # 纯映射：不产生 UI 事件的事件（如组装好的 assistant/message）返回 None，
+                # 它只更新 javis 镜像，所以 UI 的文本来自 delta 累加 + turn end 校正。
                 mapped = self._map_event(event)
                 if mapped is not None:
                     yield mapped
+            # ② 本轮已结束 → 跳出，去跑下面的汇总逻辑。
             if turn_ends is not None:
                 break
+            # ③ 还没结束 → 等新事件。这三行的顺序是防丢事件的关键：
+            #    必须先 clear 再取快照。若反过来（先取快照后 clear），
+            #    则“取快照→clear”之间新增的事件会先把 Event 置位、随即被 clear 抹掉，
+            #    随后 wait() 就再也等不到人叫醒 → 转发直接挂死。
             self._append_event.clear()
             snapshot = self._session.events
+            # clear 之后重取快照，若已有新事件就直接继续扫（省一次无谓等待）。
             if cursor < len(snapshot):
                 continue
+            # 真正空转等待；被 append 叫醒后重取快照再扫。
             await self._append_event.wait()
             snapshot = self._session.events
 
+        # turn/end 是在 _turn 的 finally 里写的，此时 driver 可能还没回到 idle
+        # （后面还有 latch / 补起 driver 的收尾），所以要等整场活动真正静下来，
+        # 否则紧接着的读取会与写日志的协程竞争。
         await self._agent.when_idle()
+        # 失败收尾：不产 AgentTurnEnd，只发一个可恢复的 AgentError 就 return。
+        # recoverable=True 的含义：agent 已回 idle，可以直接提交下一条消息。
         reason = turn_ends.data["reason"]
         if reason.kind == "error":
             yield AgentError(message=reason.failure.message, recoverable=True)
             return
 
+        # 汇总只统计**本轮**：日志里还堆着历史轮次，所以先取 turn 号当过滤条件。
         turn_no = turn_ends.data["turn"]
+        # 本轮可能有多条 assistant/message（一个 turn 可以跑多个 step），
+        # 最后一条非空文本才是给用户的答复（前面的可能是“我去读个文件”）。
         texts = [
             e.data["message"].text
             for e in self._session.events_of(SessionEvents.ASSISTANT_MESSAGE)
             if e.data.get("turn") == turn_no and e.data["message"].text
         ]
         final_text = texts[-1] if texts else ""
+        # 本轮用量 = 该 turn 内**每一步**的 usage 之和（一次 turn 可能多次调模型）；
+        # 只统计带 usage 的消息（适配器可以不报）。
         in_tok = sum(
             e.data["usage"].input_tokens
             for e in self._session.events_of(SessionEvents.ASSISTANT_MESSAGE)
@@ -350,16 +395,20 @@ class Harness(HarnessContract):
             if e.data.get("turn") == turn_no and e.data.get("usage") is not None
         )
         turn_usage = UsageSnapshot(input_tokens=in_tok, output_tokens=out_tok)
+        # 累计用量（状态条显示用）。
         self._usage = UsageSnapshot(
             input_tokens=self._usage.input_tokens + in_tok,
             output_tokens=self._usage.output_tokens + out_tok,
         )
 
+        # 撞上 max-steps 时循环会 emit agent/limit，由 _on_agent_limit 记在 _last_limit。
+        # 这里一次性消费：只在本轮真的撞到限制时提示一次，随后清掉，避免下一轮重复提示。
         if self._last_limit is not None and self._last_limit.get("turn") == turn_no:
             yield AgentStatus(
                 message=f"reached max steps ({self._last_limit['limit']}) per turn"
             )
             self._last_limit = None
+        # 契约上的结束标记：前端据此收尾（assistant_complete）。
         yield AgentTurnEnd(text=final_text, usage=turn_usage)
 
     # ------------------------------------------------------------------
