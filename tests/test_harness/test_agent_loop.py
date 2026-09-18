@@ -16,8 +16,13 @@ from javis.contracts.messages import ToolResultBlock
 from javis.harness.harness import Harness
 from javis.harness.stream import chunk_response
 from javis.harness.types import (
+    AbortedFinish,
+    BlockStartChunk,
+    FinishChunk,
+    LlmFailure,
     MaxTokensFinish,
     StopFinish,
+    TextDeltaChunk,
     TokenUsage,
     ToolCallBlock,
     ToolCallsFinish,
@@ -245,3 +250,35 @@ async def test_steer_while_idle_is_read_by_the_opening_step():
     assert steer_seq < step_ends[0].seq, "steering must enter the opening step"
     assert len(session.events_of("assistant/message")) == 1
 
+
+@pytest.mark.asyncio
+async def test_adapter_reported_abort_without_a_cancel_carries_its_failure():
+    """An adapter may end a stream with ``aborted`` while our signal is untouched.
+
+    ``javis/llm/runtime._failure_finish`` does exactly that when a failure carries
+    ``code == "ABORTED"``, so the loop must not assume a cancel cause exists: the
+    adapter's own facts have to survive as the turn failure.
+    """
+    from javis.contracts.types import AgentError
+
+    interrupted_stream = [
+        BlockStartChunk(index=0, block_type="text"),
+        TextDeltaChunk(index=0, text="partial answer"),
+        FinishChunk(
+            reason=AbortedFinish(
+                failure=LlmFailure(message="upstream closed the stream", code="ABORTED")
+            )
+        ),
+    ]
+    engine = make_harness([interrupted_stream])
+
+    events = await _run(engine, "hi")
+
+    errors = [event for event in events if isinstance(event, AgentError)]
+    assert errors, "the turn must end as an error"
+    assert "upstream closed the stream" in errors[0].message
+    # the partially assembled text is still durable (it was streamed to the user)
+    assert any(
+        event.data.get("interrupted") and event.data["message"].text == "partial answer"
+        for event in engine._session.events_of("assistant/message")
+    )
