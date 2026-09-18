@@ -194,9 +194,9 @@ async def build_runtime(
     await settle(ctx)
     assert_entries_settled(ctx)
 
-    engine_obj = ctx.get(HARNESS_SERVICE)
-    if not isinstance(engine_obj, Harness):
-        got = "no service" if engine_obj is None else type(engine_obj).__name__
+    harness = ctx.get(HARNESS_SERVICE)
+    if not isinstance(harness, Harness):
+        got = "no service" if harness is None else type(harness).__name__
         raise RuntimeError(  # noqa: TRY004 — boot wiring error, not a bad argument type
             f"composition {composition} provides no 'harness' service ({got}). "
             "Add a row 'name: javis.harness.plugins.harness' with "
@@ -205,17 +205,17 @@ async def build_runtime(
         )
     # Explicit CLI overrides win over the row's resolved defaults.
     if model is not None:
-        engine_obj.set_model(model)
+        harness.set_model(model)
     if system_prompt is not None:
-        engine_obj.set_system_prompt(system_prompt)
+        harness.set_system_prompt(system_prompt)
 
-    model_name = model or engine_obj.model or "unknown"
+    model_name = model or harness.model or "unknown"
 
     if restore_messages:
         restored = sanitize_conversation_messages(
             [ConversationMessage.model_validate(m) for m in restore_messages]
         )
-        engine_obj.load_messages(restored)
+        harness.load_messages(restored)
 
     app_state = AppStateStore(
         AppState(
@@ -232,7 +232,7 @@ async def build_runtime(
     )
 
     return RuntimeBundle(
-        engine=engine_obj,
+        engine=harness,
         cwd=cwd_resolved,
         app_state=app_state,
         commands=commands if cfg is not None else create_default_command_registry(),
@@ -320,6 +320,8 @@ async def handle_line(
                 elif msg.role == "assistant" and msg.text.strip():
                     async for event in _replay_assistant(msg):
                         await render_event(event)
+
+        # 提交用户消息，通过异步生成器来逐帧获取响应事件，engine内部调用agentloop，并yield方式输出
         if result.submit_prompt:
             async for event in bundle.engine.submit_message(result.submit_prompt):
                 await render_event(event)
