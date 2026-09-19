@@ -6,16 +6,15 @@
 > 代码是 [cordis-harness](https://github.com/) 项目的 harness 层副本；引擎**不额外携带**，
 > 直接复用本仓库的 `javis.cordis`（两者实现逐字节相同）。
 
-## 在三个示例里的位置
+## 在两个示例里的位置
 
 | 示例 | 职责 | harness 从哪来 |
 |---|---|---|
-| [`examples/cordis`](../cordis/README.md) | 插件系统接口教程（Context / Loader / inject / 事件模式） | 无 harness 概念 |
+| [`examples/cordis_demo`](../cordis_demo/README.md) | 插件系统接口教程（Context / Loader / inject / 事件模式） | 无 harness 概念 |
 | **`examples/cordis_harness`** | **最小可用 harness**：模型适配器 / 工具 / 会话 / agent 循环 / REPL / 组合分层 | `harness/`（本目录，引擎用 `javis.cordis`） |
-| [`examples/dsh_harness`](../dsh_harness/README.md) | 生产核心的插件装配 | `javis.harness`（生产 core） |
 
-阅读顺序：先 `examples/cordis` 学插件接口 → 再看这里的 harness 怎么被装配起来 →
-最后看 `examples/dsh_harness` 的生产 core 姿势。
+阅读顺序：先 `examples/cordis_demo` 学插件接口 → 再看这里的 harness 怎么被装配起来。
+生产核心（`javis.harness`）的插件装配在包内 `javis/harness/plugins/`，不再是独立示例。
 
 ## 与 mini_dsh 的差异（这次替换改变了什么）
 

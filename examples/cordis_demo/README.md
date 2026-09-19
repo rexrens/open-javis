@@ -1,19 +1,18 @@
 # Cordis 插件系统教程
 
-`examples/cordis/` 是一个**只讲插件系统本身**的教程：每一章是一个独立目录
+`examples/cordis_demo/` 是一个**只讲插件系统本身**的教程：每一章是一个独立目录
 （一个 `cordis.yml` 组合 + 插件源码），演示 Cordis 对外提供的一组接口。
-它不涉及任何 harness/agent 概念——那是 [`examples/dsh_harness`](../dsh_harness/README.md)
-（在 Cordis 方案下一个 harness 怎么做）和
+它不涉及任何 harness/agent 概念——那是
 [`examples/cordis_harness`](../cordis_harness/README.md)（cordis-only 的最小可用 harness：适配器 / 工具 / 会话 / agent 循环 / 组合分层）
-的职责。三个目录互补：**先在这里学会插件接口，再去看 harness 怎么用它**。
+的职责。两个目录互补：**先在这里学会插件接口，再去看 harness 怎么用它**。
 
 ## 运行
 
 从仓库根目录（`javis` 已装好）：
 
 ```bash
-uv run python examples/cordis/runner.py <章节名>       # 运行一章
-uv run python examples/cordis/runner.py hmr --wait     # hmr 章节需 --wait（观察热重载）
+uv run python examples/cordis_demo/runner.py <章节名>       # 运行一章
+uv run python examples/cordis_demo/runner.py hmr --wait     # hmr 章节需 --wait（观察热重载）
 ```
 
 `runner.py` 是通用引导脚本（约 30 行）：建根 `Context` → 挂

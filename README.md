@@ -27,7 +27,7 @@ Two layers:
 - **Context management** — automatic compression when tool outputs push the conversation past the token budget.
 - **Robust LLM layer** — exponential-backoff retries (rate limit / timeout / 5xx), `stream_options` fallback for providers that reject it, usage tracking and per-model cost estimates.
 - **Session persistence** — atomic JSON snapshots per session under `~/.javis/sessions/`, with `/resume` support from the TUI.
-- **Deterministic offline testing** — `ScriptedAdapter` (and the standalone `examples/dsh_harness` mock reference) let you exercise the harness without network.
+- **Deterministic offline testing** — `ScriptedAdapter` lets you exercise the harness without network.
 
 ## Architecture
 
@@ -207,7 +207,6 @@ uv run mypy javis/
 
 ```
 javis/harness/       Harness: dsh-style AgentLoop + javis integration
-                     (examples/dsh_harness: a standalone demo on the same loop)
   plugins/           composition rows that assemble the harness
   stream.py          loop-side stream assembly
   harness.py         Harness shell (implements the contract)

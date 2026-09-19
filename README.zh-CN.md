@@ -27,7 +27,7 @@
 - **上下文管理** — 当工具输出使对话超过 token 预算时自动压缩。
 - **健壮的 LLM 层** — 指数退避重试（限流 / 超时 / 5xx）、对不支持 `stream_options` 的供应商自动回退、用量统计和按模型的成本估算。
 - **会话持久化** — 每个会话以原子方式写入 JSON 快照，存放在 `~/.javis/sessions/` 下，TUI 中支持 `/resume` 恢复。
-- **确定性离线测试** — `ScriptedAdapter`（以及独立的 `examples/dsh_harness` 参考 demo）让你无需联网即可跑通 Harness。
+- **确定性离线测试** — `ScriptedAdapter` 让你无需联网即可跑通 Harness。
 
 ## 架构
 
@@ -205,7 +205,6 @@ uv run mypy javis/
 
 ```
 javis/harness/       Harness：dsh 风格 AgentLoop + javis 集成
-                     （examples/dsh_harness 是基于同一套循环核心的独立 demo）
   plugins/           装配 Harness 的组合行
   stream.py          循环侧流装配
   harness.py         Harness 外壳（实现契约）

@@ -1,5 +1,5 @@
 # Chapter 10 — hot module replacement
-# Run with:  uv run python examples/cordis/runner.py hmr --wait
+# Run with:  uv run python examples/cordis_demo/runner.py hmr --wait
 # Then edit hot.py and save — the entry reloads in place.
 - name: './hot.py'
 - name: './hmr.py'

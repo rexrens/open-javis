@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Universal runner for the ``examples/cordis`` tutorial chapters.
+"""Universal runner for the ``examples/cordis_demo`` tutorial chapters.
 
 Every chapter is a directory with a ``cordis.yml`` composition. This script
 boots a root :class:`~javis.cordis.Context`, mounts the chapter's composition
@@ -13,13 +13,12 @@ settle, then:
 
 Usage (from the repo root)::
 
-    uv run python examples/cordis/runner.py hello        # chapter 1
-    uv run python examples/cordis/runner.py events       # chapter 6
-    uv run python examples/cordis/runner.py hmr --wait   # keep alive for hot reload
+    uv run python examples/cordis_demo/runner.py hello        # chapter 1
+    uv run python examples/cordis_demo/runner.py events       # chapter 6
+    uv run python examples/cordis_demo/runner.py hmr --wait   # keep alive for hot reload
 
-This is the same boot sequence the ``examples/dsh_harness/cli.py`` demo uses
-(inlined there so the demo is self-contained); keeping it here gives every
-tutorial chapter the identical, minimal composition bootstrap.
+Keeping this here gives every tutorial chapter the identical, minimal
+composition bootstrap.
 """
 
 from __future__ import annotations
@@ -121,7 +120,7 @@ async def run(chapter: str, wait: bool) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="cordis-runner",
-        description="Run one examples/cordis tutorial chapter composition",
+        description="Run one examples/cordis_demo tutorial chapter composition",
     )
     parser.add_argument("chapter", type=str, help="chapter directory name (e.g. hello, events)")
     parser.add_argument(

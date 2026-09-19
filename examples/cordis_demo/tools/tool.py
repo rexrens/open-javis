@@ -1,6 +1,6 @@
 """Tutorial chapter 11: a DSH-style tool call as three waterfalls.
 
-Mirrors how dsh_harness routes tool calls: one call flows through three
+Mirrors how the harness routes tool calls: one call flows through three
 ``ctx.waterfall`` chains, each answering one question —
 
 - ``tools/pre-execute`` — *can this tool run?* listeners implement
