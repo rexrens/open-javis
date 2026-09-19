@@ -1,0 +1,23 @@
+# A developer's own layer, living in their project.
+#
+# Rows with a new `id` are appended to the composition; rows whose `id`
+# already exists update it. Relative plugin paths resolve against THIS file.
+
+# 1. A plugin that adds a tool: ./plugins/clock.py
+- id: clock
+  name: ./plugins/clock.py
+  config:
+    format: "%H:%M:%S"
+
+# 2. A plugin that adds a model route, so this project runs without a key.
+- id: echo-provider
+  name: ./plugins/echo_adapter.py
+  config:
+    prefix: "[dev]"
+
+# 3. Patch an existing row: point the agent at that route.
+- id: agent
+  config:
+    provider: echo
+    model: echo-1
+    maxSteps: 4

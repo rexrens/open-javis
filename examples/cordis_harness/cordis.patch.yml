@@ -1,0 +1,20 @@
+# 示例自带的一层 patch：把模型换成本地 echo 路由，并加一个自定义工具。
+#
+# 相对路径按「写这一行的文件」解析，所以本文件可以整体拷到任何项目里。
+# 想用真实模型：`cdh --no-patches`（或删掉 echo-provider/agent 两行）。
+
+- id: echo-provider
+  name: ./plugins/echo_adapter.py
+  config:
+    prefix: "[echo]"
+
+- id: clock
+  name: ./plugins/clock.py
+  config:
+    format: "%H:%M:%S"
+
+- id: agent
+  config:
+    provider: echo
+    model: echo-1
+    maxSteps: 4
