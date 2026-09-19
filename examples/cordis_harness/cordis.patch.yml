@@ -1,7 +1,8 @@
 # 示例自带的一层 patch：把模型换成本地 echo 路由，并加一个自定义工具。
 #
 # 相对路径按「写这一行的文件」解析，所以本文件可以整体拷到任何项目里。
-# 想用真实模型：`cdh --no-patches`（或删掉 echo-provider/agent 两行）。
+# 想用真实模型：`cdh --provider openai --model deepseek-v4-flash`（只切会话路由，
+# clock 工具留着），或 `cdh --no-patches` 整层不生效（连 clock 一起没有）。
 
 - id: echo-provider
   name: ./plugins/echo_adapter.py

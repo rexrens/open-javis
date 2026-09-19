@@ -25,7 +25,7 @@ mini_dsh 是「主流程教学复刻」，本示例是「最小可用产品」�
 |---|---|---|
 | core 来源 | 自包含复刻（`core/` 8 模块，与 `javis/harness` 同结构） | `harness/`（可独立运行的最小实现） |
 | 教学覆盖 | skills / compaction / instructions / middleware / exclusive-parallel 调度 / 7 个脚本化场景 | 适配器注册 / 工具与审批 / 会话 JSONL + resume / 自驱 agent 循环 / 组合分层 |
-| 真实模型 | `--prompt`（OpenAI 兼容） | 内置 OpenAI 兼容适配器（SSE + 错误码），`--no-patches` 即走真实模型 |
+| 真实模型 | `--prompt`（OpenAI 兼容） | 内置 OpenAI 兼容适配器（SSE + 错误码）；`--provider/--model` 切会话路由，`--no-patches` 则是整层回到 base |
 | 运行形态 | `cli.py` 跑 7 个 demo 场景 | 交互 REPL + 斜杠命令；也可 `--dump-config` 看组合 |
 | 会话 | 内存事件日志 | JSONL 落盘（`~/.javis/cordis-harness/sessions/`）+ `--resume` |
 | 扩展现有插件 | 组合文件 + 插件模块 | 组合文件 + **分层 patch**（`cordis.patch.yml`，不改 base 即可加插件） |
@@ -52,28 +52,44 @@ examples/cordis_harness/
 
 ## 跑起来
 
+启动目录就是组合目录：base 找的是当前目录的 `./cordis.yml`，patch 找的是当前目录的
+`./cordis.patch.yml`。所以先 `cd` 进来，命令里只写 `cli.py`。
+
 ```sh
+cd examples/cordis_harness
+
 # 1. 离线交互（示例自带的 patch 把模型换成本地 echo 适配器）
-uv run python examples/cordis_harness/cli.py
+uv run python cli.py
 » 你好
 [echo] 收到 2 条消息；你最后说：你好
 /tools            # 能看到 clock 工具
 /exit
 
 # 2. 看组合是怎么合并出来的（base + home patch + project patch + --patch）
-uv run python examples/cordis_harness/cli.py --dump-config
+uv run python cli.py --dump-config
 
-# 3. 用真实模型（忽略环境层 patch，走 cordis.yml 的 llm-openai 行）
+# 3. 用真实模型：--provider/--model 只切会话路由，示例层照旧生效
 export OPENAI_API_KEY=sk-...
-uv run python examples/cordis_harness/cli.py --no-patches
-» 现在几点了？   # 会调用 clock 工具
+uv run python cli.py --provider openai --model deepseek-v4-flash
+» 现在几点了？   # 走 base 的 llm-openai 行，clock 工具也还在
 
-# 4. 跑示例自带的测试（107 个，全部离线）
-uv run pytest tests/test_cordis_harness -q
+# 3b. 整层忽略示例 patch：直接落到 base 的 llm-openai，并失去 clock 与 echo
+uv run python cli.py --no-patches
 
-# 5. 换一个 harness home（patch / 生成组合 / 会话都跟着走）
-uv run python examples/cordis_harness/cli.py --home /tmp/cdh-home --session-dir /tmp/cdh-sessions
+# 4. 换一个 harness home（patch / 生成组合 / 会话都跟着走）
+uv run python cli.py --home /tmp/cdh-home --session-dir /tmp/cdh-sessions
 ```
+
+示例自带的测试在**仓库根目录**跑（107 个，全部离线）——它们起的是独立子进程，
+在当前目录有 patch 时会把它当成环境层叠进去：
+
+```sh
+uv run pytest tests/test_cordis_harness -q
+```
+
+直接从仓库根目录 `uv run python examples/cordis_harness/cli.py` 也能起来，但那里没有
+`cordis.yml` / `cordis.patch.yml`，会落到包内默认组合：`openai/deepseek-v4-flash`、
+3 个工具、没有 clock，没有 key 时会直接报 `MISSING_CREDENTIAL`。
 
 ## 加自己的插件
 
