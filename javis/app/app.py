@@ -1,17 +1,19 @@
 """Application entry points: mode dispatch for javis.
 
-Forked from openharness.ui.app and trimmed: javis exposes exactly two
-user-facing modes — ``run_print_mode`` (single prompt, print to stdout) and
+Forked from openharness.ui.app and trimmed: javis exposes exactly three
+user-facing modes — ``run_print_mode`` (single prompt, print to stdout),
 ``run_tui_mode`` (React terminal frontend, which spawns the JSON-lines backend
-itself via ``OPENHARNESS_FRONTEND_CONFIG.backend_command``). The backend host
-is an implementation detail of TUI mode: ``backend_only=True`` runs it
+itself via ``OPENHARNESS_FRONTEND_CONFIG.backend_command``) and ``run_web_mode``
+(the dsh browser UI served by a javis host). Each backend host is an
+implementation detail of its frontend mode: ``backend_only=True`` runs it
 directly, mirroring openharness' ``run_repl(backend_only=...)``.
 
 Layer layout (entry → implementation):
     javis.cli           typer parsing only
     javis.app.app      this file — entry functions
     javis.app.runtime  build_runtime / handle_line
-    javis.app.backend_host / react_launcher  implementations
+    javis.app.backend_host / react_launcher / web_launcher  implementations
+    javis.app.web.*    the FastAPI host behind run_web_mode
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from pathlib import Path
 from javis.app.backend_host import run_backend_mode
 from javis.app.react_launcher import launch_react_tui
 from javis.app.runtime import RuntimeBundle, build_runtime, handle_line
+from javis.app.web_launcher import launch_web, run_web_backend
 from javis.contracts.messages import ConversationMessage
 from javis.contracts.types import (
     AgentError,
@@ -127,4 +130,48 @@ async def run_print_mode(
         os.chdir(previous_cwd)
 
 
-__all__ = ["run_print_mode", "run_tui_mode"]
+async def run_web_mode(
+    *,
+    cwd: str | None = None,
+    workspace: str | Path | None = None,
+    model: str | None = None,
+    max_turns: int | None = None,
+    plugins: str | Path | None = None,
+    port: int | None = None,
+    open_browser: bool = True,
+    in_process: bool = False,
+    rebuild_assets: bool = False,
+    dsh_root: str | Path | None = None,
+    backend_only: bool = False,
+) -> int:
+    """Run the dsh web UI backed by the javis harness.
+
+    ``backend_only=True`` is the mode the launcher spawns via
+    ``python -m javis web --backend-only``: it runs the host directly and
+    prints this process's authenticated URL. It is not a fourth user-facing
+    mode.
+    """
+    if backend_only:
+        return await run_web_backend(
+            cwd=cwd,
+            workspace=workspace,
+            model=model,
+            max_turns=max_turns,
+            plugins=plugins,
+            port=port,
+        )
+    return await launch_web(
+        cwd=cwd,
+        workspace=workspace,
+        model=model,
+        max_turns=max_turns,
+        plugins=plugins,
+        port=port,
+        open_browser=open_browser,
+        in_process=in_process,
+        rebuild_assets=rebuild_assets,
+        dsh_root=dsh_root,
+    )
+
+
+__all__ = ["run_print_mode", "run_tui_mode", "run_web_mode"]

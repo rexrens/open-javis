@@ -1,0 +1,61 @@
+{
+  "comment": "Which dsh browser rows the javis v1 composition keeps. Rows listed in excludeRows are disabled through a javis overlay patch applied after the dsh-base and dsh-web-app layers; any package a kept row still injects is added back automatically and reported in manifest.json.",
+  "excludeRows": [
+    "ui-sidebar-browser",
+    "ui-sidebar-documentpreview",
+    "ui-sidebar-terminal",
+    "ui-sidebar-files",
+    "ui-sidebar-right",
+    "ui-settings",
+    "ui-settings-general",
+    "ui-settings-models",
+    "ui-settings-plugins",
+    "ui-settings-plugin-inventory",
+    "ui-settings-unarchive-sessions",
+    "ui-plugin-manager",
+    "ui-schedule",
+    "ui-jobs",
+    "ui-goal",
+    "ui-plan",
+    "ui-message-feedback",
+    "ui-agent-preset",
+    "ui-skill",
+    "ui-subagent",
+    "ui-reference",
+    "ui-workflow-run",
+    "ui-deliverables",
+    "ui-cordis",
+    "ui-attachment",
+    "ui-open-in-app",
+    "directory-picker",
+    "cordis-client-runner",
+    "client-hmr",
+    "session-log-export",
+    "office-to-pdf",
+    "plugin-inventory",
+    "workspace-changes"
+  ],
+  "insertRows": [
+    {
+      "id": "ui-directory-picker-browse",
+      "name": "@deepseek-ai/dsh-client-ui-directory-picker-browse",
+      "comment": "Browsable host-directory picker for choosing a session workspace in the browser."
+    }
+  ],
+  "v1Endpoints": [
+    "session/list",
+    "session/create",
+    "session/prompt",
+    "session/cancel",
+    "session/page",
+    "session/follow",
+    "session/control",
+    "workspace/follow",
+    "settings/describe",
+    "settings/mutate",
+    "permissionPresets/catalog",
+    "fileUploads/upload",
+    "$events",
+    "$events/result"
+  ]
+}

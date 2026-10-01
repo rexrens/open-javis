@@ -1,9 +1,10 @@
 """CLI entry point for javis.
 
-Three modes:
+Modes:
     - default:           launch the React terminal frontend
     - ``--backend-only``: run the JSON-lines backend host on stdin/stdout
     - ``--print``/``-p``: run a single prompt and print to stdout
+    - ``javis web``:     serve the dsh browser UI backed by the javis harness
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from pathlib import Path
 
 import typer
 
-from javis.app.app import run_print_mode, run_tui_mode
+from javis.app.app import run_print_mode, run_tui_mode, run_web_mode
 from javis.session.workspace import initialize_workspace
 
 app = typer.Typer(
@@ -108,6 +109,8 @@ def doctor(
 ) -> None:
     """Check the javis workspace and frontend layout."""
     from javis.app.react_launcher import _get_frontend_dir
+    from javis.app.web.assets import REQUIRED_DSH_VERSION, MissingAssetsError, load_assets
+    from javis.app.web_launcher import _get_web_frontend_dir
     from javis.session.workspace import workspace_health
 
     workspace_root = initialize_workspace(workspace)
@@ -116,7 +119,60 @@ def doctor(
         print(f"  {key}: {'ok' if ok else 'missing'}")
 
     print(f"frontend dir:   {_get_frontend_dir()}")
+    web_frontend = _get_web_frontend_dir()
+    print(f"web frontend:   {web_frontend}")
+    try:
+        assets = load_assets(web_frontend)
+    except MissingAssetsError:
+        print("web assets:     missing (run `javis web --rebuild-assets --dsh-root <checkout>`)")
+    else:
+        status = "ok" if assets.dsh_version == REQUIRED_DSH_VERSION else "version mismatch"
+        print(
+            f"web assets:     {status} (dsh {assets.dsh_version}, commit {assets.dsh_commit}, "
+            f"{len(assets.graph.get('entries', []))} plugins)"
+        )
     print(f"cwd:            {Path(cwd).resolve()}")
+
+
+@app.command("web")
+def web_cmd(
+    port: int | None = typer.Option(None, "--port", help="Listen port (defaults to a free one)"),
+    no_open: bool = typer.Option(False, "--no-open", help="Do not open the default browser"),
+    in_process: bool = typer.Option(
+        False, "--in-process", help="Run the host in this process instead of a child"
+    ),
+    rebuild_assets: bool = typer.Option(
+        False, "--rebuild-assets", help="Re-run the frontend assembly before serving"
+    ),
+    dsh_root: str | None = typer.Option(
+        None, "--dsh-root", help="deepseek-harness checkout used by --rebuild-assets"
+    ),
+    model: str | None = typer.Option(None, "--model", help="Model override for this session"),
+    workspace: str | None = typer.Option(None, "--workspace", help="Path to the javis workspace"),
+    max_turns: int | None = typer.Option(None, "--max-turns", help="Override max turns"),
+    plugins: str | None = typer.Option(None, "--plugins", help="Plugin composition file"),
+    cwd: str = typer.Option(str(Path.cwd()), "--cwd", help="Working directory"),
+    backend_only: bool = typer.Option(False, "--backend-only", hidden=True),
+) -> None:
+    """Serve the dsh web UI backed by the javis harness."""
+    workspace_root = initialize_workspace(workspace)
+    raise SystemExit(
+        asyncio.run(
+            run_web_mode(
+                cwd=str(Path(cwd).resolve()),
+                workspace=workspace_root,
+                model=model,
+                max_turns=max_turns,
+                plugins=plugins,
+                port=port,
+                open_browser=not no_open,
+                in_process=in_process,
+                rebuild_assets=rebuild_assets,
+                dsh_root=dsh_root,
+                backend_only=backend_only,
+            )
+        )
+    )
 
 
 @app.command("version")

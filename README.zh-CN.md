@@ -168,11 +168,35 @@ def apply(ctx):
 
 ```bash
 uv run javis                    # React/Ink TUI（默认）
+uv run javis web                # 由 Python 宿主托管的 dsh 浏览器界面
 uv run javis -p "提示词"         # 单次提问，打印结果后退出
 uv run javis --backend-only     # JSON-lines 后端主机（供自定义前端使用）
 uv run javis -v                 # 调试日志输出到 stderr
 uv run javis doctor             # 检查工作区与前端布局
 ```
+
+### Web 界面（`javis web`）
+
+`javis web` 在 loopback 上托管 DeepSeek Harness 的浏览器界面，agent 侧仍由
+javis 的 Python harness 承担：FastAPI 负责发送 dsh 前端、注入启动清单、应答
+浏览器真正调用的 Remote 接口（`POST /api/<ns>/<method>` 与 `/api/remote.mux`
+流套接字），并把 harness 事件翻译成 dsh 的 Session 事件。
+
+浏览器资源来自 dsh 的构建产物，因此只做一次性组装，不提交进仓库：
+
+```bash
+# 在 deepseek-harness 检出目录中
+pnpm install && pnpm run build
+
+# 在本仓库中
+cd frontend/web && npm run prepare -- --dsh-root /path/to/deepseek-harness
+uv run javis web                 # 或：javis web --rebuild-assets --dsh-root ...
+```
+
+`javis doctor` 会报告组装产物是否存在以及它来自哪个 dsh 版本。
+`docs/dsh-web-interface-inventory.md` 是生成的 dsh Web 接口清单（用
+`scripts/inventory_dsh_web.py --check` 做漂移校验）。v1 只打通对话闭环：
+会话、流式回复、工具行与中断；其余面板在实现前返回结构化的「未实现」失败。
 
 ### 斜杠命令
 

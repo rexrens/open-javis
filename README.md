@@ -170,11 +170,39 @@ See [docs/plugins.md](docs/plugins.md) for the full contract reference.
 
 ```bash
 uv run javis                    # React/Ink TUI (default)
+uv run javis web                # dsh browser UI served by the Python host
 uv run javis -p "prompt"        # single prompt, print result, exit
 uv run javis --backend-only     # JSON-lines backend host (for custom frontends)
 uv run javis -v                 # debug logging to stderr
 uv run javis doctor             # check workspace & frontend layout
 ```
+
+### Web UI (`javis web`)
+
+`javis web` serves the DeepSeek Harness browser UI on loopback while the javis
+Python harness owns the agent: FastAPI sends the dsh shell, injects the boot
+manifest, answers the Remote surface the client calls (`POST /api/<ns>/<method>`
+plus the `/api/remote.mux` stream socket), and translates harness events into
+dsh Session events.
+
+The browser assets are dsh build output, so they are assembled once rather than
+committed:
+
+```bash
+# in the deepseek-harness checkout
+pnpm install && pnpm run build
+
+# in this repo
+cd frontend/web && npm run prepare -- --dsh-root /path/to/deepseek-harness
+uv run javis web                 # or: javis web --rebuild-assets --dsh-root ...
+```
+
+`javis doctor` reports whether the assembly output is present and which dsh
+version it came from. `docs/dsh-web-interface-inventory.md` is the generated
+inventory of the dsh web surface (`scripts/inventory_dsh_web.py --check` gates
+drift). v1 covers the chat loop only — sessions, prompt streaming, tool rows,
+and cancel; the remaining panels answer a structured "not implemented" failure
+until they land.
 
 ### Slash commands
 

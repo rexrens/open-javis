@@ -15,6 +15,7 @@ authors = [
 
 dependencies = [
     "anthropic>=0.40.0",
+    "fastapi>=0.115.0",
     "openai>=1.0.0",
     "rich>=13.0.0",
     "prompt-toolkit>=3.0.0",
@@ -22,6 +23,7 @@ dependencies = [
     "typer>=0.12.0",
     "pydantic>=2.7.0",
     "httpx>=0.27.0",
+    "uvicorn>=0.30.0",
     "websockets>=12.0",
     "mcp>=1.0.0",
     "pyperclip>=1.9.0",
@@ -66,6 +68,10 @@ exclude = [
 "frontend/terminal/package.json" = "javis/_frontend/package.json"
 "frontend/terminal/tsconfig.json" = "javis/_frontend/tsconfig.json"
 "frontend/terminal/src" = "javis/_frontend/src"
+"frontend/web/package.json" = "javis/_frontend_web/package.json"
+"frontend/web/README.md" = "javis/_frontend_web/README.md"
+"frontend/web/composition.json" = "javis/_frontend_web/composition.json"
+"frontend/web/prepare.mjs" = "javis/_frontend_web/prepare.mjs"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

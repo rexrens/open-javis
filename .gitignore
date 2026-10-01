@@ -37,6 +37,7 @@ venv.bak/
 *.swp
 *.swo
 *~
+.DS_Store
 
 # Project specific
 papers/
@@ -55,6 +56,12 @@ logs/
 # Frontend
 node_modules/
 .superpowers/
+
+# dsh web frontend assembly output (regenerate with `npm run prepare` in frontend/web)
+frontend/web/dist/
+frontend/web/plugins/
+frontend/web/boot.json
+frontend/web/manifest.json
 
 # local worktrees
 .worktrees/
