@@ -57,11 +57,12 @@ logs/
 node_modules/
 .superpowers/
 
-# dsh web frontend assembly output (regenerate with `npm run prepare` in frontend/web)
-frontend/web/dist/
-frontend/web/plugins/
-frontend/web/boot.json
-frontend/web/manifest.json
+# dsh web frontend assembly output IS committed (pruned to runtime files only) so a
+# fresh clone can run `javis web` without building the dsh checkout. Refresh it with
+# `npm run prepare -- --dsh-root <checkout>`; only the scratch overlay stays local.
+!frontend/web/dist/
+!frontend/web/dist/**
+frontend/web/.overlay.generated.yml
 
 # local worktrees
 .worktrees/

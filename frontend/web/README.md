@@ -12,13 +12,28 @@ What lives here is the **assembly layer** javis owns:
 - `composition.json` — which dsh browser rows to disable for the javis v1
   composition, plus the Remote endpoints javis implements.
 - `prepare.mjs` — one-shot assembly against a built dsh checkout.
-- generated output (gitignored): `dist/`, `plugins/`, `boot.json`,
-  `manifest.json`.
+- generated output, **committed to this repo**: `dist/` (the built shell),
+  `plugins/` (one bundle per kept dsh row), `boot.json` (the boot manifest) and
+  `manifest.json` (which dsh build they came from).
+- `LICENSE.deepseek-harness` — the MIT license the copied build output carries.
+
+## Running without a dsh checkout
+
+The committed assets are pruned to what a browser actually fetches (no source
+maps, no `.d.ts`, no WebWorker preview bundle: ~13 MB total), so a fresh clone
+can run the UI directly:
+
+```sh
+uv run javis web
+```
+
+Only a dsh upgrade requires regenerating them (see below).
 
 ## Preparing the assets
 
-The dsh checkout must be installed and built first; the assembly consumes its
-built client artifacts, never its sources:
+`prepare.mjs` consumes a **built** dsh checkout, never its sources. Install and
+build dsh first — `prepare.mjs` fails with "cannot resolve
+@deepseek-ai/dsh-app-boot" if that step was skipped:
 
 ```sh
 cd /path/to/deepseek-harness
@@ -33,8 +48,11 @@ cd frontend/web
 npm run prepare -- --dsh-root /path/to/deepseek-harness
 ```
 
-`javis web` does the same thing automatically when assets are missing, and
-`javis web --rebuild-assets` forces a rebuild.
+`javis web --rebuild-assets --dsh-root <checkout>` does the same thing from the
+CLI. Rebuild, then commit the refreshed `dist/`, `plugins/`, `boot.json` and
+`manifest.json` together with any contract changes they imply: the launcher
+refuses to start when `manifest.json` records a dsh version other than the one
+the Python host implements.
 
 ## Output contract
 
@@ -53,10 +71,15 @@ npm run prepare -- --dsh-root /path/to/deepseek-harness
 Python launcher refuses to start when the manifest is missing or records a
 different dsh version than the one javis was verified against.
 
+`composition.json` row ids are checked against the dsh roster: an id that no
+layer defines aborts the assembly instead of silently keeping the row it was
+meant to drop.
+
 ## Standing caveat
 
 The combo URL and package-local chunk shapes are mirrored from dsh's own test
-harness (`apps/web/tests/assembled-boot.ts`) because they cannot be verified
-without a real build. After the first build, load the page once and confirm the
-network panel shows only 200s for `/plugins/...`; if a bundle 404s, the fix
-belongs in `prepare.mjs` (chunk layout) or in the host's `/plugins` route.
+harness (`apps/web/tests/assembled-boot.ts`) because they cannot be derived from
+the dsh sources alone. The committed assembly has been loaded in a real browser
+(all `/plugins/...` requests 200, one full chat turn, no console errors), but a
+dsh upgrade must repeat that check: if a bundle 404s, the fix belongs in
+`prepare.mjs` (chunk layout) or in the host's `/plugins` route.

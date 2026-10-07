@@ -182,15 +182,16 @@ javis 的 Python harness 承担：FastAPI 负责发送 dsh 前端、注入启动
 浏览器真正调用的 Remote 接口（`POST /api/<ns>/<method>` 与 `/api/remote.mux`
 流套接字），并把 harness 事件翻译成 dsh 的 Session 事件。
 
-浏览器资源来自 dsh 的构建产物，因此只做一次性组装，不提交进仓库：
+浏览器资源来自 dsh 的构建产物。仓库里已提交一份裁剪后的副本（约 13 MB：构建好的
+外壳，加上每个保留行对应的一个 bundle），因此全新克隆无需 dsh 检出即可直接运行
+`javis web`。只有跟随 dsh 版本升级时才需要重新组装：
 
 ```bash
 # 在 deepseek-harness 检出目录中
 pnpm install && pnpm run build
 
-# 在本仓库中
-cd frontend/web && npm run prepare -- --dsh-root /path/to/deepseek-harness
-uv run javis web                 # 或：javis web --rebuild-assets --dsh-root ...
+# 在本仓库中：重新组装后，把刷新过的产物与清单一起提交
+uv run javis web --rebuild-assets --dsh-root /path/to/deepseek-harness
 ```
 
 `javis doctor` 会报告组装产物是否存在以及它来自哪个 dsh 版本。

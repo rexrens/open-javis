@@ -70,8 +70,13 @@ exclude = [
 "frontend/terminal/src" = "javis/_frontend/src"
 "frontend/web/package.json" = "javis/_frontend_web/package.json"
 "frontend/web/README.md" = "javis/_frontend_web/README.md"
+"frontend/web/LICENSE.deepseek-harness" = "javis/_frontend_web/LICENSE.deepseek-harness"
 "frontend/web/composition.json" = "javis/_frontend_web/composition.json"
 "frontend/web/prepare.mjs" = "javis/_frontend_web/prepare.mjs"
+"frontend/web/boot.json" = "javis/_frontend_web/boot.json"
+"frontend/web/manifest.json" = "javis/_frontend_web/manifest.json"
+"frontend/web/dist" = "javis/_frontend_web/dist"
+"frontend/web/plugins" = "javis/_frontend_web/plugins"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

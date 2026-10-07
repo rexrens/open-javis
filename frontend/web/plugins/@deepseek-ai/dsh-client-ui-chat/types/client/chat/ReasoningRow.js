@@ -1,0 +1,32 @@
+import { jsx as _jsx, Fragment as _Fragment, jsxs as _jsxs } from "react/jsx-runtime";
+/** Assistant reasoning disclosure, independent of Tool-call presentation. */
+import { useMemo, useState } from 'react';
+import { DisclosureRow, IconThinkOutline14, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives';
+import { markdownLabels } from "../markdown-labels.js";
+import a11yCss from './accessibility.module.css';
+import css from './ReasoningRow.module.css';
+function firstLine(text) {
+    const newline = text.indexOf('\n');
+    return newline === -1 ? text : text.slice(0, newline);
+}
+function latestLine(text) {
+    const visible = text.trimEnd();
+    const newline = visible.lastIndexOf('\n');
+    return newline === -1 ? visible : visible.slice(newline + 1);
+}
+/**
+ * Render one assistant reasoning block collapsed until the reader opens it. The
+ * collapsed summary omits double-asterisk markers; expanded content renders
+ * the complete Markdown with secondary typography.
+ * @param props.text - complete or streaming reasoning text.
+ * @param props.running - whether this block is the streaming tail.
+ * @param props.t - conversation locale seat for status and Markdown actions.
+ * @returns the reasoning disclosure.
+ */
+export function ReasoningRow({ text, running, t }) {
+    const [expanded, setExpanded] = useState(false);
+    const labels = useMemo(() => markdownLabels(t), [t]);
+    const summary = (running ? latestLine(text) : firstLine(text)).replaceAll('**', '');
+    return (_jsxs("div", { className: css.root, "data-variant": "think", "data-state": running ? 'running' : 'ok', "data-expanded": expanded || undefined, children: [running && _jsx("span", { className: a11yCss.visuallyHidden, children: t('row.running') }), _jsx(DisclosureRow, { rowClassName: css.row, leadingClassName: css.leading, titleClassName: css.title, chevronClassName: css.chevron, icon: _jsx(IconThinkOutline14, { size: 14 }), title: t('message.think'), open: expanded, expandable: true, expandOnRowClick: true, onToggle: () => { setExpanded(value => !value); }, collapsedContent: (_jsxs(_Fragment, { children: [_jsx("span", { className: css.separator, "aria-hidden": true }), _jsx("span", { className: css.summary, "data-follow-end": running || undefined, children: _jsx("span", { className: css.summaryText, children: summary }) })] })), children: _jsx("div", { className: css.thinkBody, children: _jsx(MarkdownText, { text: text, streaming: running, labels: labels, variant: "compact" }) }) })] }));
+}
+//# sourceMappingURL=ReasoningRow.js.map

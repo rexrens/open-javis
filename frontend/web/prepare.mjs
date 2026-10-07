@@ -18,7 +18,7 @@ import {
   cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -179,6 +179,17 @@ for (const entry of baseEntries) {
 }
 const rosterRowIds = new Set(rowIdByPackage.values())
 
+// composition.json is javis-owned and version-locked to the dsh build recorded
+// in manifest.json, so an id the roster does not define is a typo we must not
+// swallow: it would silently keep a row the composition asked to drop.
+const unknownExcludes = [...excludeRows].filter((row) => !rosterRowIds.has(row))
+if (unknownExcludes.length > 0) {
+  fail(
+    `composition.json lists rows the dsh roster does not define: ${unknownExcludes.join(', ')}\n` +
+      '  Check the row ids in packages/bundle/*/cordis.patch.yml.',
+  )
+}
+
 const basePlugins = new Map()
 for (const entry of baseEntries) {
   const plugin = browserPlugin(entry)
@@ -290,7 +301,21 @@ const pluginsDir = join(outputDir, 'plugins')
 rmSync(distDir, { recursive: true, force: true })
 rmSync(pluginsDir, { recursive: true, force: true })
 mkdirSync(pluginsDir, { recursive: true })
-cpSync(join(dshRoot, 'apps/web/dist'), distDir, { recursive: true })
+
+/**
+ * Copy the built shell, dropping what the browser never fetches: source maps
+ * (~13 MB here) and the WebWorker preview bundle (javis serves the normal page).
+ */
+cpSync(join(dshRoot, 'apps/web/dist'), distDir, {
+  recursive: true,
+  filter: (src) => {
+    const rel = relative(join(dshRoot, 'apps/web/dist'), src)
+    if (rel === 'preview' || rel.startsWith(`preview${sep}`) || rel.startsWith('preview.')) {
+      return false
+    }
+    return extname(src) !== '.map'
+  },
+})
 
 /** URL → file (relative to pluginsDir) for every script the page may request. */
 const bundles = {}
@@ -307,7 +332,17 @@ for (const plugin of plugins) {
   // entry bundle and every dynamic chunk next to it are served from one base.
   const libDir = dirname(plugin.bundlePath)
   const packageDir = join(pluginsDir, plugin.id)
-  if (existsSync(libDir)) cpSync(libDir, packageDir, { recursive: true })
+  // Only the emitted JavaScript (plus any CSS) reaches a browser: `.d.ts`,
+  // `.map` and `.tsbuildinfo` in lib/ are build metadata.
+  if (existsSync(libDir)) {
+    cpSync(libDir, packageDir, {
+      recursive: true,
+      filter: (src) => {
+        const ext = extname(src)
+        return ext === '' || ext === '.js' || ext === '.css'
+      },
+    })
+  }
   writeBundle(
     `/plugins/${plugin.id}/client.js?rev=${plugin.rev}`,
     join(plugin.id, 'client.js'),

@@ -30,7 +30,7 @@
     "directory-picker",
     "cordis-client-runner",
     "client-hmr",
-    "session-log-export",
+    "session-log-download",
     "office-to-pdf",
     "plugin-inventory",
     "workspace-changes"

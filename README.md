@@ -185,16 +185,17 @@ manifest, answers the Remote surface the client calls (`POST /api/<ns>/<method>`
 plus the `/api/remote.mux` stream socket), and translates harness events into
 dsh Session events.
 
-The browser assets are dsh build output, so they are assembled once rather than
-committed:
+The browser assets are dsh build output. A pruned copy is committed under
+`frontend/web/` (≈13 MB: the built shell plus one bundle per kept dsh row), so a
+fresh clone runs `javis web` with no dsh checkout present. Refreshing them is
+only needed when the pinned dsh release moves:
 
 ```bash
 # in the deepseek-harness checkout
 pnpm install && pnpm run build
 
-# in this repo
-cd frontend/web && npm run prepare -- --dsh-root /path/to/deepseek-harness
-uv run javis web                 # or: javis web --rebuild-assets --dsh-root ...
+# in this repo: re-assemble, then commit the refreshed assets and manifest
+uv run javis web --rebuild-assets --dsh-root /path/to/deepseek-harness
 ```
 
 `javis doctor` reports whether the assembly output is present and which dsh
