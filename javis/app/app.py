@@ -174,4 +174,11 @@ async def run_web_mode(
     )
 
 
-__all__ = ["run_print_mode", "run_tui_mode", "run_web_mode"]
+def run_cli_mode() -> None:
+    """
+    运行CLImode
+    """
+    print(run_cli_mode.__doc__)
+
+
+__all__ = ["run_cli_mode", "run_print_mode", "run_tui_mode", "run_web_mode"]

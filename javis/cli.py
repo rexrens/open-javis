@@ -15,7 +15,7 @@ from pathlib import Path
 
 import typer
 
-from javis.app.app import run_print_mode, run_tui_mode, run_web_mode
+from javis.app.app import run_cli_mode, run_print_mode, run_tui_mode, run_web_mode
 from javis.session.workspace import initialize_workspace
 
 app = typer.Typer(
@@ -29,13 +29,14 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    print_mode: str | None = typer.Option(None, "--print", "-p", help="Run a single prompt and exit"),
-    model: str | None = typer.Option(None, "--model", help="Model override for this session"),
-    workspace: str | None = typer.Option(None, "--workspace", help="Path to the javis workspace (defaults to ~/.javis)"),
+    print_mode: str | None = typer.Option(
+        None, "--print", "-p", help="Run a single prompt and exit"
+    ),
+    workspace: str | None = typer.Option(
+        None, "--workspace", help="Path to the javis workspace (defaults to ~/.javis)"
+    ),
     max_turns: int | None = typer.Option(None, "--max-turns", help="Override max turns"),
-    plugins: str | None = typer.Option(None, "--plugins", help="Plugin composition file (cordis.yml); defaults to <workspace>/cordis.yml"),
     cwd: str = typer.Option(str(Path.cwd()), "--cwd", help="Working directory"),
-    backend_only: bool = typer.Option(False, "--backend-only", hidden=True),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
     """Launch javis or run a subcommand."""
@@ -62,25 +63,47 @@ def main(
     cwd_path = str(Path(cwd).resolve())
     workspace_root = initialize_workspace(workspace)
 
-    if backend_only:
-        raise SystemExit(
-            asyncio.run(
-                run_tui_mode(
-                    backend_only=True,
-                    cwd=cwd_path,
-                    workspace=workspace_root,
-                    model=model,
-                    max_turns=max_turns,
-                    plugins=plugins,
-                )
-            )
-        )
-
     if print_mode is not None:
         raise SystemExit(
             asyncio.run(
                 run_print_mode(
                     prompt=print_mode,
+                    cwd=cwd_path,
+                    workspace=workspace_root,
+                    model=None,
+                    max_turns=max_turns,
+                    plugins=None,
+                )
+            )
+        )
+
+    run_cli_mode()
+
+
+@app.command("tui")
+def tui(
+    model: str | None = typer.Option(None, "--model", help="Model override for this session"),
+    workspace: str | None = typer.Option(
+        None, "--workspace", help="Path to the javis workspace (defaults to ~/.javis)"
+    ),
+    max_turns: int | None = typer.Option(None, "--max-turns", help="Override max turns"),
+    plugins: str | None = typer.Option(
+        None,
+        "--plugins",
+        help="Plugin composition file (cordis.yml); defaults to <workspace>/cordis.yml",
+    ),
+    cwd: str = typer.Option(str(Path.cwd()), "--cwd", help="Working directory"),
+    backend_only: bool = typer.Option(False, "--backend-only", hidden=True),
+) -> None:
+
+    cwd_path = str(Path(cwd).resolve())
+    workspace_root = initialize_workspace(workspace)
+
+    if backend_only:
+        raise SystemExit(
+            asyncio.run(
+                run_tui_mode(
+                    backend_only=True,
                     cwd=cwd_path,
                     workspace=workspace_root,
                     model=model,
@@ -102,10 +125,13 @@ def main(
         )
     )
 
+
 @app.command("doctor")
 def doctor(
     cwd: str = typer.Option(str(Path.cwd()), "--cwd", help="Working directory"),
-    workspace: str | None = typer.Option(None, "--workspace", help="Path to the javis workspace (defaults to ~/.javis)"),
+    workspace: str | None = typer.Option(
+        None, "--workspace", help="Path to the javis workspace (defaults to ~/.javis)"
+    ),
 ) -> None:
     """Check the javis workspace and frontend layout."""
     from javis.app.react_launcher import _get_frontend_dir

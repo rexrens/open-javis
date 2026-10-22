@@ -1,10 +1,10 @@
-# javis
+# Open-Javis
 
 [English](README.md) | **简体中文**
 
 > javis —— 你自己的本地 AI 编程助理。完全可自定义，用 Python 编写。
 
-你每天都在用 Claude Code，但它是一个黑盒——无法按照你的工作流去改造它。javis 是一个纯 Python 的本地助理，从设计上就属于**你**：前端、Agent 循环、扩展面全部开放，可自由定制。
+我喜欢自己捣鼓东西，之前曾经用
 
 - **前端** — 基于 **openharness** 的 React/Ink 终端界面，并持续为 javis 定制改造。你不需要写 TypeScript：前端由 AI 维护，你只管 Python。
 - **后端** — **自研的 Python Harness**（`javis/harness/`）：dsh 风格的 `AgentLoop`（相位状态机、turn/step 循环、收件箱、会话事件日志）与独占/并行工具调度，由 `cordis.yml` 组合行装配，接入真实 LLM provider 与工具。
