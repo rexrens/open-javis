@@ -178,7 +178,9 @@ def run_cli_mode() -> None:
     """
     运行CLImode
     """
-    print(run_cli_mode.__doc__)
+    from javis.app.cli.cli import launch_cli
+
+    launch_cli()
 
 
 __all__ = ["run_cli_mode", "run_print_mode", "run_tui_mode", "run_web_mode"]
