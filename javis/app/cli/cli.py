@@ -97,4 +97,7 @@ def launch_cli() -> None:
     ui.on_interrupt(cleanup)
     _sync_status(ui)
 
-    ui.run()
+    try:
+        ui.run()
+    finally:
+        print("Bye")

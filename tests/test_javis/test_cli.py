@@ -70,3 +70,25 @@ def test_launch_cli_creates_a_context_and_runs_the_ui(monkeypatch) -> None:
     assert ui.context.agent is not None
     assert prompt_handler is not None
     assert events == ["interrupt", "status", "run"]
+
+
+def test_launch_cli_propagates_run_errors_and_says_bye(monkeypatch, capsys) -> None:
+    def fail() -> None:
+        raise RuntimeError("boom")
+
+    ui = SimpleNamespace(
+        context=SimpleNamespace(
+            session_id="test",
+            agent=SimpleNamespace(model="test", persona="default", turn=0, tokens=0),
+        ),
+        status=SimpleNamespace(set=lambda **_: None),
+        on_prompt=lambda handler: None,
+        on_interrupt=lambda handler: None,
+        run=fail,
+    )
+    monkeypatch.setattr(cli_module, "_create_ui", lambda: ui)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        cli_module.launch_cli()
+
+    assert capsys.readouterr().out == "Bye\n"
