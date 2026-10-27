@@ -2,9 +2,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from time import time
-from typing import (
-    Any,
-)
+from typing import Any, ClassVar
 
 
 class ModelError(Exception):
@@ -44,47 +42,21 @@ class ContextWindowExceededError(ModelProviderError):
 
 @dataclass
 class ModelResponse:
-    """Response from the model provider"""
+    """Response from the model provider."""
 
     index: int
-
     block_type: str
-
     role: str | None = None
-
     content: Any | None = None
-
     parsed: Any | None = None
-
-    # Unified media fields for LLM-generated and tool-generated media artifacts
-    # images: Optional[List[Image]] = None
-    # videos: Optional[List[Video]] = None
-    # audios: Optional[List[Audio]] = None
-    # files: Optional[List[File]] = None
-
-    # Model tool calls
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
-
     provider_data: dict[str, Any] | None = None
-
     redacted_reasoning_content: str | None = None
-
     reasoning_content: str | None = None
-
-    # citations: Optional[Citations] = None
-
-    # response_usage: Optional[MessageMetrics] = None
-
     created_at: int = field(default_factory=lambda: int(time()))
-
     extra: dict[str, Any] | None = None
-
     updated_session_state: dict[str, Any] | None = None
-
-    # Compression stats
     compression_stats: dict[str, Any] | None = None
-
-    # Model request metrics (for model_request_completed events)
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
@@ -96,10 +68,23 @@ class ModelResponse:
 
 @dataclass
 class Model(ABC):
-    id: str
+    # Provider for this Model, AS[OPEN]. This is not sent to the Model API.
+    provider: ClassVar[str] = "unknown"
+
+    id: str = ""
     name: str | None = None
-    # Provider for this Model. This is not sent to the Model API.
-    provider: str | None = None
+    api_key: str | None = None
+    base_url: str | None = None
+    timeout: int | None = None
+    max_retries: int = 3
+    headers: dict[str, str] | None = None
+    extra_body: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            raise ValueError("Model ID cannot be empty")
+        self.name = self.name or self.id
+        self.extra_body = self.extra_body or {}
 
     @abstractmethod
     def invoke(self, *args: Any, **kwargs: Any) -> ModelResponse:
