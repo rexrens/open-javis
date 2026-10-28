@@ -2,5 +2,6 @@
 
 from . import xli
 from .cli import launch_cli
+from .terminal import Terminal
 
-__all__ = ["launch_cli", "xli"]
+__all__ = ["Terminal", "launch_cli", "xli"]
