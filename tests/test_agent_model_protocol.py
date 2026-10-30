@@ -7,7 +7,7 @@ from javis.agent.model.response import ModelResponse
 
 def test_model_request_exposes_message_text() -> None:
     request = ModelRequest(
-        message=[
+        messages=[
             Message.system("follow "),
             Message.user("instructions"),
         ],
@@ -16,6 +16,17 @@ def test_model_request_exposes_message_text() -> None:
 
     assert request.all_system_text() == "follow the rules"
     assert [message.text for message in request.non_system_messages()] == ["instructions"]
+    assert [message.text for message in request.all_messages()] == [
+        "follow ",
+        "instructions",
+    ]
+
+
+def test_model_request_accepts_legacy_message_keyword() -> None:
+    request = ModelRequest(message=[Message.user("hello")])
+
+    assert request.messages == [Message.user("hello")]
+    assert request.message == request.messages
 
 
 def test_token_usage_merge_and_response_helpers() -> None:

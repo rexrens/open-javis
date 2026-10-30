@@ -4,6 +4,7 @@ from typing import (
 )
 
 from pydantic import (
+    AliasChoices,
     BaseModel,
     Field,
 )
@@ -52,12 +53,17 @@ class ModelRequest(BaseModel):
 
     model_config = STRICT
 
-    message: list[Message] = Field(min_length=1)
+    messages: list[Message] = Field(
+        min_length=1,
+        validation_alias=AliasChoices("messages", "message"),
+    )
 
     system: str | None = None
 
     temperature: float | int | None = Field(default=0.0, ge=0, le=2)
+
     max_tokens: int | None = Field(default=None, gt=0)
+
     stop: list[str] | None = None
 
     # only adapter suports this can use , otherwise raise UnsupportedError
@@ -66,16 +72,25 @@ class ModelRequest(BaseModel):
     # provider specific body
     extra: dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def message(self) -> list[Message]:
+        """Backward-compatible alias for the complete message history."""
+        return self.messages
+
     def all_system_text(self) -> str:
         """The full system prompt"""
-        pri = "".join(m.text for m in self.message if (m.role == "system" and m.text))
+        pri = "".join(m.text for m in self.messages if (m.role == "system" and m.text))
         if self.system:
             return pri + self.system
         return pri
 
     def non_system_messages(self) -> list[Message]:
         """All messages except system prompt"""
-        return [m for m in self.message if m.role != "system"]
+        return [m for m in self.messages if m.role != "system"]
+
+    def all_messages(self) -> list[Message]:
+        """All messages"""
+        return self.messages
 
 
 __all__ = [
