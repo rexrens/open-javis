@@ -1,92 +1,107 @@
-# javis
+# Open-Javis
 
-**English** | [简体中文](README.zh-CN.md)
+[English](README.en.md) | **英文**
 
-> javis — your own local AI coding assistant. Fully customizable, written in Python.
+> javis —— 你自己的本地 AI 编程助理。完全可自定义，用 Python 编写。
 
-You use Claude Code every day, but it's a closed box — you can't shape it to your workflow. javis is a Python-native local assistant built to be **yours**: the frontend, the agent loop, and the extension surface are all open to customization.
+现在AI开发的乐趣比过去少了很多。
 
-- **Frontend** — built on the **openharness** React/Ink terminal UI and continuously customized for javis. You never need to write TypeScript: the frontend is AI-maintained, while you stay in Python.
-- **Backend** — a **self-developed agent harness in Python** (`javis/harness/`): a dsh-style `AgentLoop` (phase state machine, turn/step loop, inbox, session event log) with exclusive/parallel tool scheduling, assembled from `cordis.yml` composition rows and wired to real LLM providers and tools.
-- **Extensibility** — a **Cordis-style plugin system** (following the DeepSeek Harness approach): tools, slash commands, and even the harness itself are pluggable through a `cordis.yml` composition.
+我喜欢自己捣鼓东西，从C/C++到JAVA，那是古早编码最有乐趣和辉煌的时代，刚毕业还会区分什么是MFC，什么是VC，什么是C++。编码，从一个需要长周期思考的过程，变成了工业自动化的形态，并不追求优雅，而是任务驱动化。
 
-Two layers:
+虽然时过漫长，我还记得刚毕业那会，成功对接完成一个新的开发任务，带来的极大精神鼓舞和激励。而这种脑力不断刺激，突破瓶颈，解决问题带来的愉悦，从此逐渐消失。
 
-- **`javis/harness/`** — the self-developed harness: the dsh-style `AgentLoop` (turn/step loop, exclusive/parallel tool scheduling, session event log), compression middleware, retries and cost tracking, plus the `Harness` shell that implements the contract.
-- **`javis/`** — the shell: CLI, runtime, JSON-lines backend host, plugin composition, slash commands, session persistence, and the TUI launcher.
+所以转换下战场，公司制度内的工业化生成已经无法带来愉悦，我开始思考，如何用 Python 构建一个本地的 AI 助手的同时，能让自己内啡呔启动起来。
 
-## Features
+我不会用node，在当前agent，确实有些不合时宜，我又很喜欢DSH插件化的逻辑，但是一切都是插件也很麻烦，业务单元会被拆分到不同的地方，清晰度大打折扣，跟踪异常复杂。
 
-- **Built on the openharness frontend** — the React/Ink TUI is forked from openharness and customized for javis; frontend changes are AI-assisted, so you never have to write TypeScript.
-- **Self-developed harness** — the Python harness (`javis/harness/`) is written from scratch: a dsh-style `AgentLoop` with exclusive/parallel tool scheduling, compression middleware, retries, cost tracking.
-- **Plugin system** — following the DeepSeek Harness **"everything is a plugin"** philosophy: the tool registry, slash commands, and even the harness itself are pluggable and swappable via Cordis services.
-- **Any OpenAI-compatible model** — DeepSeek, Qwen, Kimi, GLM, Ollama, etc. Switch providers by changing `base_url` + `api_key`. Non-OpenAI providers (Bedrock, Vertex, …) work via the built-in LiteLLM backend.
-- **Agentic tool loop** — `bash`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, plus a nested sub-`agent` tool. Multiple tool calls execute **in parallel** (thread-pool based, inspired by Claude Code's `StreamingToolExecutor`).
-- **Streaming TUI** — React + Ink terminal frontend with markdown rendering, tool transcripts, permission/edit modals, theme/permission/turns selectors, and image attachments.
-- **Async & sync LLM paths** — both `chat()` and `achat()` loops with cancellation-safe history (interrupted tool calls are backfilled so the conversation stays valid for OpenAI-compatible APIs).
-- **Context management** — automatic compression when tool outputs push the conversation past the token budget.
-- **Robust LLM layer** — exponential-backoff retries (rate limit / timeout / 5xx), `stream_options` fallback for providers that reject it, usage tracking and per-model cost estimates.
-- **Session persistence** — atomic JSON snapshots per session under `~/.javis/sessions/`, with `/resume` support from the TUI.
-- **Deterministic offline testing** — `ScriptedAdapter` lets you exercise the harness without network.
+同时我也很喜欢openHarness的一些TUI方案，但他现在不更新了。
 
-## Architecture
+所以我想自己动手搓一个出来，结合各家长处。
 
-The React/Ink frontend is forked from openharness and customized for javis; everything below it — protocol, runtime, agent loop — is our own Python implementation.
+- **前端** — 基于 **openharness** 的 React/Ink 终端界面，并持续为 javis 定制改造。你不需要写 TypeScript：前端由 AI 维护，你只管 Python。
+- **后端** — **自研的 Python Harness**（`javis/harness/`）：dsh 风格的 `AgentLoop`（相位状态机、turn/step 循环、收件箱、会话事件日志）与独占/并行工具调度，由 `cordis.yml` 组合行装配，接入真实 LLM provider 与工具。
+- **可扩展性** — **Cordis 风格插件系统**（借鉴 DeepSeek Harness）：工具、斜杠命令、甚至 Harness 本体都可通过 `cordis.yml` 组合文件插件化。
+
+由两层组成：
+
+- **`javis/harness/`** — 自研 Harness：dsh 风格 `AgentLoop`（turn/step 循环、独占/并行工具调度、会话事件日志）、压缩中间件、重试/退避和成本统计，以及实现契约的 `Harness` 外壳。
+- **`javis/`** — 外壳层：CLI、运行时、JSON-lines 后端主机、插件组合、斜杠命令、会话持久化和 TUI 启动器。
+
+## 特性
+
+- **基于 openharness 前端** — React/Ink TUI 从 openharness fork 而来，并针对 javis 持续定制；前端改动由 AI 协助完成，你永远不需要写 TypeScript。
+- **自研 Harness** — Python Harness（`javis/harness/`）从零编写：dsh 风格 `AgentLoop`、独占/并行工具调度、上下文压缩、重试、成本统计。
+- **插件系统** — 借鉴 DeepSeek Harness **"一切皆插件"** 的理念：工具注册表、斜杠命令、甚至 Harness 本身都可插拔、可替换（Cordis 服务机制）。
+- **任意 OpenAI 兼容模型** — DeepSeek、Qwen、Kimi、GLM、Ollama 等。修改 `base_url` + `api_key` 即可切换供应商。非 OpenAI 兼容供应商（Bedrock、Vertex 等）可通过内置的 LiteLLM 后端使用。
+- **智能体工具循环** — `bash`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`，以及嵌套的子 `agent` 工具。多个工具调用**并行执行**（基于线程池，灵感来自 Claude Code 的 `StreamingToolExecutor`）。
+- **流式 TUI** — React + Ink 终端前端，支持 Markdown 渲染、工具记录、权限/编辑确认弹窗、主题/权限/轮次选择器，以及图片附件。
+- **同步与异步 LLM 双路径** — 提供 `chat()` 和 `achat()` 两种循环，取消时保持对话历史有效（被打断的工具调用会自动回填，确保 OpenAI 兼容 API 的请求始终合法）。
+- **上下文管理** — 当工具输出使对话超过 token 预算时自动压缩。
+- **健壮的 LLM 层** — 指数退避重试（限流 / 超时 / 5xx）、对不支持 `stream_options` 的供应商自动回退、用量统计和按模型的成本估算。
+- **会话持久化** — 每个会话以原子方式写入 JSON 快照，存放在 `~/.javis/sessions/` 下，TUI 中支持 `/resume` 恢复。
+- **确定性离线测试** — `ScriptedAdapter` 让你无需联网即可跑通 Harness。
+
+## 架构
+
+前端 React/Ink 界面从 openharness fork 而来并针对 javis 定制改造；其下的协议、运行时、Agent 循环全部是自研的 Python 实现。
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │  React/Ink TUI (frontend/terminal, TypeScript)                 │
 └───────────────▲───────────────────────────────┬────────────────┘
-                │ OHJSON: {…} JSON-lines        │ requests
+                │ OHJSON: {…} JSON-lines        │ 请求
                 │ (stdout)                      │ (stdin)
 ┌───────────────┴───────────────────────────────▼────────────────┐
 │  javis.app.backend_host.JavisBackendHost                       │
-│    (wire protocol, modals, selectors, permission flow)         │
+│    (线协议、弹窗、选择器、权限流程)                            │
 └───────────────────────────▲───────────────────────────────────┘
-                            │ AgentEvent stream
+                            │ AgentEvent 事件流
 ┌───────────────────────────┴───────────────────────────────────┐
-│  javis.app.runtime.handle_line (slash commands + agent turns)  │
-│  javis.contracts.harness.Harness — assembled by the            │
-│    composition rows in javis/harness/plugins/                  │
+│  javis.app.runtime.handle_line (斜杠命令 + 智能体回合)         │
 └───────────────────────────▲───────────────────────────────────┘
-                            │ Harness contract (the only seam)
+                            │ Harness 契约（唯一的接缝）
 ┌───────────────────────────┴───────────────────────────────────┐
-│  javis.harness (AgentLoop, session log) — shared with demo     │
+│  javis.contracts.harness.Harness —— 由组合行装配               │
+│    (javis/harness/plugins/)                                    │
 └───────────────────────────▲───────────────────────────────────┘
                             │
 ┌───────────────────────────┴───────────────────────────────────┐
-│  AgentLoop — turn/step loop, exclusive/parallel tools          │
-│  javis.llm.LlmRuntime — adapter registry, llm/stream waterfall │
+│  javis.harness（AgentLoop、会话日志）— 与 demo 共享            │
+└───────────────────────────▲───────────────────────────────────┘
+                            │
+┌───────────────────────────┴───────────────────────────────────┐
+│  AgentLoop — turn/step 循环、exclusive/parallel 工具           │
+│  javis.llm.LlmRuntime — adapter 注册表、llm/stream waterfall   │
 │  javis.llm — OpenAICompatAdapter / ScriptedAdapter             │
 │  javis.tools — bash/read/write/edit/glob/grep/agent            │
 └────────────────────────────────────────────────────────────────┘
 ```
 
-The **`Harness` contract is the only seam**: the composition's `harness` row can point at your own implementation (or be disabled and replaced) without touching the host or the TUI.
+**`Harness` 契约是唯一的接缝**：替换组合里的 `harness` 行（指向自己的实现，或 `disabled: true` 后另加自建行），无需改动宿主或 TUI。
 
-## Quick start
+## 快速开始
 
-Requires Python ≥ 3.10, Node.js ≥ 18, and [uv](https://docs.astral.sh/uv/).
+需要 Python ≥ 3.10、Node.js ≥ 18 和 [uv](https://docs.astral.sh/uv/)。
 
 ```bash
-# Install dependencies (Python + frontend)
+# 安装依赖（Python + 前端）
 uv sync --extra dev   # --extra dev pulls in pytest, ruff, mypy
 cd frontend/terminal && npm install && cd ../..
 
-# Configure your model provider (see Configuration below)
+# 配置模型供应商（见下方"配置"）
 mkdir -p ~/.javis
-# create ~/.javis/config.json
+# 创建 ~/.javis/config.json
 
-# Launch the TUI
+# 启动 TUI
 uv run javis
 
-# Or run a single prompt non-interactively
-uv run javis -p "explain this repo"
+# 或非交互式单次提问
+uv run javis -p "解释一下这个仓库"
 ```
 
-## Configuration
+## 配置
 
-`config.json` lives in the javis workspace (default `~/.javis`, override with `JAVIS_WORKSPACE` or `--workspace`):
+`config.json` 位于 javis 工作区（默认 `~/.javis`，可通过 `JAVIS_WORKSPACE` 或 `--workspace` 覆盖）：
 
 ```json
 {
@@ -101,28 +116,26 @@ uv run javis -p "explain this repo"
 }
 ```
 
-Alternatively, use environment variables (read from `.env` in the working directory, walking up to `$HOME`):
+也可以使用环境变量（会从工作目录向上查找 `.env` 文件并读取，直到 `$HOME`）：
 
-| Variable | Purpose |
+| 变量 | 作用 |
 |---|---|
-| `CORECODER_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` | API key |
-| `CORECODER_MODEL` | Model name (default `gpt-5.5`) |
-| `CORECODER_BASE_URL` / `OPENAI_BASE_URL` | OpenAI-compatible endpoint |
-| `CORECODER_MAX_TOKENS`, `CORECODER_TEMPERATURE`, `CORECODER_MAX_CONTEXT` | Generation settings |
-| `CORECODER_PROVIDER=litellm` | Route through LiteLLM (100+ providers) |
-| `JAVIS_WORKSPACE` | Workspace root (default `~/.javis`) |
+| `CORECODER_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` | API 密钥 |
+| `CORECODER_MODEL` | 模型名称（默认 `gpt-5.5`） |
+| `CORECODER_BASE_URL` / `OPENAI_BASE_URL` | OpenAI 兼容接口地址 |
+| `CORECODER_MAX_TOKENS`、`CORECODER_TEMPERATURE`、`CORECODER_MAX_CONTEXT` | 生成参数 |
+| `CORECODER_PROVIDER=litellm` | 通过 LiteLLM 路由（支持 100+ 供应商） |
+| `JAVIS_WORKSPACE` | 工作区根目录（默认 `~/.javis`） |
 
-## Plugins
+## 插件
 
-Plugins are Cordis-style `apply(ctx, config)` modules declared in a
-**`cordis.yml` composition** — by default `<workspace>/cordis.yml` (auto-created
-with the full six-row default composition when missing). The runtime mounts the
-composition on every session and waits for all plugins to settle before reading
-the harness.
+插件是 Cordis 风格的 `apply(ctx, config)` 模块，通过 **`cordis.yml` 组合文件**
+声明——默认位于 `<workspace>/cordis.yml`（缺失时自动写入全量六行默认组合）。
+每次会话启动时 runtime 都会挂载组合文件，等所有插件 settle 后再读取 Harness。
 
-Resolution order: `--plugins <file>` > `JAVIS_PLUGINS` > `config.json`
-`pluginsFile` > `<workspace>/cordis.yml`. Entry `name:` paths resolve against
-the composition file's directory; absolute paths also work.
+组合文件解析顺序：`--plugins <file>` > `JAVIS_PLUGINS` > `config.json`
+`pluginsFile` > `<workspace>/cordis.yml`。entry 的 `name:` 相对组合文件所在
+目录解析，也支持绝对路径。
 
 ```yaml
 # ~/.javis/cordis.yml
@@ -135,94 +148,116 @@ the composition file's directory; absolute paths also work.
 ```
 
 ```python
-# my_harness.py — a composition row that replaces the built-in Harness
+# my_harness.py —— 替换内建 Harness 的组合行
 def apply(ctx):
     cfg = ctx.get('config')        # JavisConfig
-    tools = ctx.get('agentTools')  # ToolRegistry view of the host tools
-    host = ctx.get('host')         # HostContext (cwd/session_id/tool_metadata/…)
+    tools = ctx.get('agentTools')  # 宿主 tools 的 ToolRegistry 实时视图
+    host = ctx.get('host')         # HostContext（cwd/session_id/tool_metadata/…）
     ctx.provide('harness', build_my_harness(cfg, tools=tools.all(), host=host))
 ```
 
-Built-in services: `config` (`JavisConfig`), `tools` (`ToolRegistry`),
-`commands` (`CommandRegistry`) and `host` (`HostContext`) are provided by the
-host and never revoked. The services the harness needs — `llm`, `agentTools`,
-`systemPrompt`, `agentLoop` and `harness` itself — come from the rows in
-`javis/harness/plugins/`; the default composition wires all six rows. A composition
-without a `harness` service (including an empty `[]`) is a hard boot error —
-there is no built-in fallback.
+内建服务：`config`（`JavisConfig`）、`tools`（`ToolRegistry`）、`commands`
+（`CommandRegistry`）、`host`（`HostContext`）由宿主提供、不可撤销。Harness
+所需的 `llm` / `agentTools` / `systemPrompt` / `agentLoop` / `harness` 由
+`javis/harness/plugins/` 的组合行提供，默认组合的六行已全部接好；组合缺少 `harness`
+服务（含空组合 `[]`）即启动报错，没有内建回退。
 
-Tools/commands plugins follow the disposer pattern so unloads clean up
-automatically:
+工具/命令插件使用 disposer 模式，卸载时自动清理：
 
 ```python
 def apply(ctx):
     tools = ctx.get('tools')
-    ctx.effect(lambda: tools.register(MyTool()))  # unregister on unload
+    ctx.effect(lambda: tools.register(MyTool()))  # 卸载时自动反注册
     commands = ctx.get('commands')
     ctx.effect(lambda: commands.register(Command('hello', 'Say hello', handler)))
 ```
 
-See [docs/plugins.md](docs/plugins.md) for the full contract reference.
+完整契约参考 [docs/plugins.md](docs/plugins.md)。
 
-## Usage
+## 使用方法
 
-### Modes
+### 运行模式
 
 ```bash
-uv run javis                    # React/Ink TUI (default)
-uv run javis -p "prompt"        # single prompt, print result, exit
-uv run javis --backend-only     # JSON-lines backend host (for custom frontends)
-uv run javis -v                 # debug logging to stderr
-uv run javis doctor             # check workspace & frontend layout
+uv run javis                    # React/Ink TUI（默认）
+uv run javis web                # 由 Python 宿主托管的 dsh 浏览器界面
+uv run javis -p "提示词"         # 单次提问，打印结果后退出
+uv run javis --backend-only     # JSON-lines 后端主机（供自定义前端使用）
+uv run javis -v                 # 调试日志输出到 stderr
+uv run javis doctor             # 检查工作区与前端布局
 ```
 
-### Slash commands
+### Web 界面（`javis web`）
 
-| Command | Description |
-|---|---|
-| `/help` | List available commands |
-| `/status` | Model, message count, token usage, cwd, session id |
-| `/clear` | Clear conversation history |
-| `/exit`, `/quit` | Exit javis |
-| `/version` | Show version |
+`javis web` 在 loopback 上托管 DeepSeek Harness 的浏览器界面，agent 侧仍由
+javis 的 Python harness 承担：FastAPI 负责发送 dsh 前端、注入启动清单、应答
+浏览器真正调用的 Remote 接口（`POST /api/<ns>/<method>` 与 `/api/remote.mux`
+流套接字），并把 harness 事件翻译成 dsh 的 Session 事件。
 
-Interactive selectors (from the TUI command picker): **permissions** (Default / Auto / Plan Mode), **theme**, **max turns**, **fast mode**, **vim mode**, **voice**, **model**, and **resume** (replay a past session).
-
-### Permission modes
-
-- **Default** — ask before write/execute
-- **Auto** (`full_auto`) — allow all tools automatically, edit diffs auto-approved
-- **Plan Mode** — block all write operations
-
-## Development
+浏览器资源来自 dsh 的构建产物。仓库里已提交一份裁剪后的副本（约 13 MB：构建好的
+外壳，加上每个保留行对应的一个 bundle），因此全新克隆无需 dsh 检出即可直接运行
+`javis web`。只有跟随 dsh 版本升级时才需要重新组装：
 
 ```bash
-uv run pytest tests/ -q          # 311 tests, all green
-uv run pytest tests/ --cov=javis --cov=javis/harness   # coverage report
+# 在 deepseek-harness 检出目录中
+pnpm install && pnpm run build
+
+# 在本仓库中：重新组装后，把刷新过的产物与清单一起提交
+uv run javis web --rebuild-assets --dsh-root /path/to/deepseek-harness
+```
+
+`javis doctor` 会报告组装产物是否存在以及它来自哪个 dsh 版本。
+`docs/dsh-web-interface-inventory.md` 是生成的 dsh Web 接口清单（用
+`scripts/inventory_dsh_web.py --check` 做漂移校验）。v1 只打通对话闭环：
+会话、流式回复、工具行与中断；其余面板在实现前返回结构化的「未实现」失败。
+
+### 斜杠命令
+
+| 命令 | 说明 |
+|---|---|
+| `/help` | 列出可用命令 |
+| `/status` | 模型、消息数、token 用量、当前目录、会话 ID |
+| `/clear` | 清空对话历史 |
+| `/exit`、`/quit` | 退出 javis |
+| `/version` | 显示版本号 |
+
+TUI 命令选择器中还提供交互式选择器：**权限模式**（默认 / 自动 / 计划模式）、**主题**、**最大轮次**、**快速模式**、**Vim 模式**、**语音**、**模型**，以及**恢复会话**（重放历史会话）。
+
+### 权限模式
+
+- **默认** — 写入/执行前询问
+- **自动**（`full_auto`）— 自动允许所有工具，编辑 diff 自动批准
+- **计划模式** — 阻止所有写操作
+
+## 开发
+
+```bash
+uv run pytest tests/ -q          # 311 个测试，全部通过
+uv run pytest tests/ --cov=javis --cov=javis/harness   # 覆盖率报告
 uv run ruff check javis/
 uv run mypy javis/
 ```
 
-### Project layout
+### 项目结构
 
 ```
-javis/harness/       Harness: dsh-style AgentLoop + javis integration
-  plugins/           composition rows that assemble the harness
-  stream.py          loop-side stream assembly
-  harness.py         Harness shell (implements the contract)
-  tool_adapter.py    javis Tool → loop Tool + AgentToolView live view
-javis/llm/            LLM provider implementations (OpenAICompat / Scripted)
-javis/tools/          Host tool registry + 7 built-in tools
-javis/                Host shell: CLI, runtime, backend host, wire protocol
-  app/               Runtime, backend host, wire protocol, TUI launcher
-  contracts/         Harness contract, event/message models (pure contracts)
-  session/           Session persistence, app state, workspace layout
-  commands/          Slash-command registry
-  cordis/            Cordis-style plugin system (Context, Loader, services)
-frontend/terminal    React/Ink TUI (TypeScript)
-tests/               pytest suite
+javis/harness/       Harness：dsh 风格 AgentLoop + javis 集成
+  plugins/           装配 Harness 的组合行
+  stream.py          循环侧流装配
+  harness.py         Harness 外壳（实现契约）
+  tool_adapter.py    javis Tool → 循环 Tool + AgentToolView 实时视图
+javis/llm/           LLM provider 实现（OpenAICompat / Scripted）
+javis/tools/         宿主工具注册表 + 7 个内建工具
+javis/               宿主外壳：CLI、运行时、后端主机、线协议
+  app/               运行时、后端主机、线协议、TUI 启动器
+  contracts/         纯契约层：Harness 契约、事件/消息模型
+  session/           会话持久化、应用状态、工作区布局
+  commands/          斜杠命令注册表
+  cordis/            Cordis 风格插件系统（Context、Loader、服务）
+frontend/terminal    React/Ink TUI（TypeScript）
+tests/               pytest 测试套件
 ```
 
-## License
+## 许可证
 
 MIT
