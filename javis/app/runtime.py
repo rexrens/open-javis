@@ -1,0 +1,349 @@
+"""Runtime assembly and request dispatch for javis.
+
+What remains:
+
+- ``RuntimeBundle`` — harness + commands + app_state + session_backend
+- ``build_runtime`` — assembles a bundle with a ``Harness``
+- ``handle_line`` — the single dispatch point (slash commands + agent turns)
+
+Plugin wiring lives in ``build_runtime``: a fresh Cordis context provides the
+built-in services (``config`` / ``tools`` / ``commands`` / ``host``), mounts
+the plugin composition via the Cordis loader, asserts every entry settled, and
+reads the ``harness`` service the composition provided. There is no fallback:
+a composition that provides no ``harness`` service (or fails to load) is a
+hard boot error.
+
+``handle_line`` yields ``AgentEvent`` straight through to the host's
+``render_event`` callback — no ``StreamEvent`` translation layer.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+from javis.commands.registry import CommandContext, CommandRegistry, create_default_command_registry
+from javis.contracts.harness import Harness
+from javis.contracts.host import HostContext
+from javis.contracts.messages import ConversationMessage, sanitize_conversation_messages
+from javis.contracts.services import (
+    COMMANDS_SERVICE,
+    CONFIG_SERVICE,
+    HARNESS_SERVICE,
+    HOST_SERVICE,
+    TOOLS_SERVICE,
+)
+from javis.contracts.types import AgentEvent, AgentTextDelta, AgentTurnEnd
+from javis.cordis import Context
+from javis.cordis.loader import Loader, assert_entries_settled
+from javis.cordis.registry import settle
+from javis.session.config import JavisConfig, ensure_default_composition
+from javis.session.session_storage import JavisSessionBackend
+from javis.session.state import AppState, AppStateStore
+from javis.session.workspace import initialize_workspace
+
+log = logging.getLogger(__name__)
+
+SystemPrinter = Callable[[str], Awaitable[None]]
+StreamRenderer = Callable[[AgentEvent], Awaitable[None]]
+ClearHandler = Callable[[], Awaitable[None]]
+
+
+# ---------------------------------------------------------------------------
+# System prompt builder
+# ---------------------------------------------------------------------------
+
+def build_system_prompt(cwd: str | Path | None = None, *, workspace: str | Path | None = None) -> str:
+    """Return a short system prompt for the agent."""
+    del cwd, workspace  # signature kept for parity; stored on the harness
+    return (
+        "You are javis, an agent running on the javis TUI.\n\n"
+        "You are backed by a ``Harness`` implementation. Your responses "
+        "stream through the React terminal frontend via the JSON-lines wire "
+        "protocol."
+    )
+
+
+@dataclass
+class RuntimeBundle:
+    """Everything the host needs to drive one interactive session."""
+
+    engine: Harness
+    cwd: str
+    app_state: AppStateStore
+    commands: CommandRegistry
+    session_backend: JavisSessionBackend
+    session_id: str
+    system_prompt: str = ""
+    settings_overrides: dict[str, Any] = field(default_factory=dict)
+    context: Context | None = None
+
+    async def close(self) -> None:
+        """Dispose every plugin fiber: effects unwind, provided services revoke.
+
+        Idempotent — after the first call the registry no longer tracks
+        fibers. Teardown errors are logged, never raised.
+        """
+        if self.context is None:
+            return
+        fibers = [
+            fiber
+            for runtime in list(self.context.registry.values())
+            for fiber in list(runtime.fibers)
+        ]
+        disposals: list[Any] = []
+        for fiber in reversed(fibers):
+            try:
+                result = fiber.dispose()
+                if result is not None:
+                    disposals.append(result)
+            except BaseException as exc:  # noqa: BLE001 — teardown must not raise
+                log.warning("error disposing plugin fiber %s: %s", fiber.name, exc)
+        if disposals:
+            await asyncio.gather(*disposals, return_exceptions=True)
+
+
+async def build_runtime(
+    *,
+    cwd: str | None = None,
+    model: str | None = None,
+    max_turns: int | None = None,
+    system_prompt: str | None = None,
+    restore_messages: list[dict[str, Any]] | None = None,
+    restore_tool_metadata: dict[str, object] | None = None,
+    session_backend: JavisSessionBackend | None = None,
+    workspace: str | Path | None = None,
+    plugins: str | Path | None = None,
+) -> RuntimeBundle:
+    """Assemble a ``RuntimeBundle`` backed by a ``Harness``.
+
+    Plugin wiring: a fresh Cordis context provides the built-in services
+    (``config`` / ``tools`` / ``commands`` / ``host``), mounts the plugin
+    composition — CLI ``--plugins`` > ``JAVIS_PLUGINS`` > ``pluginsFile`` >
+    ``<workspace>/cordis.yml`` — and waits for every fiber to settle. The
+    composition must provide the ``harness`` service (the default composition
+    does so via ``javis.harness.plugins.harness``); a missing harness, a
+    failed entry, or a pending entry is a hard error — there is no built-in
+    fallback.
+    """
+    cwd_resolved = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd())
+    workspace_root = initialize_workspace(workspace)
+    system_prompt_text = system_prompt or build_system_prompt(cwd_resolved, workspace=workspace_root)
+
+    tool_metadata: dict[str, Any] = {
+        "permission_mode": "default",
+        "session_id": "",
+    }
+    if isinstance(restore_tool_metadata, dict):
+        tool_metadata.update(restore_tool_metadata)
+
+    session_id = uuid4().hex[:12]
+    tool_metadata["session_id"] = session_id
+
+    from javis.session.config import load_config
+
+    # load_config deep-merges global + project config.json; raises ValueError on
+    # malformed JSON (config errors are surfaced, not swallowed). Returns a
+    # JavisConfig with defaults otherwise — cfg is never None after this.
+    cfg = load_config(cwd=cwd_resolved, workspace=workspace_root)
+    commands = create_default_command_registry()
+
+    composition = _resolve_composition_path(
+        cfg=cfg,
+        workspace_root=workspace_root,
+        plugins=plugins,
+        cwd=cwd_resolved,
+    )
+
+    ctx = Context()
+    ctx.baseUrl = str(workspace_root)
+    # Built-in services: owner is the root fiber, so they are never revoked.
+    ctx.provide(CONFIG_SERVICE, cfg)
+    from javis.tools import create_default_tool_registry
+
+    tools_registry = create_default_tool_registry()
+    ctx.provide(TOOLS_SERVICE, tools_registry)
+    ctx.provide(COMMANDS_SERVICE, commands)
+    ctx.provide(
+        HOST_SERVICE,
+        HostContext(
+            cwd=cwd_resolved,
+            workspace=str(workspace_root),
+            session_id=session_id,
+            tool_metadata=tool_metadata,
+            model_override=model,
+            max_turns_override=max_turns,
+            system_prompt=system_prompt_text,
+        ),
+    )
+
+    loader_fiber = ctx.plugin(Loader, {"file": str(composition)})
+    try:
+        await loader_fiber
+    except Exception as exc:
+        log.exception("Plugin composition %s failed to load", composition)
+        raise RuntimeError(
+            f"plugin composition {composition} failed to load: {exc}"
+        ) from exc
+    await settle(ctx)
+    assert_entries_settled(ctx)
+
+    harness = ctx.get(HARNESS_SERVICE)
+    if not isinstance(harness, Harness):
+        got = "no service" if harness is None else type(harness).__name__
+        raise RuntimeError(  # noqa: TRY004 — boot wiring error, not a bad argument type
+            f"composition {composition} provides no 'harness' service ({got}). "
+            "Add a row 'name: javis.harness.plugins.harness' with "
+            "'inject: [llm, agentTools, systemPrompt, agentLoop, config, host]', "
+            "or delete the composition file to regenerate the default one."
+        )
+    # Explicit CLI overrides win over the row's resolved defaults.
+    if model is not None:
+        harness.set_model(model)
+    if system_prompt is not None:
+        harness.set_system_prompt(system_prompt)
+
+    model_name = model or harness.model or "unknown"
+
+    if restore_messages:
+        restored = sanitize_conversation_messages(
+            [ConversationMessage.model_validate(m) for m in restore_messages]
+        )
+        harness.load_messages(restored)
+
+    app_state = AppStateStore(
+        AppState(
+            model=model_name,
+            cwd=cwd_resolved,
+            permission_mode=cfg.session.permission_mode if cfg else "default",
+            theme=cfg.appearance.theme if cfg else "default",
+            provider="javis",
+            auth_status="ok",
+            fast_mode=cfg.session.fast_mode if cfg else False,
+            vim_enabled=cfg.editor.vim_enabled if cfg else False,
+            output_style=cfg.appearance.output_style if cfg else "default",
+        )
+    )
+
+    return RuntimeBundle(
+        engine=harness,
+        cwd=cwd_resolved,
+        app_state=app_state,
+        commands=commands if cfg is not None else create_default_command_registry(),
+        session_backend=session_backend or JavisSessionBackend(workspace_root),
+        session_id=session_id,
+        system_prompt=system_prompt_text,
+        context=ctx,
+    )
+
+
+def _resolve_composition_path(
+    *,
+    cfg: JavisConfig,
+    workspace_root: str | Path,
+    plugins: str | Path | None,
+    cwd: str,
+) -> Path:
+    """Resolve the plugin composition file: CLI > env > config > default.
+
+    CLI-supplied paths resolve against ``cwd``; env/config values against the
+    workspace root; the default is ``<workspace>/cordis.yml`` (created when
+    missing). An explicitly referenced but missing file is a hard error.
+    """
+    explicit: str | Path | None = plugins
+    base = Path(cwd)
+    if explicit is None:
+        explicit = os.environ.get("JAVIS_PLUGINS")
+        base = Path(workspace_root)
+    if not explicit:
+        explicit = cfg.plugins_file
+        base = Path(workspace_root)
+    if explicit:
+        path = Path(explicit).expanduser()
+        if not path.is_absolute():
+            path = base / path
+        if not path.exists():
+            raise ValueError(f"Plugin composition file not found: {path}")
+        return path.resolve()
+    return ensure_default_composition(workspace_root)
+
+
+def _save_session(bundle: RuntimeBundle) -> None:
+    """Persist the current conversation to the session backend."""
+    bundle.session_backend.save_snapshot(
+        cwd=bundle.cwd,
+        model=bundle.engine.model,
+        system_prompt=bundle.engine.system_prompt,
+        messages=bundle.engine.messages,
+        usage=bundle.engine.total_usage,
+        session_id=bundle.session_id,
+        tool_metadata=bundle.engine.tool_metadata,
+    )
+
+
+async def handle_line(
+    bundle: RuntimeBundle,
+    line: str,
+    *,
+    print_system: SystemPrinter,
+    render_event: StreamRenderer,
+    clear_output: ClearHandler,
+    user_message: ConversationMessage | None = None,
+) -> bool:
+    """Handle one submitted line. Returns ``True`` to continue, ``False`` to exit."""
+    parsed = None if user_message is not None else bundle.commands.lookup(line)
+    if parsed is not None:
+        command, args = parsed
+        context = CommandContext(
+            engine=bundle.engine,
+            app_state=bundle.app_state,
+            cwd=bundle.cwd,
+            session_id=bundle.session_id,
+        )
+        result = await command.handler(args, context)
+        if result.clear_screen:
+            await clear_output()
+        if result.message:
+            await print_system(result.message)
+        if result.replay_messages:
+            await clear_output()
+            await print_system("Session restored:")
+            for msg in result.replay_messages:
+                if msg.role == "user":
+                    await print_system(f"> {msg.text}")
+                elif msg.role == "assistant" and msg.text.strip():
+                    async for event in _replay_assistant(msg):
+                        await render_event(event)
+
+        # 提交用户消息，通过异步生成器来逐帧获取响应事件，engine内部调用agentloop，并yield方式输出
+        if result.submit_prompt:
+            async for event in bundle.engine.submit_message(result.submit_prompt):
+                await render_event(event)
+            _save_session(bundle)
+        return not result.should_exit
+
+    # Normal prompt — feed it to the harness.
+    async for event in bundle.engine.submit_message(user_message or line):
+        await render_event(event)
+    _save_session(bundle)
+    return True
+
+
+async def _replay_assistant(message: ConversationMessage) -> AsyncIterator[AgentEvent]:
+    """Replay a restored assistant message as a text delta + turn end."""
+    yield AgentTextDelta(text=message.text)
+    yield AgentTurnEnd(text=message.text)
+
+
+__all__ = [
+    "RuntimeBundle",
+    "build_runtime",
+    "build_system_prompt",
+    "handle_line",
+]

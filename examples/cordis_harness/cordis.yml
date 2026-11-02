@@ -1,0 +1,46 @@
+# cordis_harness 的组合文件（dsh: everything is a plugin）。
+#
+# 这是 base 层；同目录的 cordis.patch.yml 会自动叠在它上面（patch 机制见
+# docs/plugins.md）。挂载顺序由 inject 依赖驱动，与书写顺序无关。
+#
+#   - 任意一行加 `disabled: true` 即可关掉该能力
+#   - `--dump-config` 打印合并结果；`--no-patches` 忽略环境层 patch
+
+- id: llm
+  name: harness.plugins.llm
+
+- id: llm-openai
+  name: harness.plugins.llm_openai
+  config:
+    provider: openai
+    baseUrl: https://api.deepseek.com/v1
+    apiKeyEnv: OPENAI_API_KEY
+    fallbackApiKeyEnv: DEEPSEEK_API_KEY
+    models:
+      - deepseek-v4-flash
+
+- id: sessions
+  name: harness.plugins.session
+
+- id: tools
+  name: harness.plugins.tools
+
+- id: tools-builtin
+  name: harness.plugins.tools_builtin
+  config:
+    bashTimeoutMs: 60000
+    maxOutputChars: 20000
+    maxReadBytes: 200000
+
+- id: system-prompt
+  name: harness.plugins.system_prompt
+
+- id: agent
+  name: harness.plugins.agent
+  config:
+    provider: openai
+    model: deepseek-v4-flash
+    maxSteps: 12
+
+- id: cli
+  name: harness.plugins.cli
