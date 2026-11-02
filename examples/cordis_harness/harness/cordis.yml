@@ -1,0 +1,47 @@
+# The default cordis-harness composition: every capability is one plugin row.
+#
+#   - set `disabled: true` on a row to drop that capability
+#   - `cdh --config <file>` loads a different composition
+#   - `cdh` uses ./cordis.yml when the working directory has one
+#
+# Rows load in dependency order, not positional order: `agent` waits for
+# `llm`, `tools`, `sessions` and `systemPrompt`; `cli` waits for `agents`.
+
+- id: llm
+  name: harness.plugins.llm
+
+- id: llm-openai
+  name: harness.plugins.llm_openai
+  config:
+    provider: openai
+    baseUrl: https://api.deepseek.com/v1
+    apiKeyEnv: OPENAI_API_KEY
+    fallbackApiKeyEnv: DEEPSEEK_API_KEY
+    models:
+      - deepseek-v4-flash
+
+- id: sessions
+  name: harness.plugins.session
+
+- id: tools
+  name: harness.plugins.tools
+
+- id: tools-builtin
+  name: harness.plugins.tools_builtin
+  config:
+    bashTimeoutMs: 60000
+    maxOutputChars: 20000
+    maxReadBytes: 200000
+
+- id: system-prompt
+  name: harness.plugins.system_prompt
+
+- id: agent
+  name: harness.plugins.agent
+  config:
+    provider: openai
+    model: deepseek-v4-flash
+    maxSteps: 12
+
+- id: cli
+  name: harness.plugins.cli

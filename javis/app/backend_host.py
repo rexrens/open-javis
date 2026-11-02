@@ -1,0 +1,630 @@
+"""JSON-lines backend host for the React terminal frontend.
+
+Forked from openharness.ui.backend_host and trimmed:
+- No ``get_task_manager()`` / ``get_bridge_manager()`` — tasks and bridge
+  snapshots are always empty.
+- No ``is_coordinator_mode()`` / ``drain_coordinator_async_agents()``.
+- No TodoWrite / plan_mode tool special-casing (those are openharness tools).
+- ``_render_event`` consumes ``AgentEvent`` directly — no ``StreamEvent`` layer.
+- ``_handle_select_command`` keeps the selectors that don't need external
+  subsystems (model, permissions, turns, theme, fast, vim, voice). Provider,
+  output-style, effort, passes and resume are dropped.
+
+The wire format (``OHJSON:`` prefix + JSON) and the modal/select future dance
+are preserved unchanged so the React frontend works without modification.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+import logging
+import sys
+from collections.abc import Coroutine
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+from javis.app.runtime import (
+    RuntimeBundle,
+    build_runtime,
+    handle_line,
+)
+from javis.app.wire import BackendEvent, FrontendImageAttachment, FrontendRequest, TranscriptItem
+from javis.contracts.messages import ContentBlock, ConversationMessage, ImageBlock, TextBlock
+from javis.contracts.types import (
+    AgentError,
+    AgentEvent,
+    AgentReasoningDelta,
+    AgentStatus,
+    AgentTextDelta,
+    AgentToolCallResult,
+    AgentToolCallStart,
+    AgentTurnEnd,
+)
+
+log = logging.getLogger(__name__)
+
+_PROTOCOL_PREFIX = "OHJSON:"
+
+# Tools that mutate state — gated by permission mode.
+_WRITE_TOOLS = frozenset({"write_file", "edit_file", "bash"})
+
+
+def decide_permission(mode: str, tool_name: str) -> str:
+    """Pure permission decision: ``allow`` | ``deny`` | ``ask``.
+
+    - ``full_auto`` — allow everything
+    - ``plan``      — deny write/execute tools, allow reads
+    - ``default``   — ask for write/execute tools, allow reads
+    """
+    if mode == "full_auto":
+        return "allow"
+    if mode == "plan":
+        return "deny" if tool_name in _WRITE_TOOLS else "allow"
+    return "ask" if tool_name in _WRITE_TOOLS else "allow"
+
+
+class BackendHost:
+    """Drive the javis runtime over a structured stdin/stdout protocol."""
+
+    def __init__(self, bundle: RuntimeBundle) -> None:
+        self._bundle = bundle
+        self._write_lock = asyncio.Lock()
+        self._request_queue: asyncio.Queue[FrontendRequest] = asyncio.Queue()
+        self._permission_requests: dict[str, asyncio.Future[bool]] = {}
+        self._edit_approval_requests: dict[str, asyncio.Future[str]] = {}
+        self._question_requests: dict[str, asyncio.Future[str]] = {}
+        self._permission_lock = asyncio.Lock()
+        self._busy = False
+        self._running = True
+        self._active_request_task: asyncio.Task[bool] | None = None
+        self._last_tool_inputs: dict[str, dict[str, Any]] = {}
+        self._edit_always_approved = False
+
+    async def run(self) -> int:
+        """后端宿主的服务循环：与 React 前端通过 stdin/stdout 的 JSON-lines 协议通讯。
+
+        流程：
+        1. 注入权限检查器（把 `decide_permission` 挂到 engine 的 agent 上）；
+        2. 向前端发送 `ready` 事件（当前 AppState + 可用斜杠命令列表）和状态快照；
+        3. 启动一个后台 task 持续从 stdin 读取前端请求（`_read_requests`）；
+        4. 主循环：从队列取请求、按类型分派（关闭/中断/选择器/普通提交等）；
+        5. 退出时取消读取 task，返回退出码。
+        """
+        # 把纯函数权限决策接入 engine：后续工具调用会经过这里决定 allow/deny/ask。
+        self._inject_permission_checker()
+        # 握手：先发 ready（前端以此确认后端已就绪、渲染初始状态），再发一次状态快照。
+        await self._emit(
+            BackendEvent.ready(
+                self._bundle.app_state.get(),
+                [f"/{command.name}" for command in self._bundle.commands.list_commands()],
+            )
+        )
+
+        # 刷新前端状态条
+        await self._emit(self._status_snapshot())
+
+        # 读取循环独立成一个 task，避免主循环被 stdin 阻塞；
+        # 它把解析好的 FrontendRequest 塞进队列，主循环负责消费。
+        reader = asyncio.create_task(self._read_requests())
+        try:
+            # ── 主循环：消费请求队列，逐条分派 ──
+            while self._running:
+                request :FrontendRequest = await self._request_queue.get()
+                # 前端要求关闭：回发 shutdown 事件后退出循环。
+                if request.type == "shutdown":
+                    await self._emit(BackendEvent(type="shutdown"))
+                    break
+                # 中断当前正在执行的 agent 回合（如用户按 Ctrl+C）。
+                if request.type == "interrupt":
+                    await self._interrupt_active_request()
+                    continue
+                # 权限/提问的应答不单独处理：
+                # 它们已由 _read_requests 直接喂给对应的 future，无需进入主循环。
+                if request.type in ("permission_response", "question_response"):
+                    continue
+                # 会话列表查询。
+                if request.type == "list_sessions":
+                    await self._handle_list_sessions()
+                    continue
+                # 选择器命令（/model、/permissions 等）：更新 AppState 并回发状态。
+                if request.type == "select_command":
+                    await self._handle_select_command(request.command or "")
+                    continue
+                # 选择器确认（如选了某个 model/主题后回车）：把变更应用为一行命令。
+                if request.type == "apply_select_command":
+                    if self._busy:
+                        # 上一回合尚未结束，拒绝并发提交。
+                        await self._emit(BackendEvent(type="error", message="Session is busy"))
+                        continue
+                    self._busy = True
+                    try:
+                        should_continue = await self._run_active_request(
+                            self._apply_select_command(
+                                request.command or "",
+                                request.value or "",
+                            )
+                        )
+                    finally:
+                        self._busy = False
+                    # agent 回合结束（或触发了退出类命令）→ 关闭会话。
+                    if not should_continue:
+                        await self._emit(BackendEvent(type="shutdown"))
+                        break
+                    continue
+                # 除 submit_line 外的未知请求类型：报错并继续，不崩溃。
+                if request.type != "submit_line":
+                    await self._emit(BackendEvent(type="error", message=f"Unknown request type: {request.type}"))
+                    continue
+                # 普通用户消息提交（可能带图片附件）。
+                if self._busy:
+                    # 同样拒绝在忙时叠加提交。
+                    await self._emit(BackendEvent(type="error", message="Session is busy"))
+                    continue
+                line = (request.line or "").strip()
+                # 空文本且无图片：无可处理内容，直接忽略。
+                if not line and not request.images:
+                    continue
+                self._busy = True
+                try:
+                    # 处理一行输入：斜杠命令或 agent 回合（handle_line → engine.submit_message）。
+                    should_continue = await self._run_active_request(
+                        self._process_line(line, images=request.images)
+                    )
+                finally:
+                    self._busy = False
+                # 退出类命令（如 /exit、/quit）→ 关闭会话。
+                if not should_continue:
+                    await self._emit(BackendEvent(type="shutdown"))
+                    break
+        finally:
+            # 无论正常退出还是异常，都要停掉 stdin 读取 task，避免残留协程。
+            reader.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reader
+        return 0
+
+    async def _read_requests(self) -> None:
+        while True:
+            raw = await asyncio.to_thread(sys.stdin.buffer.readline)
+            if not raw:
+                await self._request_queue.put(FrontendRequest(type="shutdown"))
+                return
+            payload = raw.decode("utf-8").strip()
+            if not payload:
+                continue
+            try:
+                request = FrontendRequest.model_validate_json(payload)
+            except Exception as exc:  # noqa: BLE001 — malformed wire input must not kill the host
+                await self._emit(BackendEvent(type="error", message=f"Invalid request: {exc}"))
+                continue
+            if request.type == "permission_response" and request.request_id in self._edit_approval_requests:
+                edit_future = self._edit_approval_requests[request.request_id]
+                if not edit_future.done():
+                    edit_future.set_result(_edit_approval_reply_from_request(request))
+                continue
+            if request.type == "permission_response" and request.request_id in self._permission_requests:
+                permission_future = self._permission_requests[request.request_id]
+                if not permission_future.done():
+                    permission_future.set_result(bool(request.allowed))
+                continue
+            if request.type == "question_response" and request.request_id in self._question_requests:
+                question_future = self._question_requests[request.request_id]
+                if not question_future.done():
+                    question_future.set_result(request.answer or "")
+                continue
+            if request.type == "interrupt":
+                await self._interrupt_active_request()
+                continue
+            await self._request_queue.put(request)
+
+    async def _run_active_request(self, awaitable: Coroutine[Any, Any, bool]) -> bool:
+        task = asyncio.create_task(awaitable)
+        self._active_request_task = task
+        try:
+            return await task
+        except asyncio.CancelledError:
+            await self._emit(
+                BackendEvent(
+                    type="transcript_item",
+                    item=TranscriptItem(role="system", text="Interrupted by user."),
+                )
+            )
+            await self._emit(self._status_snapshot())
+            await self._emit(BackendEvent.tasks_snapshot())
+            await self._emit(BackendEvent(type="line_complete"))
+            return True
+        finally:
+            if self._active_request_task is task:
+                self._active_request_task = None
+
+    async def _interrupt_active_request(self) -> None:
+        task = self._active_request_task
+        if task is None or task.done():
+            return
+        task.cancel()
+
+    async def _process_line(
+        self,
+        line: str,
+        *,
+        transcript_line: str | None = None,
+        images: list[FrontendImageAttachment] | None = None,
+    ) -> bool:
+        user_message = _build_user_message_with_images(line, images or [])
+        await self._emit(
+            BackendEvent(
+                type="transcript_item",
+                item=TranscriptItem(
+                    role="user",
+                    text=transcript_line or _format_transcript_line(line, images or []),
+                ),
+            )
+        )
+
+        async def _print_system(message: str) -> None:
+            await self._emit(
+                BackendEvent(type="transcript_item", item=TranscriptItem(role="system", text=message))
+            )
+
+        async def _render_event(event: AgentEvent) -> None:
+            if isinstance(event, AgentTextDelta):
+                await self._emit(BackendEvent(type="assistant_delta", message=event.text))
+                return
+            if isinstance(event, AgentReasoningDelta):
+                await self._emit(BackendEvent(type="reasoning_delta", message=event.text))
+                return
+            if isinstance(event, AgentToolCallStart):
+                self._last_tool_inputs[event.tool_name] = event.tool_input or {}
+                await self._emit(
+                    BackendEvent(
+                        type="tool_started",
+                        tool_name=event.tool_name,
+                        tool_input=event.tool_input,
+                        item=TranscriptItem(
+                            role="tool",
+                            text=f"{event.tool_name} {json.dumps(event.tool_input, ensure_ascii=True)}",
+                            tool_name=event.tool_name,
+                            tool_input=event.tool_input,
+                        ),
+                    )
+                )
+                return
+            if isinstance(event, AgentToolCallResult):
+                await self._emit(
+                    BackendEvent(
+                        type="tool_completed",
+                        tool_name=event.tool_name,
+                        output=event.output,
+                        is_error=event.is_error,
+                        item=TranscriptItem(
+                            role="tool_result",
+                            text=event.output,
+                            tool_name=event.tool_name,
+                            is_error=event.is_error,
+                        ),
+                    )
+                )
+                await self._emit(self._status_snapshot())
+                return
+            if isinstance(event, AgentError):
+                await self._emit(BackendEvent(type="error", message=event.message))
+                await self._emit(
+                    BackendEvent(type="transcript_item", item=TranscriptItem(role="system", text=event.message))
+                )
+                return
+            if isinstance(event, AgentStatus):
+                await self._emit(
+                    BackendEvent(type="transcript_item", item=TranscriptItem(role="system", text=event.message))
+                )
+                return
+            if isinstance(event, AgentTurnEnd):
+                text = event.text
+                await self._emit(
+                    BackendEvent(
+                        type="assistant_complete",
+                        message=text,
+                        item=TranscriptItem(role="assistant", text=text),
+                    )
+                )
+                return
+
+        async def _clear_output() -> None:
+            await self._emit(BackendEvent(type="clear_transcript"))
+
+        handle_line_kwargs: dict[str, Any] = {
+            "print_system": _print_system,
+            "render_event": _render_event,
+            "clear_output": _clear_output,
+        }
+        if user_message is not None:
+            handle_line_kwargs["user_message"] = user_message
+        should_continue = await handle_line(self._bundle, line, **handle_line_kwargs)
+        await self._emit(self._status_snapshot())
+        await self._emit(BackendEvent.tasks_snapshot())
+        await self._emit(BackendEvent(type="line_complete"))
+        return should_continue
+
+    async def _apply_select_command(self, command_name: str, value: str) -> bool:
+        command = command_name.strip().lstrip("/").lower()
+        selected = value.strip()
+        line = self._build_select_command_line(command, selected)
+        if line is None:
+            await self._emit(BackendEvent(type="error", message=f"Unknown select command: {command_name}"))
+            await self._emit(BackendEvent(type="line_complete"))
+            return True
+        return await self._process_line(line, transcript_line=f"/{command}")
+
+    def _build_select_command_line(self, command: str, value: str) -> str | None:
+        if command == "permissions":
+            return f"/permissions {value}"
+        if command == "theme":
+            return f"/theme {value}"
+        if command == "turns":
+            return f"/turns {value}"
+        if command == "fast":
+            return f"/fast {value}"
+        if command == "vim":
+            return f"/vim {value}"
+        if command == "voice":
+            return f"/voice {value}"
+        if command == "model":
+            return f"/model {value}"
+        return None
+
+    def _status_snapshot(self) -> BackendEvent:
+        return BackendEvent.status_snapshot(self._bundle.app_state.get())
+
+    async def _handle_list_sessions(self) -> None:
+        sessions = self._bundle.session_backend.list_snapshots(self._bundle.cwd, limit=10)
+        options = []
+        import time as _time
+        for s in sessions:
+            ts = _time.strftime("%m/%d %H:%M", _time.localtime(s["created_at"]))
+            summary = s.get("summary", "")[:50] or "(no summary)"
+            options.append({
+                "value": s["session_id"],
+                "label": f"{ts}  {s['message_count']}msg  {summary}",
+            })
+        await self._emit(
+            BackendEvent(
+                type="select_request",
+                modal={"kind": "select", "title": "Resume Session", "command": "resume"},
+                select_options=options,
+            )
+        )
+
+    async def _handle_select_command(self, command_name: str) -> None:
+        command = command_name.strip().lstrip("/").lower()
+        state = self._bundle.app_state.get()
+
+        if command == "permissions":
+            options = [
+                {"value": "default", "label": "Default", "description": "Ask before write/execute", "active": state.permission_mode == "default"},
+                {"value": "full_auto", "label": "Auto", "description": "Allow all tools automatically", "active": state.permission_mode == "full_auto"},
+                {"value": "plan", "label": "Plan Mode", "description": "Block all write operations", "active": state.permission_mode == "plan"},
+            ]
+            await self._emit(BackendEvent(type="select_request", modal={"kind": "select", "title": "Permission Mode", "command": "permissions"}, select_options=options))
+            return
+
+        if command == "theme":
+            themes = ["default", "dark", "light", "solarized", "gruvbox"]
+            options = [{"value": name, "label": name, "active": name == state.theme} for name in themes]
+            await self._emit(BackendEvent(type="select_request", modal={"kind": "select", "title": "Theme", "command": "theme"}, select_options=options))
+            return
+
+        if command == "turns":
+            current = self._bundle.engine.max_turns
+            values = {32, 64, 128, 200, 256, 512}
+            if isinstance(current, int):
+                values.add(current)
+            options = [{"value": "unlimited", "label": "Unlimited", "description": "Do not hard-stop", "active": current is None}]
+            options.extend({"value": str(v), "label": f"{v} turns", "active": v == current} for v in sorted(values))
+            await self._emit(BackendEvent(type="select_request", modal={"kind": "select", "title": "Max Turns", "command": "turns"}, select_options=options))
+            return
+
+        if command == "fast":
+            current = bool(state.fast_mode)
+            options = [
+                {"value": "on", "label": "On", "description": "Prefer shorter responses", "active": current},
+                {"value": "off", "label": "Off", "description": "Normal response mode", "active": not current},
+            ]
+            await self._emit(BackendEvent(type="select_request", modal={"kind": "select", "title": "Fast Mode", "command": "fast"}, select_options=options))
+            return
+
+        if command == "vim":
+            current = bool(state.vim_enabled)
+            options = [
+                {"value": "on", "label": "On", "description": "Enable Vim keybindings", "active": current},
+                {"value": "off", "label": "Off", "description": "Standard keybindings", "active": not current},
+            ]
+            await self._emit(BackendEvent(type="select_request", modal={"kind": "select", "title": "Vim Mode", "command": "vim"}, select_options=options))
+            return
+
+        if command == "voice":
+            current = bool(state.voice_enabled)
+            options = [
+                {"value": "on", "label": "On", "description": "Enable voice mode", "active": current},
+                {"value": "off", "label": "Off", "description": "Disable voice mode", "active": not current},
+            ]
+            await self._emit(BackendEvent(type="select_request", modal={"kind": "select", "title": "Voice Mode", "command": "voice"}, select_options=options))
+            return
+
+        if command == "model":
+            current_model = state.model
+            candidates = [current_model] if current_model else []
+            seen: set[str] = set()
+            options = []
+            for value in candidates:
+                if not value or value in seen:
+                    continue
+                seen.add(value)
+                options.append({"value": value, "label": value, "description": "javis model", "active": value == current_model})
+            await self._emit(BackendEvent(type="select_request", modal={"kind": "select", "title": "Model", "command": "model"}, select_options=options))
+            return
+
+        await self._emit(BackendEvent(type="error", message=f"No selector available for /{command}"))
+
+    async def _check_permission(self, tool_name: str, tool_input: dict[str, Any]) -> str:
+        """Permission hook for the agent loop: decide allow/deny, ask via modal."""
+        mode = self._bundle.app_state.get().permission_mode
+        decision = decide_permission(mode, tool_name)
+        if decision != "ask":
+            return decision
+        reason = f"{tool_name} {json.dumps(tool_input, ensure_ascii=True)[:200]}"
+        allowed = await self._ask_permission(tool_name, reason)
+        return "allow" if allowed else "deny"
+
+    def _inject_permission_checker(self) -> None:
+        """Wire the modal permission channel into the engine's tool loop.
+
+        Contract-level hook first (``Harness.set_permission_checker``);
+        legacy path (``engine.agent.permission_checker``) as a
+        fallback. Test doubles that implement neither simply skip injection.
+        """
+        engine = self._bundle.engine
+        setter = getattr(engine, "set_permission_checker", None)
+        if callable(setter):
+            setter(self._check_permission)
+            return
+        agent = getattr(engine, "agent", None)
+        if agent is not None and hasattr(agent, "permission_checker"):
+            agent.permission_checker = self._check_permission
+
+    async def _ask_permission(self, tool_name: str, reason: str) -> bool:
+        async with self._permission_lock:
+            request_id = uuid4().hex
+            future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+            self._permission_requests[request_id] = future
+            await self._emit(
+                BackendEvent(
+                    type="modal_request",
+                    modal={"kind": "permission", "request_id": request_id, "tool_name": tool_name, "reason": reason},
+                )
+            )
+            try:
+                return await asyncio.wait_for(future, timeout=300)
+            except TimeoutError:
+                log.warning("Permission request %s timed out after 300s, denying", request_id)
+                return False
+            finally:
+                self._permission_requests.pop(request_id, None)
+
+    async def _ask_edit_approval(self, path: str, diff: str, added: int, removed: int) -> str:
+        if self._edit_always_approved or self._bundle.app_state.get().permission_mode == "full_auto":
+            return "always"
+        async with self._permission_lock:
+            request_id = uuid4().hex
+            future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+            self._edit_approval_requests[request_id] = future
+            await self._emit(
+                BackendEvent(
+                    type="modal_request",
+                    modal={"kind": "edit_diff", "request_id": request_id, "path": path, "diff": diff, "added": added, "removed": removed},
+                )
+            )
+            try:
+                reply = await asyncio.wait_for(future, timeout=300)
+            except TimeoutError:
+                log.warning("Edit approval request %s timed out after 300s, denying", request_id)
+                reply = "reject"
+            finally:
+                self._edit_approval_requests.pop(request_id, None)
+                await self._emit(BackendEvent(type="modal_request", modal=None))
+            if reply == "always":
+                self._edit_always_approved = True
+            return reply
+
+    async def _ask_question(self, question: str) -> str:
+        request_id = uuid4().hex
+        future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        self._question_requests[request_id] = future
+        await self._emit(
+            BackendEvent(
+                type="modal_request",
+                modal={"kind": "question", "request_id": request_id, "question": question},
+            )
+        )
+        try:
+            return await future
+        finally:
+            self._question_requests.pop(request_id, None)
+
+    async def _emit(self, event: BackendEvent) -> None:
+        async with self._write_lock:
+            payload = _PROTOCOL_PREFIX + event.model_dump_json() + "\n"
+            buffer = getattr(sys.stdout, "buffer", None)
+            if buffer is not None:
+                buffer.write(payload.encode("utf-8"))
+                buffer.flush()
+                return
+            sys.stdout.write(payload)
+            sys.stdout.flush()
+
+
+def _build_user_message_with_images(
+    line: str,
+    images: list[FrontendImageAttachment],
+) -> ConversationMessage | None:
+    if not images:
+        return None
+    content: list[ContentBlock] = [TextBlock(text=line or "Please analyze the attached image.")]
+    content.extend(
+        ImageBlock(
+            media_type=image.media_type,
+            data=image.data,
+            source_path=image.source_path or "",
+        )
+        for image in images
+    )
+    return ConversationMessage.from_user_content(content)
+
+
+def _format_transcript_line(line: str, images: list[FrontendImageAttachment]) -> str:
+    if not images:
+        return line
+    noun = "image" if len(images) == 1 else "images"
+    attachment_line = f"[{len(images)} {noun} attached]"
+    return f"{line}\n{attachment_line}" if line else attachment_line
+
+
+def _edit_approval_reply_from_request(request: FrontendRequest) -> str:
+    reply = (request.permission_reply or "").strip().lower()
+    if reply in {"once", "always", "reject"}:
+        return reply
+    return "once" if bool(request.allowed) else "reject"
+
+
+async def run_backend_mode(
+    *,
+    cwd: str | None = None,
+    workspace: str | Path | None = None,
+    model: str | None = None,
+    max_turns: int | None = None,
+    restore_messages: list[dict[str, Any]] | None = None,
+    restore_tool_metadata: dict[str, object] | None = None,
+    plugins: str | Path | None = None,
+) -> int:
+    """Run the structured React backend host."""
+    import os
+    if cwd:
+        os.chdir(cwd)
+    bundle = await build_runtime(
+        cwd=cwd,
+        model=model,
+        max_turns=max_turns,
+        restore_messages=restore_messages,
+        restore_tool_metadata=restore_tool_metadata,
+        workspace=workspace,
+        plugins=plugins,
+    )
+    host = BackendHost(bundle=bundle)
+    try:
+        return await host.run()
+    finally:
+        await bundle.close()
+
+
+__all__ = ["decide_permission", "run_backend_mode"]

@@ -1,0 +1,9 @@
+{
+  "name": "@javis/web",
+  "private": true,
+  "type": "module",
+  "description": "Assembly layer that turns a built deepseek-harness web bundle into javis web assets",
+  "scripts": {
+    "prepare": "node prepare.mjs"
+  }
+}
