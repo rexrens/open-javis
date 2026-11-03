@@ -36,6 +36,18 @@ class OpenAIChat(Model):
     ) -> None:
         super().__init__(model, api_key, base_url, timeout, max_retries, headers, extra_body)
 
+    def info(self) -> dict[str, Any]:
+        mask_key = lambda k: (k[:4] + "*" * max(len(k) - 8, 0) + k[-4:]) if len(k) > 8 else "*" * len(k)
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "api_key": mask_key(self.api_key),
+            "base_url": self.base_url,
+            "timeout": self.timeout,
+            "max_retries": self.max_retries,
+            "headers": self.headers,
+            "extra_body": self.extra_body,
+        }
     def _url(self) -> str:
         return f"{self.base_url}/chat/completions"
 

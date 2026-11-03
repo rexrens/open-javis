@@ -8,6 +8,9 @@ import json
 import os
 
 import httpx
+from dotenv import load_dotenv
+import pprint
+import logging
 
 from javis.agent.model.model import ModelError
 from javis.agent.model.openai.openai_chat import OpenAIChat
@@ -19,17 +22,28 @@ from javis.harness.types import (
     UsageChunk,
 )
 
-DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-v4-flash"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(filename)s:%(lineno)d in %(funcName)s() - %(message)s'
+)
+
+logger = logging.getLogger(__name__)
+
 SYSTEM_PROMPT = (
     "You are a helpful assistant. Answer the user's question directly and "
     "use the conversation history as context."
 )
 EXIT_COMMANDS = {"exit", "quit"}
 
+# 加载 .env 文件中的变量到 os.environ
 
 async def main() -> None:
-    api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
+    load_dotenv(override=True)
+
+    api_key = os.getenv("DEEPSEEK_API_KEY") or None
+    base_url = os.getenv("DEEPSEEK_BASE_URL") or "https://api.openai.com"
+    model_name = os.getenv("DEEPSEEK_MODEL_NAME") or "gpt-4"
 
     if not api_key:
         raise SystemExit(
@@ -37,11 +51,14 @@ async def main() -> None:
         )
 
     model = OpenAIChat(
-        model=os.getenv("DEEPSEEK_MODEL", DEFAULT_MODEL),
+        model=model_name,
         api_key=api_key,
-        base_url=os.getenv("DEEPSEEK_BASE_URL", DEFAULT_BASE_URL),
+        base_url=base_url,
         timeout=60,
     )
+
+    pprint.pprint(f"Using model: {model.info()}")
+
     request = ModelRequest(
         messages=[Message.system(SYSTEM_PROMPT)],
         temperature=0.7,
@@ -50,8 +67,8 @@ async def main() -> None:
     while True:
         try:
             user_text = await asyncio.to_thread(input, "\nYou: ")
-        except (EOFError, KeyboardInterrupt):
-            print()
+        except (EOFError, KeyboardInterrupt) as exc:
+            logger.info(f"Exiting...,{exc}")
             break
 
         user_text = user_text.strip()
@@ -85,8 +102,11 @@ async def main() -> None:
                     print(f"\nFinish: {chunk.reason.kind}")
         except (ModelError, httpx.HTTPError, json.JSONDecodeError) as exc:
             request.messages.pop()
-            print(f"\nRequest failed: {exc}")
+            logger.error(f"\nRequest failed: {exc}")
             continue
+        except Exception as exc:
+            logger.error(f"\nRequest failed: {exc}")
+            break
 
         assistant_text = "".join(assistant_parts)
         if assistant_text:
@@ -94,4 +114,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(asyncio.run(main()))
