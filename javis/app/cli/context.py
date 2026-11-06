@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from .fake import FakeAgent
+from javis.agent.agent.agent import BaseReactAgent
 
 
 @dataclass
@@ -12,5 +12,5 @@ class Context:
     it flows to every handler through ``ui.context`` without touching globals.
     """
 
-    agent: FakeAgent
+    agent: BaseReactAgent
     session_id: str

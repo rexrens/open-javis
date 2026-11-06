@@ -17,8 +17,17 @@ from javis.harness.types import (
 )
 
 from ..model import Model
+from ..proto import ToolCallBlock, ToolResultBlock
 from ..request import Message, ModelRequest
 from ..response import ModelResponse
+
+
+def _mask_key(key: str | None) -> str:
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "*" * len(key)
+    return key[:4] + "*" * (len(key) - 8) + key[-4:]
 
 
 class OpenAIChat(Model):
@@ -37,17 +46,17 @@ class OpenAIChat(Model):
         super().__init__(model, api_key, base_url, timeout, max_retries, headers, extra_body)
 
     def info(self) -> dict[str, Any]:
-        mask_key = lambda k: (k[:4] + "*" * max(len(k) - 8, 0) + k[-4:]) if len(k) > 8 else "*" * len(k)
         return {
             "provider": self.provider,
             "model": self.model,
-            "api_key": mask_key(self.api_key),
+            "api_key": _mask_key(self.api_key),
             "base_url": self.base_url,
             "timeout": self.timeout,
             "max_retries": self.max_retries,
             "headers": self.headers,
             "extra_body": self.extra_body,
         }
+
     def _url(self) -> str:
         return f"{self.base_url}/chat/completions"
 
@@ -71,12 +80,40 @@ class OpenAIChat(Model):
         model = (model or "").lower()
         return model.startswith(("o1", "o3", "o4"))
 
-    def _format_message(self, message: Message) -> dict[str, str]:
+    def _format_message(self, message: Message) -> dict[str, Any]:
         role = self._resolve_instruction_role() if message.role == "system" else message.role
-        return {"role": role, "content": message.text}
+        if message.role == "tool":
+            result = next(
+                (block for block in message.content if isinstance(block, ToolResultBlock)),
+                None,
+            )
+            if result is not None:
+                return {
+                    "role": role,
+                    "tool_call_id": result.tool_call_id,
+                    "content": result.content,
+                }
+            return {"role": role, "content": message.text}
 
-    def _request_messages(self, request: ModelRequest) -> list[dict[str, str]]:
-        messages: list[dict[str, str]] = []
+        entry: dict[str, Any] = {"role": role, "content": message.text}
+        calls = [block for block in message.content if isinstance(block, ToolCallBlock)]
+        if calls:
+            entry["content"] = message.text or None
+            entry["tool_calls"] = [
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": call.arguments,
+                    },
+                }
+                for call in calls
+            ]
+        return entry
+
+    def _request_messages(self, request: ModelRequest) -> list[dict[str, Any]]:
+        messages: list[dict[str, Any]] = []
         if request.system:
             messages.append(
                 {
@@ -98,6 +135,8 @@ class OpenAIChat(Model):
             body["temperature"] = request.temperature
         if request.max_tokens is not None:
             body["max_tokens"] = request.max_tokens
+        if request.tools:
+            body["tools"] = request.tools
         if request.stop is not None:
             body["stop"] = request.stop
         if request.response_format is not None:

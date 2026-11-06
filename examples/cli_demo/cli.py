@@ -1,8 +1,8 @@
-"""xli master demo — every feature in one app.
+"""xli master demo - every feature in one app.
 
 Run it:
 
-    python examples/demo.py
+    uv run python -m examples.cli_demo.cli
 
 Then just type a message to see streaming markdown, or use a slash command to
 show off a specific feature:
@@ -25,19 +25,29 @@ like any terminal program. Chrome is font-color + a thin rule, no solid blocks.
 from __future__ import annotations
 
 import asyncio
+import uuid
 
+from javis.agent.agent.agent import BaseReactAgent
+from javis.agent.tools.base import ToolRegister
 from javis.app.cli import xli
+from javis.app.cli.cli import _build_model, _render_turn, _sync_status
+from javis.app.cli.context import Context
 
-DemoUI = xli.UI[dict[str, object]]
+DemoUI = xli.UI[Context]
 
 ui: DemoUI = xli.UI(
-    context={},
+    context=Context(
+        agent=BaseReactAgent(
+            model=_build_model(),
+            tools=ToolRegister(),
+        ),
+        session_id=uuid.uuid4().hex[:8],
+    ),
     title="xli demo",
-    status_fields=["model", "tokens"],
+    status_fields=["model", "session", "turn", "tokens"],
     pet="cat",
 )
-ui.status.set(model="opus-4.8", tokens="0")
-_tokens = 0
+_sync_status(ui)
 
 
 @ui.on_interrupt
@@ -50,26 +60,7 @@ async def cleanup() -> None:
 # --------------------------------------------------------------------------- chat
 @ui.on_prompt
 async def reply(prompt: str) -> None:
-    global _tokens
-    ui.reasoning("Reading the request and picking a shape for the answer…")
-    with ui.working("thinking"):
-        await asyncio.sleep(0.6)
-    with ui.streaming("assistant") as out:
-        for chunk in _fake_markdown(prompt):
-            out.write(chunk)
-            _tokens += len(chunk.split())
-            ui.status.set(tokens=str(_tokens))
-            await asyncio.sleep(0.03)
-
-
-def _fake_markdown(prompt: str):
-    yield f"You said **{prompt}**.\n\n"
-    yield "Here's what xli can do, all in this one demo:\n\n"
-    yield "- streaming *markdown* that settles into selectable scrollback\n"
-    yield "- `tool cards` that update in place (`/tools`)\n"
-    yield "- diffs, plans, reasoning, and inline images\n"
-    yield "- inline approvals and modal flows (`/approve`, `/ask`)\n\n"
-    yield "> Tip: start a `/sleep` and hit **ESC** to see cooperative interrupt.\n"
+    await _render_turn(ui, ui.context, ui.context.agent.run(prompt))
 
 
 # --------------------------------------------------------------------------- features
@@ -112,7 +103,7 @@ async def cmd_reason(ui: DemoUI, args: str) -> None:
 @ui.command("image", description="an inline image")
 async def cmd_image(ui: DemoUI, args: str) -> None:
     try:
-        from PIL import Image
+        from PIL import Image  # type: ignore[import-not-found]
     except ImportError:
         ui.note("install Pillow for images:  pip install pillow")
         return

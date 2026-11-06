@@ -38,8 +38,17 @@ class ToolCallBlock(_Proto):
     arguments: str = ""
 
 
+class ToolResultBlock(_Proto):
+    """The result of one tool call, sent back to the model."""
+
+    type: Literal["tool-result"] = "tool-result"
+    tool_call_id: str
+    content: str = ""
+    is_error: bool = False
+
+
 ContentBlock = Annotated[
-    TextBlock | ReasoningBlock | ToolCallBlock,
+    TextBlock | ReasoningBlock | ToolCallBlock | ToolResultBlock,
     Field(discriminator="type", description="A chunk of a streamed model response"),
 ]
 
@@ -197,5 +206,6 @@ __all__ = [
     "TokenUsage",
     "ToolCallBlock",
     "ToolCallDelta",
+    "ToolResultBlock",
     "UsageChunk",
 ]

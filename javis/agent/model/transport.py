@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
-import re
 
 import httpx
 
@@ -103,7 +103,7 @@ class SSEDecoder:
             self._reset()
 
     def decode(self, line: str) -> ServerSentEvent | None:
-        # See: https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation  # noqa: E501
+        # See: https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation
 
         if not line:
             if not self._event and not self._data and not self._last_event_id and self._retry is None:
@@ -128,8 +128,7 @@ class SSEDecoder:
 
         fieldname, _, value = line.partition(":")
 
-        if value.startswith(" "):
-            value = value[1:]
+        value = value.removeprefix(" ")
 
         if fieldname == "event":
             self._event = value
@@ -149,6 +148,10 @@ class SSEDecoder:
             pass  # Field is ignored.
 
         return None
+
+
+# Public compatibility name used by the transport tests and callers.
+ServerSentEventDecoder = SSEDecoder
 
 class ServerSentEventTransport:
     """POST a JSON body and consume the response as Server-Sent Events."""
@@ -179,8 +182,7 @@ class ServerSentEventTransport:
             client.stream("POST", url, headers=headers, json=body) as response,
         ):
             response.raise_for_status()
-            for sse in self._decoder.iter_bytes(response.iter_bytes()):
-                yield sse
+            yield from self._decoder.iter_bytes(response.iter_bytes())
 
     async def astream(
         self,
