@@ -60,6 +60,8 @@ class ModelRequest(BaseModel):
 
     system: str | None = None
 
+    tools: list[dict[str, Any]] = Field(default_factory=list)
+
     temperature: float | int | None = Field(default=0.0, ge=0, le=2)
 
     max_tokens: int | None = Field(default=None, gt=0)

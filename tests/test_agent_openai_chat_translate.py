@@ -1,6 +1,7 @@
 import json
 
 from javis.agent.model.openai.openai_chat import OpenAIChat
+from javis.agent.model.proto import TextBlock, ToolCallBlock, ToolResultBlock
 from javis.agent.model.request import Message, ModelRequest
 from javis.agent.model.transport import ServerSentEvent
 from javis.harness.types import (
@@ -48,6 +49,56 @@ def test_body_serializes_complete_multi_turn_history() -> None:
     assert body["stop"] == ["END"]
     assert body["top_p"] == 0.9
     assert body["stream"] is True
+
+
+def test_body_serializes_tool_definitions_calls_and_results() -> None:
+    model = OpenAIChat(model="test-model", api_key="test")
+    request = ModelRequest(
+        messages=[
+            Message.user("use echo"),
+            Message(
+                role="assistant",
+                content=[
+                    TextBlock(text="checking"),
+                    ToolCallBlock(id="call_1", name="echo", arguments='{"text":"hi"}'),
+                ],
+            ),
+            Message(
+                role="tool",
+                content=[ToolResultBlock(tool_call_id="call_1", content="hi")],
+            ),
+        ],
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "echo",
+                    "description": "Return the supplied text.",
+                    "parameters": {"type": "object", "properties": {"text": {"type": "string"}}},
+                },
+            }
+        ],
+    )
+
+    body = model._body(request)
+
+    assert body["tools"] == request.tools
+    assert body["messages"][1] == {
+        "role": "assistant",
+        "content": "checking",
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "echo", "arguments": '{"text":"hi"}'},
+            }
+        ],
+    }
+    assert body["messages"][2] == {
+        "role": "tool",
+        "tool_call_id": "call_1",
+        "content": "hi",
+    }
 
 
 def test_headers_merge_custom_values_without_using_extra_body() -> None:
