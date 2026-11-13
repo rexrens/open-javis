@@ -6,46 +6,92 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 
 @dataclass(frozen=True)
 class ToolExecutionContext:
     cwd: Path = field(default_factory=Path.cwd)
-    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class ToolCallResult:
     output: str = ""
     is_error: bool = False
-    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class BaseTool(ABC):
     """Base class for all tools."""
 
-    name: str
-    description: str
-    input_model: type[BaseModel]
 
-    @abstractmethod
-    async def run(self, args: dict[str, Any], context: ToolExecutionContext) -> ToolCallResult:
-        """Run the tool.
+    name: str = ""
+    description: str = ""
+    args_schema: type[BaseModel] | None = None
 
-        :param args: The tool arguments.
-        :return: The tool output.
-        """
+    def to_openai_tool(self, strict: bool = False) -> dict[str, Any]:
+        """生成 OpenAI Chat Completions tools 数组中的单个工具定义。"""
 
-    def schema(self) -> dict[str, Any]:
+        def _clean_schema(node: Any) -> Any:
+            # 移除 title 属性, 避免openai sechma 验证失败
+            if isinstance(node, dict):
+                node.pop("title", None)
+                for v in node.values():
+                    _clean_schema(v)
+            elif isinstance(node, list):
+                for item in node:
+                    _clean_schema(item)
+            return node
+
+        if self.args_schema is not None:
+            params = self.args_schema.model_json_schema()
+        else:
+            params = {"type": "object", "properties": {}, "required": []}
+
+        if strict:
+            params = _clean_schema(params)
+
         return {
-            "name": self.name,
-            "description": self.description,
-            "input_schema": self.input_model.model_json_schema(),
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": params,
+            },
         }
 
-    def schma(self) -> dict[str, Any]:
-        return self.schema()
+    @abstractmethod
+    async def _run(
+        self,
+        context: ToolExecutionContext,
+        args: BaseModel | None,
+    ) -> ToolCallResult:
+        """Run the tool.
+
+        :param context: 运行时上下文（cwd 等）
+        :param args: 校验后的参数模型；未定义 args_schema 时为 None
+        :return: ToolCallResult
+        """
+        ...
+
+    # ---- 统一入口 ----
+    async def __call__(
+        self,
+        context: ToolExecutionContext,
+        args: BaseModel | dict[str, Any] | None,
+    ) -> ToolCallResult:
+        try:
+            if self.args_schema is not None:
+                validated = self.args_schema.model_validate(args)
+            else:
+                validated = None
+            return await self._run(context, validated)
+        except ValidationError as e:
+            return ToolCallResult(output=f"参数校验失败: {e}", is_error=True)
+        except Exception as e:  # noqa: BLE001 — 工具不能把 agent 循环搞崩
+            return ToolCallResult(output=f"{type(e).__name__}: {e}", is_error=True)
+
+    def __repr__(self) -> str:
+        return f"<{type(self).__name__} name={self.name!r}>"
 
 
 class ToolRegister:
@@ -62,17 +108,4 @@ class ToolRegister:
         return builtins.list(self.tools.values())
 
     def schemas(self) -> builtins.list[dict[str, Any]]:
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.input_model.model_json_schema(),
-                },
-            }
-            for tool in self.tools.values()
-        ]
-
-    def schma(self) -> builtins.list[dict[str, Any]]:
-        return self.schemas()
+        return [tool.to_openai_tool() for tool in self.tools.values()]
