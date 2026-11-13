@@ -29,6 +29,7 @@ from javis.agent.agent.protocol import (
 from javis.agent.model.model import Model
 from javis.agent.model.openai.openai_chat import OpenAIChat
 from javis.agent.tools.base import ToolRegister
+from javis.agent.tools.buildin.weather import WeatherTool
 
 from . import xli
 from .commands import register_build_in_command
@@ -169,11 +170,17 @@ def _create_ui(
     model: Model | None = None,
     tools: ToolRegister | None = None,
 ) -> xli.UI[Context]:
+
+    bintools = ToolRegister()
+    bintools.register(
+        WeatherTool(),
+    )
+
     ui = xli.UI(
         context=Context(
             agent=BaseReactAgent(
                 model=model or _build_model(),
-                tools=tools or ToolRegister(),
+                tools=bintools,
             ),
             session_id=uuid.uuid4().hex[:8],
         ),

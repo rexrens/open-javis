@@ -172,10 +172,9 @@ class BaseReactAgent:
             return
 
         try:
-            validated = tool.input_model.model_validate(arguments).model_dump()
-            result = await tool.run(
-                validated,
+            result = await tool(
                 ToolExecutionContext(cwd=self._cwd),
+                arguments,
             )
         except Exception as tool_error:  # noqa: BLE001 - tool boundary normalizes failures
             yield ToolCallErrorEvent(

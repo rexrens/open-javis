@@ -71,29 +71,30 @@ class EmptyArgs(BaseModel):
 class EchoTool(BaseTool):
     name = "echo"
     description = "Return the supplied text."
-    input_model = EchoArgs
+    args_schema = EchoArgs
 
     def __init__(self) -> None:
         self.contexts: list[ToolExecutionContext] = []
 
-    async def run(
+    async def _run(
         self,
-        args: dict[str, Any],
         context: ToolExecutionContext,
+        args: BaseModel | None,
     ) -> ToolCallResult:
+        assert isinstance(args, EchoArgs)
         self.contexts.append(context)
-        return ToolCallResult(output=args["text"])
+        return ToolCallResult(output=args.text)
 
 
 class ExplodingTool(BaseTool):
     name = "explode"
     description = "Raise an exception."
-    input_model = EmptyArgs
+    args_schema = EmptyArgs
 
-    async def run(
+    async def _run(
         self,
-        args: dict[str, Any],
         context: ToolExecutionContext,
+        args: BaseModel | None,
     ) -> ToolCallResult:
         raise RuntimeError("tool exploded")
 
@@ -101,12 +102,12 @@ class ExplodingTool(BaseTool):
 class ErrorResultTool(BaseTool):
     name = "fail"
     description = "Return an error result."
-    input_model = EmptyArgs
+    args_schema = EmptyArgs
 
-    async def run(
+    async def _run(
         self,
-        args: dict[str, Any],
         context: ToolExecutionContext,
+        args: BaseModel | None,
     ) -> ToolCallResult:
         return ToolCallResult(output="invalid input", is_error=True)
 
@@ -185,16 +186,7 @@ async def test_run_executes_tool_and_uses_another_step_for_final_answer() -> Non
         "is_error": False,
     }
     assert tool.contexts[0].cwd == Path.cwd()
-    assert model.requests[0].tools == [
-        {
-            "type": "function",
-            "function": {
-                "name": "echo",
-                "description": "Return the supplied text.",
-                "parameters": EchoArgs.model_json_schema(),
-            },
-        }
-    ]
+    assert model.requests[0].tools == [tool.to_openai_tool()]
     assert isinstance(agent.history[1].content[1], ToolCallBlock)
     assert model.requests[1].messages == agent.history[:3]
 
@@ -232,7 +224,7 @@ async def test_run_maps_reasoning_and_accumulates_token_usage() -> None:
 @pytest.mark.parametrize(
     ("tool", "expected_error"),
     [
-        (ExplodingTool(), "tool exploded"),
+        (ExplodingTool(), "RuntimeError: tool exploded"),
         (ErrorResultTool(), "invalid input"),
     ],
 )
