@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -95,17 +96,47 @@ class BaseTool(ABC):
 
 
 class ToolRegister:
-    def __init__(self) -> None:
+    def __init__(self, *tools: BaseTool | Iterable[BaseTool] ) -> None:
         self.tools: dict[str, BaseTool] = {}
+        self._schemas_cache: list[dict] | None = None
 
-    def register(self, tool: BaseTool) -> None:
-        self.tools[tool.name] = tool
+        if tools:
+            self.register(*tools)
+    # ---------- 注册 ----------
+    def register(self, *tools: BaseTool | Iterable[BaseTool]) -> ToolRegister:
+        """支持 reg.register(a, b, c) 和 reg.register([a, b], c) 两种写法。"""
+
+        self._schemas_cache = None
+
+        for t in tools:
+            # 允许传 list/tuple/set 等容器
+            batch = t if isinstance(t, Iterable) and not isinstance(t, BaseTool) else (t,)
+            for t in batch:
+                if not isinstance(t, BaseTool):
+                    raise TypeError(f"Tool Type Error, except BaseTool, actually {type(t).__name__}")
+                if t.name in self.tools and self.tools[t.name] is not t:
+                    raise ValueError(f"tool name conflict: {t.name!r}")
+                self.tools[t.name] = t
+        return self
 
     def get(self, name: str) -> BaseTool | None:
         return self.tools.get(name)
 
-    def list(self) -> builtins.list[BaseTool]:
+    def all(self) -> list[BaseTool]:
         return builtins.list(self.tools.values())
 
-    def schemas(self) -> builtins.list[dict[str, Any]]:
-        return [tool.to_openai_tool() for tool in self.tools.values()]
+    def schemas(self) -> list[dict[str, Any]]:
+
+        # cache the schemas from high frequently used tools
+        if self._schemas_cache is None:
+            self._schemas_cache = [tool.to_openai_tool() for tool in self.tools.values()]
+
+        return self._schemas_cache
+    def __contains__(self, name: str) -> bool:
+        return name in self.tools
+
+    def __len__(self) -> int:
+        return len(self.tools)
+
+    def __iter__(self):
+        return iter(self.tools.values())

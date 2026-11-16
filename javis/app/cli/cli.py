@@ -29,7 +29,9 @@ from javis.agent.agent.protocol import (
 from javis.agent.model.model import Model
 from javis.agent.model.openai.openai_chat import OpenAIChat
 from javis.agent.tools.base import ToolRegister
+from javis.agent.tools.buildin.test_tool import validate_email, validate_cn_phone
 from javis.agent.tools.buildin.weather import WeatherTool
+from javis.agent.tools.buildin.workspace import WorkspaceToolSet
 
 from . import xli
 from .commands import register_build_in_command
@@ -164,6 +166,13 @@ def _build_model() -> Model:
         timeout=60,
     )
 
+def _create_default_tool() -> ToolRegister:
+
+    tools = ToolRegister(
+        WorkspaceToolSet()
+    )
+
+    return tools
 
 def _create_ui(
     *,
@@ -171,16 +180,13 @@ def _create_ui(
     tools: ToolRegister | None = None,
 ) -> xli.UI[Context]:
 
-    bintools = ToolRegister()
-    bintools.register(
-        WeatherTool(),
-    )
+    bintools = _create_default_tool()
 
     ui = xli.UI(
         context=Context(
             agent=BaseReactAgent(
                 model=model or _build_model(),
-                tools=bintools,
+                tools=bintools
             ),
             session_id=uuid.uuid4().hex[:8],
         ),
