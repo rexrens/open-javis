@@ -29,8 +29,6 @@ from javis.agent.agent.protocol import (
 from javis.agent.model.model import Model
 from javis.agent.model.openai.openai_chat import OpenAIChat
 from javis.agent.tools.base import ToolRegister
-from javis.agent.tools.buildin.test_tool import validate_email, validate_cn_phone
-from javis.agent.tools.buildin.weather import WeatherTool
 from javis.agent.tools.buildin.workspace import WorkspaceToolSet
 
 from . import xli
