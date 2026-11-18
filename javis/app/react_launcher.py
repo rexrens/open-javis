@@ -81,7 +81,7 @@ def _build_backend_command(
     plugins: str | Path | None = None,
 ) -> list[str]:
     """Return the command the React frontend will spawn to start the backend."""
-    command = [sys.executable, "-m", "javis", "--backend-only"]
+    command = [sys.executable, "-m", "javis", "tui", "--backend-only"]
     if cwd:
         command.extend(["--cwd", cwd])
     if workspace:

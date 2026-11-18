@@ -2,9 +2,40 @@
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from javis.app.app import run_tui_mode
+from javis.app.react_launcher import _build_backend_command
+
+
+def test_tui_backend_command_uses_tui_subcommand() -> None:
+    command = _build_backend_command(
+        cwd="/tmp/proj",
+        workspace="/tmp/ws",
+        model="m1",
+        max_turns=4,
+        plugins="/tmp/cordis.yml",
+    )
+
+    assert command == [
+        sys.executable,
+        "-m",
+        "javis",
+        "tui",
+        "--backend-only",
+        "--cwd",
+        "/tmp/proj",
+        "--workspace",
+        "/tmp/ws",
+        "--model",
+        "m1",
+        "--max-turns",
+        "4",
+        "--plugins",
+        "/tmp/cordis.yml",
+    ]
 
 
 @pytest.mark.asyncio

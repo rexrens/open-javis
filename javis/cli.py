@@ -112,18 +112,18 @@ def tui(
                 )
             )
         )
-
-    raise SystemExit(
-        asyncio.run(
-            run_tui_mode(
-                cwd=cwd_path,
-                workspace=workspace_root,
-                model=model,
-                max_turns=max_turns,
-                plugins=plugins,
+    else:
+        raise SystemExit(
+            asyncio.run(
+                run_tui_mode(
+                    cwd=cwd_path,
+                    workspace=workspace_root,
+                    model=model,
+                    max_turns=max_turns,
+                    plugins=plugins,
+                )
             )
         )
-    )
 
 
 @app.command("doctor")

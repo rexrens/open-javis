@@ -58,6 +58,7 @@ async def run_tui_mode(
             max_turns=max_turns,
             plugins=plugins,
         )
+
     return await launch_react_tui(
         cwd=cwd,
         workspace=workspace,
