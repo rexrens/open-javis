@@ -134,7 +134,7 @@ def doctor(
     ),
 ) -> None:
     """Check the javis workspace and frontend layout."""
-    from javis.app.react_launcher import _get_frontend_dir
+    from javis.app.tui.react_launcher import _get_frontend_dir
     from javis.app.web.assets import REQUIRED_DSH_VERSION, MissingAssetsError, load_assets
     from javis.app.web_launcher import _get_web_frontend_dir
     from javis.session.workspace import workspace_health

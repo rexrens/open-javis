@@ -7,7 +7,12 @@ import sys
 import pytest
 
 from javis.app.app import run_tui_mode
-from javis.app.react_launcher import _build_backend_command
+from javis.app.tui.react_launcher import _build_backend_command, _get_frontend_dir
+
+
+def test_tui_frontend_dir_resolves_the_repo_layout() -> None:
+    frontend = _get_frontend_dir()
+    assert (frontend / "package.json").is_file()
 
 
 def test_tui_backend_command_uses_tui_subcommand() -> None:
@@ -46,7 +51,7 @@ async def test_run_tui_mode_backend_only_dispatches_to_backend(monkeypatch):
         captured.update(kwargs)
         return 7
 
-    monkeypatch.setattr("javis.app.app.run_backend_mode", fake_backend)
+    monkeypatch.setattr("javis.app.app.run_tui_backend", fake_backend)
     code = await run_tui_mode(
         backend_only=True,
         cwd="/tmp/proj",

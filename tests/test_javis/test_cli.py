@@ -5,10 +5,12 @@ from __future__ import annotations
 import importlib
 from collections.abc import AsyncIterator
 from contextlib import AbstractContextManager
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Self, assert_type
 
 import pytest
+from typer.testing import CliRunner
 
 import javis.app.cli.cli as cli_module
 from javis.agent.agent.agent import BaseReactAgent
@@ -25,6 +27,7 @@ from javis.agent.model.response import ModelResponse
 from javis.agent.tools.base import ToolRegister
 from javis.app.cli import xli
 from javis.app.cli.context import Context
+from javis.cli import app
 
 
 class _TestModel(Model):
@@ -98,6 +101,16 @@ def test_cli_imports_the_vendored_xli_package() -> None:
 
     assert xli.__version__ == "0.2.0"
     assert isinstance(cli_module._create_ui(), xli.UI)
+
+
+def test_doctor_reports_the_terminal_frontend(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        ["doctor", "--cwd", str(tmp_path), "--workspace", str(tmp_path / "workspace")],
+    )
+
+    assert result.exit_code == 0
+    assert "frontend dir:" in result.output
 
 
 def test_ui_requires_a_non_optional_context() -> None:
