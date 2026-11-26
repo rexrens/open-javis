@@ -22,9 +22,8 @@ import os
 import sys
 from pathlib import Path
 
-from javis.app.backend_host import run_backend_mode
-from javis.app.react_launcher import launch_react_tui
 from javis.app.runtime import RuntimeBundle, build_runtime, handle_line
+from javis.app.tui import run_tui_backend, launch_react_tui
 from javis.app.web_launcher import launch_web, run_web_backend
 from javis.contracts.messages import ConversationMessage
 from javis.contracts.types import (
@@ -51,7 +50,15 @@ async def run_tui_mode(
     ``python -m javis --backend-only`` — it is not a third user-facing mode.
     """
     if backend_only:
-        return await run_backend_mode(
+        # return await run_backend_mode(
+        #     cwd=cwd,
+        #     workspace=workspace,
+        #     model=model,
+        #     max_turns=max_turns,
+        #     plugins=plugins,
+        # )
+
+        return await run_tui_backend(
             cwd=cwd,
             workspace=workspace,
             model=model,

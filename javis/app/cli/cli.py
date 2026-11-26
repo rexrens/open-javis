@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import AbstractContextManager
@@ -176,6 +177,7 @@ def _create_ui(
     *,
     model: Model | None = None,
     tools: ToolRegister | None = None,
+    workspace: Path,
 ) -> xli.UI[Context]:
 
     bintools = _create_default_tool()
@@ -184,7 +186,8 @@ def _create_ui(
         context=Context(
             agent=BaseReactAgent(
                 model=model or _build_model(),
-                tools=bintools
+                tools=bintools,
+                workspace = workspace,
             ),
             session_id=uuid.uuid4().hex[:8],
         ),

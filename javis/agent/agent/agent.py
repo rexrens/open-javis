@@ -20,6 +20,7 @@ from javis.agent.model.model import Model
 from javis.agent.model.proto import ContentBlock, TextBlock, ToolCallBlock, ToolResultBlock
 from javis.agent.model.request import Message, ModelRequest
 from javis.agent.tools.base import ToolExecutionContext, ToolRegister
+from javis.agent.context import Session
 from javis.harness.types import (
     ReasoningDeltaChunk,
     TextDeltaChunk,
@@ -40,6 +41,7 @@ class BaseReactAgent:
         self,
         model: Model,
         tools: ToolRegister,
+        workspace: Path,
         persona: str = "default",
         max_steps: int = 50,
     ) -> None:
@@ -52,6 +54,7 @@ class BaseReactAgent:
         self.max_steps = max_steps
         self._seq = 0
         self._cwd = Path.cwd()
+        self._session = Session(workspace)
 
     def _next_seq(self) -> int:
         self._seq += 1
@@ -61,6 +64,7 @@ class BaseReactAgent:
         self.turn += 1
         step = 0
         self.history.append(Message.user(prompt))
+        self._session.append("user", prompt)
 
         yield TurnStartEvent(
             seq=self._next_seq(),
@@ -83,6 +87,7 @@ class BaseReactAgent:
                         yield ReasoningStartEvent()
                         reasoning_open = True
                     yield ReasoningDeltaEvent(data={"text": chunk.text})
+                    # self._session.append("assistant", prompt)
                 elif isinstance(chunk, TextDeltaChunk):
                     if reasoning_open:
                         yield ReasoningEndEvent()
